@@ -82,7 +82,7 @@ Minimum vital pour l'ingestion e-mail :
 ```
 IMAP_USER=ton.adresse@gmail.com
 IMAP_APP_PASSWORD=xxxxxxxxxxxxxxxx
-EMAIL_LABELS=jobs/alternance:alternance,jobs/cdi-fr:cdi,jobs/cdi-eu:cdi
+EMAIL_LABELS=jobs/alternance:alternance
 ```
 
 `EMAIL_LABELS` = `label:catégorie` séparés par des virgules. La catégorie sert au
@@ -117,40 +117,41 @@ Le pipeline tourne dans le cloud via **GitHub Actions** (cron quotidien gratuit)
 persiste sa base entre deux exécutions, et **t'envoie le digest par e-mail**. Plus
 besoin d'allumer le PC.
 
-### 6.1 Mettre le projet sur GitHub (privé)
-```powershell
-cd C:\Users\P0ulpy\Documents\GitHub\job-pipeline
-git init
-git add .
-git commit -m "Init job-pipeline"
-```
-Crée un dépôt **PRIVÉ** sur GitHub (impératif : la base d'offres ne doit pas être
-publique), puis :
-```powershell
-git remote add origin https://github.com/<toi>/job-pipeline.git
-git branch -M main
-git push -u origin main
-```
+**Architecture cloud :** le repo est **public** (minutes Actions gratuites illimitées),
+mais il ne contient **que du code générique** — aucune donnée, aucun secret. Les
+offres sont stockées dans **Turso** (base libSQL cloud, privée, gratuite) et les
+identifiants vivent dans **GitHub Secrets**. Rien de personnel n'est exposé.
 
-### 6.2 Déclarer les secrets GitHub
-Dépôt GitHub → **Settings → Secrets and variables → Actions → New repository secret**.
-Crée ces secrets (mêmes valeurs que ton `.env`) :
+### 6.1 Rendre le repo public
+Repo GitHub → **Settings → General → Danger Zone → Change repository visibility →
+Make public**. (Sûr : le code ne contient ni secret ni données ; tout est dans les
+Secrets et dans Turso.)
+
+### 6.2 Créer la base Turso
+1. Crée un compte sur **turso.tech** (gratuit) et une base de données.
+2. Récupère l'**URL** (`libsql://...`) et génère un **token d'authentification**.
+
+### 6.3 Déclarer les secrets GitHub
+Dépôt GitHub → **Settings → Secrets and variables → Actions → New repository secret** :
 
 | Secret | Valeur |
 |--------|--------|
 | `IMAP_USER` | ton adresse Gmail |
 | `IMAP_APP_PASSWORD` | l'App Password 16 caractères |
-| `EMAIL_LABELS` | `jobs/alternance:alternance,jobs/cdi-fr:cdi,jobs/cdi-eu:cdi` |
+| `EMAIL_LABELS` | `jobs/alternance:alternance` |
 | `MAIL_TO` | ton adresse Gmail (destinataire du digest) |
+| `TURSO_DATABASE_URL` | l'URL `libsql://...` de ta base Turso |
+| `TURSO_AUTH_TOKEN` | le token Turso |
 
-> ⚠️ Les secrets sont chiffrés côté GitHub. Ne mets JAMAIS ces valeurs dans le code
-> ni dans `.env` committé (`.env` est gitignored). App Password révocable à tout moment.
+> ⚠️ Les secrets sont chiffrés côté GitHub et n'apparaissent jamais dans le repo
+> public. Ne mets JAMAIS ces valeurs dans le code ni dans un `.env` committé
+> (`.env` est gitignored). App Password et token Turso révocables à tout moment.
 
-### 6.3 C'est tout
+### 6.4 C'est tout
 Le workflow [`.github/workflows/daily.yml`](.github/workflows/daily.yml) tourne chaque
 jour à **06:00 UTC** (≈ 08:00 Paris). Il :
 1. ingère les nouvelles alertes (IMAP),
-2. dédup + stocke dans `state/offers.db` (re-commité automatiquement),
+2. dédup + stocke les offres dans **Turso**,
 3. t'**envoie le digest par e-mail** s'il y a des nouveautés.
 
 Lancement manuel pour tester : onglet **Actions** → *Digest emploi quotidien* →

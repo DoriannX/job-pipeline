@@ -164,6 +164,15 @@ MAX_RETRIES = 4    # tentatives sur 429 / 5xx
 
 
 # --------------------------------------------------------------------------- #
+# Base cloud Turso (libSQL) — pour le mode cloud (repo public, état hors repo)
+# Si TURSO_DATABASE_URL est défini : connexion remote-only (HTTP, pas de fichier).
+# Sinon : SQLite local (DB_PATH ci-dessous). Les tests utilisent toujours SQLite.
+# --------------------------------------------------------------------------- #
+TURSO_DATABASE_URL = os.getenv("TURSO_DATABASE_URL", "")
+TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "")
+
+
+# --------------------------------------------------------------------------- #
 # Chemins de fichiers
 # --------------------------------------------------------------------------- #
 DATA_DIR = BASE_DIR / "data"

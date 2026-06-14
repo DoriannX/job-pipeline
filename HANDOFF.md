@@ -19,27 +19,36 @@ aucun scraping.** Les alertes sont la porte légale vers LinkedIn/Indeed.
 
 Décisions verrouillées avec l'utilisateur :
 - **Auth Gmail** : IMAP + **App Password** (exige 2FA + IMAP activés). Pas d'OAuth.
-- **Tri alternance/CDI/pays** : **labels Gmail**. L'utilisateur crée des filtres Gmail
-  qui rangent chaque alerte dans un label ; le pipeline lit chaque label → catégorie.
-- **Sources API en complément** : **Adzuna** (clé gratuite par e-mail, pas de compte
-  France Travail) comme filet structuré fiable à côté du parsing mail (fragile).
-- **Hébergement** : **CLOUD — GitHub Actions** (cron quotidien gratuit, marche PC éteint).
-  État persisté en re-commitant `state/offers.db` dans un **repo GitHub privé**.
-  Secrets (App Password…) dans **GitHub Secrets**. `DB_PATH=state/offers.db` en cloud.
+- **Tri par labels Gmail** : une seule catégorie `alternance` désormais (un label
+  `jobs/alternance` suffit ; le mécanisme multi-labels reste en place si besoin futur).
+- **Source API complément** : **La Bonne Alternance** (API publique, voir Couche 2bis).
+  Adzuna devient **optionnel/secondaire** (généraliste, faible sur l'alternance FR).
+- **Hébergement** : **CLOUD — GitHub Actions** (cron quotidien, marche PC éteint).
+  Quota Actions privé épuisé → **repo rendu PUBLIC** (minutes gratuites illimitées).
+  Le repo ne contient que du code générique (aucun secret, aucune donnée).
+- **Base** : **Turso (libSQL) en remote-only** (`TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`).
+  Les offres vivent dans Turso (privé, gratuit), PAS dans le repo → plus de re-commit,
+  `state/` supprimé. Backend SQLite local conservé si `TURSO_DATABASE_URL` vide (tests).
+  Client : package pip `libsql` (import `libsql`), `connect(database=url, auth_token=...)`.
+  `row_factory` non implémenté côté libSQL → `db._query()` reconstruit des dict ;
+  comptage des nouvelles offres par différence de total (pas de dépendance à `rowcount`).
 - **Livraison digest** : **e-mail à soi-même** (SMTP Gmail, même App Password). Envoi
   activé par `SEND_EMAIL=true` (workflow), uniquement s'il y a des nouveautés.
+- **Repo** : https://github.com/DoriannX/job-pipeline (gh user `DoriannX`). Secrets déjà
+  posés : `IMAP_USER`, `MAIL_TO`, `EMAIL_LABELS`. À poser par l'utilisateur :
+  `IMAP_APP_PASSWORD`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` + rendre le repo public.
 
-Scope : **alternance (FR)** + **CDI (FR + Europe anglophone** : Irlande, Pays-Bas, etc.).
-Le pipeline ignore le pays — il avale ce qui arrive ; c'est l'utilisateur qui crée les
-alertes avec les bons filtres géo/langue.
+**Scope (décidé 2026-06-14) : ALTERNANCE UNIQUEMENT** — l'utilisateur cherche une
+alternance pour son master. **CDI et Europe anglophone ABANDONNÉS.** Une seule
+catégorie : `alternance`. Géo : Bordeaux/Gironde (33) + télétravail FR.
 
 ## 1. Roadmap (couches) — STOP + accord en fin de chaque couche
 
 | Couche | Contenu | Statut |
 |--------|---------|--------|
 | **1bis — Ingestion mail MVP** | config IMAP/labels, `email_ingest` (IMAP Gmail), parser générique de liens, `Offre.from_email` + `categorie`/`pays`, dédup par URL normalisée, table `processed_emails`, digest groupé par catégorie, tests mockés | **TERMINÉE — tests verts** |
-| **Cloud — GitHub Actions** | `mailer.py` (SMTP envoi digest), `SEND_EMAIL`/`MAIL_TO`/SMTP en config, `.github/workflows/daily.yml` (cron + re-commit `state/offers.db`), `state/.gitkeep` | **TERMINÉE (code) — reste setup repo/secrets par l'utilisateur** |
-| 2bis — Adzuna | `sources/adzuna.py` + `Offre.from_adzuna`, clé en `.env`, tests | à faire |
+| **Cloud — GitHub Actions + Turso** | `mailer.py` (SMTP digest), `db.py` backend double SQLite/Turso (remote libSQL, `_query`→dict, dédup count-diff), `libsql` en requirements, `.github/workflows/daily.yml` (cron, env Turso, plus de commit-back) | **TERMINÉE (code) — reste : repo public + secrets Turso/AppPassword + base Turso (utilisateur)** |
+| 2bis — **La Bonne Alternance (API)** | **`sources/labonnealternance.py`** (API publique) car LBA n'a PAS d'alerte e-mail candidat (vérifié 2026-06-14 : moteur de recherche only, « Connexion » = espace recruteur/CFA). Source API #1 pour l'alternance. Adzuna = optionnel/plus tard (faible sur l'alternance FR). Params en `.env`, tests | à faire |
 | 3bis — Parsers par expéditeur | parsers dédiés LinkedIn/Indeed/HelloWork/WTTJ à partir de vrais e-mails `.eml` fournis par l'utilisateur | à faire (besoin samples réels) |
 | 4bis — Relances | statut candidature + relances >7 j | à faire |
 

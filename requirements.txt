@@ -1,4 +1,7 @@
 requests>=2.31,<3
 python-dotenv>=1.0,<2
 beautifulsoup4>=4.12,<5
+# Client Turso (libSQL), utilisé seulement en cloud (mode Turso). Restreint à Linux :
+# pas de wheel Windows/Py3.14 (build Rust requis). En local on utilise SQLite, pas besoin.
+libsql>=0.1,<1 ; sys_platform == "linux"
 pytest>=8.0,<9

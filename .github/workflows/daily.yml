@@ -1,21 +1,13 @@
 name: Digest emploi quotidien
 
-# Tourne dans le cloud (PC éteint OK). Le digest est envoyé par e-mail, et la
-# base SQLite est re-commitée pour persister l'état entre deux exécutions.
+# Tourne dans le cloud (PC éteint OK). État stocké dans Turso (libSQL) — rien
+# n'est re-commité dans le repo. Le digest est envoyé par e-mail.
+# Repo public => minutes Actions gratuites illimitées.
 on:
   schedule:
     # 06:00 UTC ≈ 08:00 Paris (été) / 07:00 (hiver). Ajuste si besoin.
     - cron: "0 6 * * *"
-  workflow_dispatch: {}  # permet aussi un lancement manuel depuis l'onglet Actions
-
-# Nécessaire pour que le job puisse re-committer la base.
-permissions:
-  contents: write
-
-# Évite que deux exécutions se marchent dessus sur le push de la base.
-concurrency:
-  group: digest-emploi
-  cancel-in-progress: false
+  workflow_dispatch: {}  # lancement manuel depuis l'onglet Actions
 
 jobs:
   run:
@@ -38,13 +30,6 @@ jobs:
           EMAIL_LABELS: ${{ secrets.EMAIL_LABELS }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
           SEND_EMAIL: "true"
-          DB_PATH: state/offers.db
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
         run: python main.py
-
-      - name: Persister la base SQLite
-        run: |
-          git config user.name "job-pipeline-bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add -f state/offers.db
-          git commit -m "chore: maj base offres [skip ci]" || echo "Rien à committer."
-          git push

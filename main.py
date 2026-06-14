@@ -24,6 +24,14 @@ from src.storage.models import Offre
 logger = logging.getLogger("job_pipeline")
 
 
+def _fermer(conn) -> None:
+    """Ferme la connexion sans planter si le backend n'expose pas close()."""
+    try:
+        conn.close()
+    except Exception:  # noqa: BLE001 — fermeture best-effort (libSQL remote)
+        pass
+
+
 def configurer_logs() -> None:
     """Configure un logging lisible sur la sortie standard."""
     logging.basicConfig(
@@ -76,7 +84,7 @@ def main() -> int:
             "Aucune source configurée. Renseigne au minimum IMAP_* dans .env "
             "(voir README), puis relance."
         )
-        conn.close()
+        _fermer(conn)
         return 1
 
     # 2. Stockage avec déduplication par identifiant (URL normalisée / id source).
@@ -85,7 +93,7 @@ def main() -> int:
     # 3. Digest du jour.
     md_path, csv_path, nb_digest = digest.generate_digest(conn)
     total = db.count_offres(conn)
-    conn.close()
+    _fermer(conn)
 
     # 3bis. Envoi e-mail (mode cloud) : seulement s'il y a des nouveautés.
     if config.SEND_EMAIL and nb_digest > 0:

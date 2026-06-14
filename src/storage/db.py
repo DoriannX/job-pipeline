@@ -1,9 +1,13 @@
-"""Stockage SQLite des offres + déduplication par identifiant.
+"""Stockage des offres + déduplication par identifiant.
 
-La table `offres` utilise `id` comme clé primaire : un `INSERT OR IGNORE`
-ignore silencieusement une offre déjà connue (déduplication). La colonne
-`first_seen` enregistre la date de première détection, ce qui permet au digest
-de ne lister que les nouveautés du jour.
+Backend double, même SQL (Turso = SQLite compatible) :
+- local / tests : SQLite (fichier ou `:memory:`),
+- cloud : Turso (libSQL) en remote-only si `TURSO_DATABASE_URL` est défini.
+
+La table `offres` utilise `id` comme clé primaire ; un `INSERT OR IGNORE` ignore
+silencieusement une offre déjà connue (déduplication). La colonne `first_seen`
+enregistre la date de première détection (digest des nouveautés du jour). La table
+`processed_emails` garantit l'idempotence de l'ingestion IMAP.
 """
 import logging
 import sqlite3
@@ -74,8 +78,25 @@ _MIGRATIONS = {
 }
 
 
-def connect(db_path=None) -> sqlite3.Connection:
-    """Ouvre (et crée si besoin) la base SQLite, lignes accessibles par nom."""
+def _import_libsql():
+    """Importe le client libSQL (nom de package récent puis ancien en repli)."""
+    try:
+        import libsql
+        return libsql
+    except ImportError:
+        import libsql_experimental as libsql
+        return libsql
+
+
+def connect(db_path=None):
+    """Ouvre la base : Turso (remote libSQL) si configuré, sinon SQLite local."""
+    if config.TURSO_DATABASE_URL:
+        libsql = _import_libsql()
+        logger.info("Connexion Turso (remote libSQL).")
+        return libsql.connect(
+            database=config.TURSO_DATABASE_URL,
+            auth_token=config.TURSO_AUTH_TOKEN,
+        )
     path = db_path or config.DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
@@ -83,7 +104,18 @@ def connect(db_path=None) -> sqlite3.Connection:
     return conn
 
 
-def init_db(conn: sqlite3.Connection) -> None:
+def _query(conn, sql: str, params=()) -> list[dict]:
+    """Exécute un SELECT et renvoie une liste de dict (compatible SQLite + libSQL).
+
+    libSQL n'implémente pas `row_factory` : on reconstruit les dict à partir de
+    `cursor.description`. Marche aussi pour SQLite (les `Row` sont indexables).
+    """
+    cur = conn.execute(sql, params)
+    colonnes = [d[0] for d in cur.description]
+    return [dict(zip(colonnes, ligne)) for ligne in cur.fetchall()]
+
+
+def init_db(conn) -> None:
     """Crée les tables et l'index s'ils n'existent pas, puis migre si besoin."""
     conn.execute(_CREATE_TABLE)
     conn.execute(_CREATE_INDEX)
@@ -92,39 +124,37 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def _ensure_columns(conn: sqlite3.Connection) -> None:
+def _ensure_columns(conn) -> None:
     """Ajoute les colonnes manquantes sur une base déjà existante (migration douce)."""
-    existantes = {row["name"] for row in conn.execute("PRAGMA table_info(offres)")}
+    try:
+        existantes = {r["name"] for r in _query(conn, "PRAGMA table_info(offres)")}
+    except Exception as exc:  # noqa: BLE001 — PRAGMA indispo : table neuve = schéma complet
+        logger.debug("PRAGMA table_info indisponible (%s) — migration ignorée.", exc)
+        return
     for colonne, sql in _MIGRATIONS.items():
         if colonne not in existantes:
             logger.info("Migration base : ajout de la colonne %s.", colonne)
             conn.execute(sql)
 
 
-def insert_offres(
-    conn: sqlite3.Connection,
-    offres: list[Offre],
-    today: str | None = None,
-) -> int:
+def insert_offres(conn, offres: list[Offre], today: str | None = None) -> int:
     """Insère les offres en ignorant les doublons (par `id`).
 
-    Renvoie le nombre de NOUVELLES offres réellement insérées. Les offres déjà
-    présentes sont ignorées (leur `first_seen` d'origine est conservé).
+    Renvoie le nombre de NOUVELLES offres insérées, calculé par différence de
+    total (robuste quel que soit le backend, sans dépendre de `rowcount`).
     """
     today = today or date.today().isoformat()
     placeholders = ", ".join("?" for _ in _COLUMNS)
     sql = f"INSERT OR IGNORE INTO offres ({', '.join(_COLUMNS)}) VALUES ({placeholders})"
 
-    new_count = 0
+    avant = count_offres(conn)
     for offre in offres:
         row = offre.as_row()
         row["first_seen"] = today
-        values = [row.get(col) for col in _COLUMNS]
-        cursor = conn.execute(sql, values)
-        # rowcount = 1 si insérée, 0 si ignorée (doublon).
-        if cursor.rowcount > 0:
-            new_count += 1
+        conn.execute(sql, [row.get(col) for col in _COLUMNS])
     conn.commit()
+    new_count = count_offres(conn) - avant
+
     logger.info(
         "%d offres reçues, %d nouvelles insérées (le reste = doublons).",
         len(offres),
@@ -133,33 +163,29 @@ def insert_offres(
     return new_count
 
 
-def get_offres_since(conn: sqlite3.Connection, day: str) -> list[sqlite3.Row]:
+def get_offres_since(conn, day: str) -> list[dict]:
     """Renvoie les offres détectées pour la première fois à la date `day`."""
-    cursor = conn.execute(
+    return _query(
+        conn,
         "SELECT * FROM offres WHERE first_seen = ? ORDER BY date_creation DESC",
         (day,),
     )
-    return cursor.fetchall()
 
 
-def count_offres(conn: sqlite3.Connection) -> int:
+def count_offres(conn) -> int:
     """Nombre total d'offres stockées (utile pour le résumé / les tests)."""
-    return conn.execute("SELECT COUNT(*) FROM offres").fetchone()[0]
+    return _query(conn, "SELECT COUNT(*) AS n FROM offres")[0]["n"]
 
 
 # --------------------------------------------------------------------------- #
 # Suivi des e-mails traités (idempotence de l'ingestion IMAP)
 # --------------------------------------------------------------------------- #
-def get_processed_email_ids(conn: sqlite3.Connection) -> set[str]:
+def get_processed_email_ids(conn) -> set[str]:
     """Renvoie l'ensemble des Message-ID d'e-mails déjà traités."""
-    return {row["message_id"] for row in conn.execute("SELECT message_id FROM processed_emails")}
+    return {r["message_id"] for r in _query(conn, "SELECT message_id FROM processed_emails")}
 
 
-def mark_email_processed(
-    conn: sqlite3.Connection,
-    message_id: str,
-    when: str | None = None,
-) -> None:
+def mark_email_processed(conn, message_id: str, when: str | None = None) -> None:
     """Marque un e-mail comme traité (ignore les doublons)."""
     when = when or date.today().isoformat()
     conn.execute(
