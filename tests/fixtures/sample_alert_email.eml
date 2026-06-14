@@ -1,0 +1,20 @@
+From: LinkedIn Job Alerts <jobalerts-noreply@linkedin.com>
+To: candidat@example.com
+Subject: 3 nouvelles offres pour "developpeur"
+Message-ID: <alert-abc123@linkedin.com>
+Date: Fri, 12 Jun 2026 08:00:00 +0000
+MIME-Version: 1.0
+Content-Type: text/html; charset="utf-8"
+
+<html>
+  <body>
+    <h1>Nouvelles offres</h1>
+    <a href="https://www.linkedin.com/jobs/view/3911112233/?trk=eml-jobs-aaa">Developpeur Python H/F - Acme</a>
+    <a href="https://fr.indeed.com/viewjob?jk=abcdef123456&amp;from=alert&amp;utm_source=email">Backend Engineer - BetaCorp</a>
+    <a href="https://www.linkedin.com/jobs/view/3911112233/?trk=eml-jobs-bbb">Developpeur Python H/F - Acme (doublon tracking)</a>
+    <a href="https://www.hellowork.com/fr-fr/emplois/55667788.html?utm=alert">Postuler</a>
+    <a href="https://www.linkedin.com/unsubscribe?token=zzz">Se desabonner</a>
+    <a href="https://help.linkedin.com/settings">Preferences e-mail</a>
+    <a href="https://www.linkedin.com/feed/">Voir mon fil</a>
+  </body>
+</html>

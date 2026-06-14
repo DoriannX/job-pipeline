@@ -1,0 +1,20 @@
+# Secrets — ne JAMAIS committer
+.env
+
+# Données générées
+data/
+output/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Tooling local (bmad-method + skills Claude Code) — non requis pour le repo/cloud.
+# Reste sur le disque ; simplement non versionné. Retire ces lignes pour les suivre.
+_bmad/
+.claude/
+docs/

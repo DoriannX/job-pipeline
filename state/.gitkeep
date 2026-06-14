@@ -1,0 +1,2 @@
+# Dossier de persistance de la base SQLite en mode cloud (state/offers.db).
+# Le workflow GitHub Actions re-commite offers.db ici entre deux exécutions.

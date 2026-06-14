@@ -1,0 +1,38 @@
+{
+  "resultats": [
+    {
+      "id": "190FQRT",
+      "intitule": "Développeur Web Full Stack (H/F)",
+      "entreprise": {
+        "nom": "Acme Software"
+      },
+      "lieuTravail": {
+        "libelle": "33 - BORDEAUX",
+        "codePostal": "33000"
+      },
+      "typeContrat": "CDI",
+      "natureContrat": "Contrat travail",
+      "dateCreation": "2026-06-10T09:15:00.000Z",
+      "description": "Au sein de notre équipe produit, vous développez des applications web.",
+      "origineOffre": {
+        "urlOrigine": "https://candidat.francetravail.fr/offres/recherche/detail/190FQRT"
+      }
+    },
+    {
+      "id": "190FQRU",
+      "intitule": "Développeur Backend Python (H/F)"
+    },
+    {
+      "id": 190990012,
+      "intitule": "Alternance Développement Logiciel (H/F)",
+      "entreprise": {},
+      "lieuTravail": {
+        "libelle": "33 - MERIGNAC"
+      },
+      "typeContrat": "CDD",
+      "natureContrat": "Contrat apprentissage",
+      "dateCreation": "2026-06-12T14:00:00.000Z",
+      "origineOffre": {}
+    }
+  ]
+}
