@@ -24,6 +24,9 @@ export default async function ReseauPage() {
 
   const db = await forUser(userId);
   const rows = await db.contacts.list();
+  // Collisions ambiguës restant à trancher (story 2.5) : compté côté serveur via la
+  // porte scopée, jamais le schéma. Sert le rappel doux + l'entrée vers la file de revue.
+  const pendingMerges = (await db.mergeCandidates.listPending()).length;
 
   // Instant de référence figé pour TOUTE la page : la froideur de chaque contact est
   // calculée vis-à-vis du même `now` (cohérence des bandes au sein d'un rendu).
@@ -44,5 +47,5 @@ export default async function ReseauPage() {
     };
   });
 
-  return <ReseauClient contacts={contacts} />;
+  return <ReseauClient contacts={contacts} pendingMerges={pendingMerges} />;
 }

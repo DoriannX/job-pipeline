@@ -11,9 +11,11 @@ import { Plume } from "@/design/illustration/Plume";
 interface EmptyNetworkProps {
   /** Ouvre le formulaire d'ajout du premier contact. */
   onAddFirst: () => void;
+  /** Ouvre l'import CSV LinkedIn (backfill en masse, story 2.5), facultatif. */
+  onImport?: () => void;
 }
 
-export function EmptyNetwork({ onAddFirst }: EmptyNetworkProps) {
+export function EmptyNetwork({ onAddFirst, onImport }: EmptyNetworkProps) {
   return (
     <section className="flex min-h-full flex-col items-center justify-center gap-5 px-margin-mobile py-12 text-center">
       <Plume name="feather" size={120} />
@@ -34,6 +36,16 @@ export function EmptyNetwork({ onAddFirst }: EmptyNetworkProps) {
         <Icon name="plus" size={24} />
         Ajouter un premier contact
       </button>
+
+      {onImport ? (
+        <button
+          type="button"
+          onClick={onImport}
+          className="rounded-button px-4 py-2 font-body text-body font-bold text-ink-soft underline-offset-2 outline-accent outline-offset-2 hover:underline focus-visible:outline-2"
+        >
+          ou importer un CSV LinkedIn
+        </button>
+      ) : null}
     </section>
   );
 }

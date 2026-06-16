@@ -75,3 +75,46 @@ describe("migration 0002 — rétro-compatible sur base peuplée", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("migration 0003 — rétro-compatible (CREATE TABLE only) sur base peuplée", () => {
+  it("ajoute import_jobs / merge_candidates sans toucher aux contacts existants", async () => {
+    const client = createClient({ url: "file::memory:?cache=private" });
+    const files = migrationFiles();
+
+    // État 2.4 : on applique tout SAUF 0003 (contacts déjà peuplé, dedup actif).
+    for (const f of files.filter((f) => !f.startsWith("0003"))) {
+      await apply(client, f);
+    }
+    await client.execute(
+      "INSERT INTO users (id, timezone, voix_ton) VALUES ('u1','Europe/Paris','neutre')",
+    );
+    await client.execute(
+      "INSERT INTO contacts (id, user_id, nom, source, dedup_key) VALUES ('c1','u1','Alice','manuel','name:alice|')",
+    );
+
+    // 0003 ne fait que des CREATE TABLE : aucune ALTER sur la table peuplée.
+    const m0003 = files.find((f) => f.startsWith("0003"));
+    expect(m0003).toBeDefined();
+    await apply(client, m0003!);
+
+    // Les contacts pré-existants sont intacts.
+    const c = await client.execute("SELECT id, nom FROM contacts");
+    expect(c.rows).toHaveLength(1);
+    expect(String(c.rows[0].nom)).toBe("Alice");
+
+    // Les nouvelles tables existent et sont utilisables.
+    await client.execute(
+      "INSERT INTO import_jobs (id, user_id, status) VALUES ('j1','u1','pending')",
+    );
+    await client.execute(
+      "INSERT INTO merge_candidates (id, user_id, import_job_id, existing_contact_id, nom) VALUES ('m1','u1','j1','c1','Alice')",
+    );
+    const jobs = await client.execute("SELECT status FROM import_jobs");
+    expect(String(jobs.rows[0].status)).toBe("pending");
+    const cands = await client.execute(
+      "SELECT status FROM merge_candidates",
+    );
+    // DEFAULT 'pending' appliqué.
+    expect(String(cands.rows[0].status)).toBe("pending");
+  });
+});

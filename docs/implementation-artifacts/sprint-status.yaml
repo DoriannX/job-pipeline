@@ -61,8 +61,8 @@ development_status:
   2-1-ajouter-editer-supprimer-un-contact-manuellement: done
   2-2-ajout-rapide-multiple: done
   2-3-galerie-reseau-triee-par-froideur-recherche: done
-  2-4-fiche-contact-timeline: review
-  2-5-import-csv-linkedin-en-backfill-asynchrone: backlog
+  2-4-fiche-contact-timeline: done
+  2-5-import-csv-linkedin-en-backfill-asynchrone: review
   epic-2-retrospective: optional
 
   # ---- Epic 3: Le moat, bout en bout (composer, envoyer, mesurer, historiser) ----

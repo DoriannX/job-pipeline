@@ -20,3 +20,17 @@ export {
   type BulkCreateItem,
   type BulkCreateResult,
 } from "./repositories";
+export {
+  importJobsRepository,
+  mergeCandidatesRepository,
+  processCsvImport,
+  resolveMergeCandidate,
+  type ImportJobsRepository,
+  type MergeCandidatesRepository,
+  type ImportJob,
+  type MergeCandidate,
+  type ImportReport,
+  type ImportProcessDeps,
+  type ResolveMergeDeps,
+  type MergeDecision,
+} from "./import-repositories";

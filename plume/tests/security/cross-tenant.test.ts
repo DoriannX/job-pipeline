@@ -11,7 +11,13 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { contactsRepository, forUserDb } from "@/lib/db";
+import {
+  contactsRepository,
+  forUserDb,
+  importJobsRepository,
+  mergeCandidatesRepository,
+  processCsvImport,
+} from "@/lib/db";
 import type { Clock } from "@/lib/domain/time";
 
 import { makeTestDb, seedUsers, testItems, type TestDb } from "../db/harness";
@@ -172,5 +178,111 @@ describe("invariant n°1 — VRAIE table `contacts` (story 2.1)", () => {
     // A supprime le sien : OK.
     expect(await repoA().remove(aContact.id)).toBe(true);
     expect(await repoA().get(aContact.id)).toBeUndefined();
+  });
+});
+
+describe("invariant n°1 — tables d'IMPORT `import_jobs` / `merge_candidates` (story 2.5)", () => {
+  let db: TestDb;
+  const userA = makeUser({ name: "Alice" });
+  const userB = makeUser({ name: "Bob" });
+
+  // Porte d'import complète (repos câblés) par tenant.
+  const gate = (userId: string) => {
+    const scoped = forUserDb(db, userId, now);
+    const contacts = contactsRepository(scoped);
+    return {
+      contacts,
+      importJobs: importJobsRepository(scoped),
+      mergeCandidates: mergeCandidatesRepository(scoped),
+      listContacts: contacts.list,
+    };
+  };
+
+  beforeEach(async () => {
+    db = await makeTestDb();
+    await seedUsers(db, [userA, userB]);
+  });
+
+  it("import_jobs : un job de A est invisible/illisible pour B", async () => {
+    const jobA = await importJobsRepository(forUserDb(db, userA.id, now)).start(
+      "A.csv",
+    );
+
+    // A lit son job ; B (qui connaît l'id) ne le voit pas.
+    expect(
+      await importJobsRepository(forUserDb(db, userA.id, now)).get(jobA.id),
+    ).toMatchObject({ id: jobA.id, userId: userA.id });
+    expect(
+      await importJobsRepository(forUserDb(db, userB.id, now)).get(jobA.id),
+    ).toBeUndefined();
+  });
+
+  it("import_jobs : B ne peut pas finaliser (update) le job de A", async () => {
+    const jobA = await importJobsRepository(forUserDb(db, userA.id, now)).start(
+      null,
+    );
+
+    const pirated = await importJobsRepository(
+      forUserDb(db, userB.id, now),
+    ).finish(jobA.id, {
+      status: "done",
+      total: 9,
+      created: 9,
+      merged: 0,
+      skipped: 0,
+      reasons: [],
+    });
+    expect(pirated).toBeUndefined();
+
+    // Le job de A est resté 'pending' (intact).
+    const stillPending = await importJobsRepository(
+      forUserDb(db, userA.id, now),
+    ).get(jobA.id);
+    expect(stillPending?.status).toBe("pending");
+  });
+
+  it("merge_candidates : la file de revue de A est invisible pour B", async () => {
+    const g = gate(userA.id);
+    // Crée une collision ambiguë chez A ➜ un candidat 'pending'.
+    await g.contacts.create({
+      nom: "Léa Martin",
+      entreprise: "Acme",
+      handles: { email: "lea@acme.fr" },
+    });
+    const job = await g.importJobs.start(null);
+    await processCsvImport(
+      job.id,
+      { rows: [{ nom: "Léa Martin", entreprise: "Acme" }], skipped: [] },
+      g,
+    );
+
+    // A voit son candidat ; B n'en voit aucun (zéro fuite).
+    expect(await g.mergeCandidates.listPending()).toHaveLength(1);
+    expect(
+      await mergeCandidatesRepository(
+        forUserDb(db, userB.id, now),
+      ).listPending(),
+    ).toHaveLength(0);
+  });
+
+  it("import croisé : A et B importent le MÊME CSV ➜ chacun ses lignes, aucune fuite", async () => {
+    const rows = [
+      { nom: "Léa Martin", entreprise: "Acme", email: "lea@acme.fr" },
+    ];
+    const gA = gate(userA.id);
+    const gB = gate(userB.id);
+
+    const jobA = await gA.importJobs.start(null);
+    const jobB = await gB.importJobs.start(null);
+    await processCsvImport(jobA.id, { rows, skipped: [] }, gA);
+    await processCsvImport(jobB.id, { rows, skipped: [] }, gB);
+
+    const listA = await gA.contacts.list();
+    const listB = await gB.contacts.list();
+    expect(listA).toHaveLength(1);
+    expect(listB).toHaveLength(1);
+    expect(listA[0].userId).toBe(userA.id);
+    expect(listB[0].userId).toBe(userB.id);
+    expect(listA[0].id).not.toBe(listB[0].id);
   });
 });

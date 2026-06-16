@@ -13,6 +13,12 @@ import "server-only";
 // PAS la session ici, pour garder ce module pur vis-à-vis du framework et testable au besoin.
 
 import { getServerDb } from "./client";
+import {
+  importJobsRepository,
+  mergeCandidatesRepository,
+  type ImportJobsRepository,
+  type MergeCandidatesRepository,
+} from "./import-repositories";
 import { contactsRepository, type ContactsRepository } from "./repositories";
 import { scopedDb } from "./scoped";
 import { systemClock } from "../domain/time";
@@ -20,6 +26,8 @@ import { systemClock } from "../domain/time";
 /** Surface de données scopée exposée aux features (un repo par entité). */
 export type UserGate = {
   contacts: ContactsRepository;
+  importJobs: ImportJobsRepository;
+  mergeCandidates: MergeCandidatesRepository;
 };
 
 /**
@@ -36,5 +44,7 @@ export async function forUser(userId: string): Promise<UserGate> {
   });
   return {
     contacts: contactsRepository(scoped),
+    importJobs: importJobsRepository(scoped),
+    mergeCandidates: mergeCandidatesRepository(scoped),
   };
 }
