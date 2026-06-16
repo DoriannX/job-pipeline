@@ -1,10 +1,10 @@
 // Fiche Contact = timeline (story 2.4).
 //
 // Présentation PURE (rendable côté serveur) d'un Contact : identité (Fraunces),
-// froideur (avatar-blob recoloré + ColdTag texte a11y), canaux renseignés, bouton
-// Écrire (placeholder Epic 3), notes douces, et la COQUILLE de timeline narrative
-// (« Votre histoire ») — JAMAIS une grille de données. L'édition/suppression sont
-// déléguées au wrapper client ContactDetailActions (réutilise les server actions 2.1).
+// froideur (avatar-blob recoloré + ColdTag texte a11y), canaux renseignés, notes
+// douces, et la COQUILLE de timeline narrative (« Votre histoire ») — JAMAIS une
+// grille de données. Le bouton Écrire (ouverture du Composeur en flow, story 3.1) et
+// l'édition/suppression sont délégués au wrapper client ContactDetailActions.
 //
 // Aucune couleur hex hors design/ : primitives + tokens uniquement. UI/commentaires FR.
 // Pas d'accès DB ici : la fiche reçoit une vue plate DÉRIVÉE serveur (page.tsx).
@@ -51,24 +51,6 @@ export function ContactDetail({ contact }: ContactDetailProps) {
         </div>
         <ColdTag state={contact.coldness} />
       </header>
-
-      {/* — Bouton Écrire — primitive chunky mauve, DÉSACTIVÉE (ouverture réelle = Epic 3).
-          On garde le libellé clair + un indice « bientôt » pour ne pas mentir sur l'état. */}
-      <div className="flex flex-col items-center gap-1">
-        <button
-          type="button"
-          disabled
-          aria-disabled="true"
-          title="Bientôt : l'écriture assistée arrive à l'étape suivante."
-          className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-accent px-6 py-3 font-body text-button font-bold text-accent-on shadow-[var(--shadow-button-primary)] disabled:opacity-70"
-        >
-          <Icon name="sparkle" size={20} />
-          Écrire
-        </button>
-        <span className="font-body text-label font-bold uppercase tracking-[0.12em] text-ink-hint">
-          Bientôt
-        </span>
-      </div>
 
       {/* — Canaux renseignés — une puce par coordonnée (icône maison + valeur) ; le canal
           PRÉFÉRÉ est mis en avant (langage mauve). Aucune puce si rien n'est renseigné. */}

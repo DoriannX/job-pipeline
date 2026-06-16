@@ -13,7 +13,7 @@
 // canaux se recalculent. Après suppression : le contact n'existe plus → retour /reseau.
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { Icon } from "@/design/icons";
 
@@ -29,8 +29,16 @@ interface ContactDetailActionsProps {
 
 export function ContactDetailActions({ contact }: ContactDetailActionsProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  // Ouvre le Composeur EN FLOW (story 3.1) : on pose `?compose=<id>` SANS quitter la fiche
+  // (même path préservé). Le ComposerSheet, monté une fois dans le layout, lit ce param et
+  // monte la bottom-sheet. C'est le point d'entrée dogfoodable (la File du jour = Epic 4).
+  function ecrire() {
+    router.push(`${pathname}?compose=${contact.id}`, { scroll: false });
+  }
 
   // Valeurs pré-remplies du formulaire d'édition (mêmes champs que la galerie).
   const defaults: ContactFormDefaults = {
@@ -78,6 +86,16 @@ export function ContactDetailActions({ contact }: ContactDetailActionsProps) {
 
   return (
     <>
+      {/* — Écrire — action PRIMAIRE chunky (mauve plein) : ouvre le Composeur en flow. — */}
+      <button
+        type="button"
+        onClick={ecrire}
+        className="inline-flex w-fit items-center gap-2 self-center rounded-button border-[length:--border-width-ink] border-ink bg-accent px-6 py-3 font-body text-button font-bold text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2"
+      >
+        <Icon name="sparkle" size={20} />
+        Écrire
+      </button>
+
       <div className="flex items-center gap-3">
         <button
           type="button"
