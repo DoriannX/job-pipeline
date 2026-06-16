@@ -84,12 +84,28 @@ export async function startImportAction(
   // On re-résout la porte dans la closure pour ne pas capturer un état de requête.
   after(async () => {
     const gate = await forUser(userId);
-    await processCsvImport(job.id, parsed, {
-      contacts: gate.contacts,
-      importJobs: gate.importJobs,
-      mergeCandidates: gate.mergeCandidates,
-      listContacts: gate.contacts.list,
-    });
+    try {
+      await processCsvImport(job.id, parsed, {
+        contacts: gate.contacts,
+        importJobs: gate.importJobs,
+        mergeCandidates: gate.mergeCandidates,
+        listContacts: gate.contacts.list,
+      });
+    } catch {
+      // Échec du traitement post-réponse (ex. erreur Turso transitoire) : on FERME le
+      // job en 'error' — sinon il reste 'pending' éternel et le client poll en boucle.
+      // Le statut 'error' active la bannière d'erreur douce de l'UI (jamais de rouge).
+      await gate.importJobs.finish(job.id, {
+        status: "error",
+        total: parsed.rows.length + parsed.skipped.length,
+        created: 0,
+        merged: 0,
+        skipped: parsed.skipped.length,
+        reasons: [
+          { ligne: 0, raison: "L'import n'a pas pu être terminé. Réessaie." },
+        ],
+      });
+    }
     // Rafraîchit la galerie une fois l'import terminé (nouveaux contacts visibles).
     revalidatePath(RESEAU_PATH);
   });

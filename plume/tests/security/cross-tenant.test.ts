@@ -17,6 +17,7 @@ import {
   importJobsRepository,
   mergeCandidatesRepository,
   processCsvImport,
+  resolveMergeCandidate,
 } from "@/lib/db";
 import type { Clock } from "@/lib/domain/time";
 
@@ -263,6 +264,42 @@ describe("invariant n°1 — tables d'IMPORT `import_jobs` / `merge_candidates` 
         forUserDb(db, userB.id, now),
       ).listPending(),
     ).toHaveLength(0);
+  });
+
+  it("merge_candidates : B ne peut pas RÉSOUDRE le candidat de A (voie d'écriture la plus sensible)", async () => {
+    const gA = gate(userA.id);
+    // Collision ambiguë chez A ➜ un candidat 'pending'.
+    await gA.contacts.create({
+      nom: "Léa Martin",
+      entreprise: "Acme",
+      handles: { email: "lea@acme.fr" },
+    });
+    const job = await gA.importJobs.start(null);
+    await processCsvImport(
+      job.id,
+      { rows: [{ nom: "Léa Martin", entreprise: "Acme" }], skipped: [] },
+      gA,
+    );
+    const [candidate] = await gA.mergeCandidates.listPending();
+    expect(candidate).toBeDefined();
+
+    // B (qui connaîtrait l'id) tente de Fusionner ET de Garder séparés : refusé.
+    const gB = gate(userB.id);
+    const merged = await resolveMergeCandidate(candidate.id, "merge", {
+      contacts: gB.contacts,
+      mergeCandidates: gB.mergeCandidates,
+    });
+    const kept = await resolveMergeCandidate(candidate.id, "keep_separate", {
+      contacts: gB.contacts,
+      mergeCandidates: gB.mergeCandidates,
+    });
+    expect(merged).toBe(false);
+    expect(kept).toBe(false);
+
+    // Le candidat de A reste 'pending' ; B n'a créé aucun contact ; celui de A intact.
+    expect(await gA.mergeCandidates.listPending()).toHaveLength(1);
+    expect(await gB.contacts.list()).toHaveLength(0);
+    expect(await gA.contacts.list()).toHaveLength(1);
   });
 
   it("import croisé : A et B importent le MÊME CSV ➜ chacun ses lignes, aucune fuite", async () => {
