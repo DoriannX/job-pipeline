@@ -35,13 +35,16 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // --- Validation Zod du body (frontière, archi l.290) ------------------------
-// `mode: "generate"` est fixé dès maintenant : « Améliorer » (3.4) réutilisera la même
-// route avec `mode: "improve"` (couture claire, non implémentée ici).
+// `mode` ouvre les DEUX recettes (story 3.4) : `generate` (mise en forme d'une idée) et
+// `improve` (retravail en place d'un texte existant). Le pipeline serveur est IDENTIQUE
+// pour les deux (sanitize, streaming, fallback, tokens) — seule l'instruction du prompt
+// diffère. `idea` porte le texte d'entrée dans les deux cas (idée brute OU message à
+// retravailler) ; défaut `generate` pour rester compatible avec les appelants existants.
 const bodySchema = z.object({
   idea: z.string().trim().min(1, "Idée vide.").max(4000, "Idée trop longue."),
   canal: z.enum(CANAUX),
   tone: z.enum(["rapide", "soigne"]),
-  mode: z.literal("generate"),
+  mode: z.enum(["generate", "improve"]).default("generate"),
 });
 
 const encoder = new TextEncoder();
@@ -88,7 +91,7 @@ export async function POST(request: Request): Promise<Response> {
     // Accès DB indisponible : ton neutre (corpus vide), jamais de 500 brut.
   }
 
-  const { idea, canal, tone } = parsed;
+  const { idea, canal, tone, mode } = parsed;
 
   // 4. Flux NDJSON : on POMPE les deltas du modèle vers le client en direct, puis on
   //    finalise (sanitize + GenerationEvent) dans l'event `done`. Toute erreur devient
@@ -97,7 +100,7 @@ export async function POST(request: Request): Promise<Response> {
     async start(controller) {
       try {
         const result = await generateMessage(
-          { idea, canal, tone, voiceExamples },
+          { idea, canal, tone, voiceExamples, mode },
           (delta) => {
             controller.enqueue(ndjson({ type: "delta", text: delta }));
           },
@@ -109,6 +112,7 @@ export async function POST(request: Request): Promise<Response> {
           idea,
           canal,
           tone,
+          mode,
           modelId: result.modelId,
           voiceExamplesRef,
           tokens: {

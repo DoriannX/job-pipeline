@@ -141,3 +141,60 @@ describe("prompt — contexte contact (suffixe volatil)", () => {
     expect(t).toContain("Camille");
   });
 });
+
+// --- Mode `improve` (story 3.4, FR-8/UX-DR8) -------------------------------
+// Le pipeline serveur est IDENTIQUE à 3.3 : seule l'INSTRUCTION du tour utilisateur
+// change. On verrouille : (1) le préfixe stable (système + few-shot, cachable) est
+// IDENTIQUE entre les deux modes ; (2) le tour utilisateur d'`improve` demande de
+// RETRAVAILLER un texte existant (garde idées/voix, canal-aware), distinct de `generate`.
+
+const userContent = (canal: "linkedin" | "email" | "whatsapp" | "sms", mode?: "generate" | "improve") =>
+  String(
+    (buildPrompt({ ...baseInput, canal, mode }).messages[0] as {
+      content: string;
+    }).content,
+  );
+
+describe("prompt — mode improve (story 3.4)", () => {
+  it("default = generate : sans mode, le tour user demande de METTRE EN FORME une idée brute", () => {
+    const t = userContent("linkedin");
+    expect(t).toMatch(/idée brute/i);
+    expect(t).toMatch(/mettre en forme/i);
+  });
+
+  it("improve : le tour user demande de RETRAVAILLER EN PLACE un texte existant", () => {
+    const t = userContent("linkedin", "improve");
+    expect(t).toMatch(/retravaille/i);
+    expect(t).toMatch(/en place/i);
+    // Garde idées + voix, pas de ton étranger (FR-8, UX-DR8).
+    expect(t).toMatch(/garde/i);
+    expect(t).toMatch(/voix/i);
+    expect(t).toMatch(/aucun ton étranger/i);
+    // C'est bien la consigne d'amélioration, pas celle de génération.
+    expect(t).not.toMatch(/idée brute à mettre en forme/i);
+    // Le texte d'entrée voyage toujours dans le tour utilisateur.
+    expect(t).toContain(baseInput.idea);
+  });
+
+  it("improve reste CANAL-AWARE : la contrainte de longueur du canal est présente (FR-9)", () => {
+    // Même contrainte canal qu'en `generate` : on la vérifie sur deux profils.
+    expect(userContent("sms", "improve")).toMatch(/TRÈS COURT/i);
+    expect(userContent("email", "improve")).toMatch(/STRUCTUR/i);
+  });
+
+  it("le SYSTÈME (préfixe cachable) est IDENTIQUE entre generate et improve", () => {
+    const gen = buildPrompt({ ...baseInput, canal: "linkedin", mode: "generate" });
+    const imp = buildPrompt({ ...baseInput, canal: "linkedin", mode: "improve" });
+    // Mêmes blocs système, même few-shot, même césure de cache : le mode ne touche
+    // JAMAIS au préfixe stable (sinon on casserait le cache et la persona).
+    expect(imp.system).toEqual(gen.system);
+    // Et la voix neutre est bien préservée dans les deux.
+    expect(imp.system.map((b) => b.text).join("\n")).toMatch(/neutre/i);
+  });
+
+  it("le tour utilisateur DIFFÈRE entre generate et improve (instruction observable)", () => {
+    expect(userContent("linkedin", "improve")).not.toBe(
+      userContent("linkedin", "generate"),
+    );
+  });
+});

@@ -15,6 +15,7 @@ import type { Canal } from "@/lib/domain/enums";
 import { PROMPT_VERSION } from "@/lib/prompt.server";
 import type {
   GenerationEvent,
+  GenerationMode,
   Tone,
 } from "@/features/composer/generation";
 
@@ -40,12 +41,14 @@ export function finalizeText(raw: string): string {
 export interface BuildEventInput {
   /** Texte BRUT renvoyé par le modèle (sera sanitizé ici). */
   rawText: string;
-  /** Idée brute saisie par l'utilisateur. */
+  /** Texte d'entrée (idée brute en `generate`, message à retravailler en `improve`). */
   idea: string;
   /** Canal ciblé. */
   canal: Canal;
   /** Registre demandé. */
   tone: Tone;
+  /** Mode de génération (`generate` | `improve`). Défaut `generate` (compat 3.3). */
+  mode?: GenerationMode;
   /** Id EXACT du modèle ayant produit le texte. */
   modelId: string;
   /** Références des exemples de voix injectés (vide tant que le corpus 3.5 est vide). */
@@ -69,6 +72,7 @@ export function buildGenerationEvent(input: BuildEventInput): GenerationEvent {
     rawIntent: input.idea,
     canal: input.canal,
     tone: input.tone,
+    mode: input.mode ?? "generate",
     modelId: input.modelId,
     promptVersion: PROMPT_VERSION,
     sanitizeVersion: SANITIZE_VERSION,

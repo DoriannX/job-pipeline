@@ -21,7 +21,11 @@ import Anthropic from "@anthropic-ai/sdk";
 
 import type { Canal } from "@/lib/domain/enums";
 import type { Tone } from "@/features/composer/generation";
-import { buildPrompt, type PromptContactContext } from "./prompt.server";
+import {
+  buildPrompt,
+  type PromptContactContext,
+  type PromptMode,
+} from "./prompt.server";
 
 /**
  * Erreur applicative typée (archi l.278 : `AppError {code, message, retriable}`).
@@ -53,7 +57,10 @@ const MAX_TOKENS = 1024;
 
 /** Ingrédients d'une génération streaming. */
 export interface GenerateInput {
-  /** Idée brute saisie par l'utilisateur. */
+  /**
+   * Texte d'entrée. `generate` : idée brute à mettre en forme. `improve` : message déjà
+   * écrit à retravailler en place (même champ — le `mode` décide de l'interprétation).
+   */
   idea: string;
   /** Canal ciblé (pilote la longueur). */
   canal: Canal;
@@ -61,6 +68,12 @@ export interface GenerateInput {
   tone: Tone;
   /** Exemples de voix (few-shot). Vide tant que le corpus 3.5 n'existe pas. */
   voiceExamples: string[];
+  /**
+   * Mode de fabrication du prompt (story 3.4). Défaut `generate` (compat 3.3). Le mode
+   * ne change RIEN au pipeline (mêmes modèles, mêmes paramètres, même streaming) : il
+   * n'influe QUE sur l'instruction du tour utilisateur, via `buildPrompt`.
+   */
+  mode?: PromptMode;
   /** Contexte contact volatil (nom). Optionnel. */
   contact?: PromptContactContext;
 }
@@ -118,6 +131,7 @@ export async function generateMessage(
     idea: input.idea,
     canal: input.canal,
     voiceExamples: input.voiceExamples,
+    mode: input.mode,
     contact: input.contact,
   });
 

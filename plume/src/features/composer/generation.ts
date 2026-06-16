@@ -15,6 +15,13 @@ import type { Canal } from "@/lib/domain/enums";
 /** Registre de rédaction (sélecteur Rapide/Soigné) — pilote le choix de modèle. */
 export type Tone = "rapide" | "soigne";
 
+/**
+ * Mode de génération (story 3.4) : `generate` met en forme une idée brute ; `improve`
+ * retravaille en place un texte déjà écrit. Tracé sur l'event pour distinguer, a
+ * posteriori, une génération d'une amélioration (le pipeline serveur est identique).
+ */
+export type GenerationMode = "generate" | "improve";
+
 /** Compteur de tokens d'une génération (borne la marge SaaS, archi l.77). */
 export interface GenerationTokens {
   /** Tokens d'entrée (prompt) facturés — hors cache. */
@@ -40,6 +47,8 @@ export interface GenerationEvent {
   canal: Canal;
   /** Registre demandé — détermine le modèle. */
   tone: Tone;
+  /** Mode de génération (`generate` | `improve`) — quelle recette a produit ce texte. */
+  mode: GenerationMode;
   /** Id EXACT du modèle Claude qui a produit le texte (`claude-haiku-4-5` / `claude-opus-4-8`). */
   modelId: string;
   /** Version du prompt (système + few-shot + contraintes) ayant servi. */

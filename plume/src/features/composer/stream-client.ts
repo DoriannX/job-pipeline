@@ -9,13 +9,20 @@
 // QUE lire le réseau et découper le NDJSON.
 
 import type { Canal } from "@/lib/domain/enums";
-import type { GenerationEvent, Tone } from "./generation";
+import type { GenerationEvent, GenerationMode, Tone } from "./generation";
 
-/** Corps POST attendu par la route (mode `generate` fixé ; `improve` = story 3.4). */
+/**
+ * Corps POST attendu par la route. `mode` choisit la recette (story 3.4) :
+ *   - `generate` : `idea` = idée brute à mettre en forme (story 3.3) ;
+ *   - `improve`  : `idea` = message déjà écrit à retravailler en place.
+ * Défaut `generate` (le serveur applique aussi ce défaut) — l'appel de génération
+ * existant n'a rien à changer.
+ */
 export interface GenerateRequest {
   idea: string;
   canal: Canal;
   tone: Tone;
+  mode?: GenerationMode;
 }
 
 /** Callbacks de pilotage du flux. */
@@ -63,7 +70,9 @@ export async function streamGeneration(
     response = await fetch("/api/composer", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...req, mode: "generate" }),
+      // `mode` vient de `req` (défaut `generate` côté serveur si absent) — on ne le
+      // hardcode plus : Générer envoie `generate`, Améliorer envoie `improve`.
+      body: JSON.stringify({ mode: "generate", ...req }),
       signal,
     });
   } catch {

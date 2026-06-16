@@ -68,4 +68,20 @@ describe("buildGenerationEvent — frontière du moat (AR-8)", () => {
     });
     expect(ev.voiceExamplesRef).toEqual(["msg_1", "msg_2"]);
   });
+
+  it("mode par défaut = generate (compat 3.3)", () => {
+    const ev = buildGenerationEvent(input);
+    expect(ev.mode).toBe("generate");
+  });
+
+  it("mode improve : event cohérent, texte TOUJOURS sanitizé (pipeline identique 3.3)", () => {
+    const ev = buildGenerationEvent({ ...input, mode: "improve" });
+    expect(ev.mode).toBe("improve");
+    // Même pipeline : la sortie passe par sanitize() quel que soit le mode.
+    expect(ev.generatedText).toBe(sanitize(input.rawText));
+    expect(hasTells(ev.generatedText)).toBe(false);
+    // Les champs versionnés restent renseignés à l'identique.
+    expect(ev.promptVersion).toBe(PROMPT_VERSION);
+    expect(ev.sanitizeVersion).toBe(SANITIZE_VERSION);
+  });
 });
