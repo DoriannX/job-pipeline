@@ -54,6 +54,27 @@ export const contactInputSchema = z.object({
 
 export type ContactInput = z.infer<typeof contactInputSchema>;
 
+/**
+ * Schéma d'une entrée d'AJOUT RAPIDE (story 2.2). Frontière de `quickAddAction` :
+ * chaque ligne parsée doit avoir un nom non vide (FR-34) ; l'entreprise est
+ * optionnelle. Même tolérance (trim, vide => undefined) et mêmes bornes douces.
+ */
+export const quickAddEntrySchema = z.object({
+  nom: z
+    .string()
+    .trim()
+    .min(1, "Donne au moins un nom à ce contact.")
+    .max(NOM_MAX, "Ce nom est un peu long."),
+  entreprise: z
+    .string()
+    .trim()
+    .max(NOM_MAX, "Ce nom d'entreprise est un peu long.")
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+});
+
+export type QuickAddEntryInput = z.infer<typeof quickAddEntrySchema>;
+
 /** Forme tolérante des coordonnées (toutes les clés optionnelles). */
 type HandlesShape = {
   linkedin?: string;

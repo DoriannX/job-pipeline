@@ -17,4 +17,6 @@ export {
   type Contact,
   type ContactCreate,
   type ContactUpdate,
+  type BulkCreateItem,
+  type BulkCreateResult,
 } from "./repositories";
