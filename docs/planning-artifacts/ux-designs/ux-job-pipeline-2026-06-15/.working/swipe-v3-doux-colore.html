@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plume · V3 Doux & coloré</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   PLUME — V3 "Doux & coloré"
+   Pastels chauds, vivants mais jamais criards. Le fond est lilas-rosé très
+   doux ; ce sont les avatars et la froideur qui apportent la vraie couleur.
+   Accent prune douce. Ambiance gaie mais tendre, un carnet illustré à soi.
+
+   Hex clés :
+   --bg     #F7EFF4  lilas-rosé pastel (fond)
+   --card   #FFFFFF  carte (blanc pur, ressort sur le pastel)
+   --accent #8C6BB0  prune douce (accent unique, boutons)
+   --ink    #3A3340  encre prune sombre
+
+   Score de froideur (4 teintes, cohérentes app-wide, douces & distinctes) :
+   jamais contacté #B5AEC0 (lavande grisée)
+   frais          #62B89A (menthe)
+   tiède          #EBA94E (miel)
+   froid          #DD7E8E (rose poudré, jamais rouge alarme)
+   ============================================================ */
+:root{
+  --bg:#F7EFF4; --bg2:#F0E6EE; --card:#FFFFFF;
+  --accent:#8C6BB0; --accent-soft:#EFE6F4; --accent-ink:#674C8A;
+  --ink:#3A3340; --muted:#948C9E; --hair:#EBE2EC;
+  --c-jamais:#B5AEC0; --c-frais:#62B89A; --c-tiede:#EBA94E; --c-froid:#DD7E8E;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{
+  font-family:'Inter',-apple-system,system-ui,sans-serif;
+  background:
+    radial-gradient(115% 75% at 18% -6%, #FBEFF6 0%, var(--bg) 50%, var(--bg2) 100%);
+  color:var(--ink); min-height:100%;
+  display:flex; align-items:flex-start; justify-content:center;
+  padding:22px 14px 40px;
+}
+.wrap{width:100%; max-width:430px}
+.rationale{
+  background:var(--card); border:1px solid var(--hair); border-radius:16px;
+  padding:14px 16px; margin-bottom:18px; color:#6c6478; font-size:13.5px; line-height:1.5;
+}
+.rationale b{font-family:'Fraunces',serif; color:var(--ink); font-weight:600}
+.frames{display:flex; flex-wrap:wrap; gap:18px; justify-content:center}
+
+.phone{
+  width:390px; max-width:100%; height:780px; position:relative;
+  background:var(--bg); border-radius:40px; overflow:hidden;
+  border:1px solid var(--hair);
+  box-shadow:0 1px 0 #fff inset, 0 18px 50px -24px rgba(120,90,140,.4);
+}
+.statusbar{
+  position:absolute; top:0; left:0; right:0; height:48px; z-index:20;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:16px 26px 0; font-size:13px; color:var(--muted); font-weight:500;
+}
+.statusbar .dots{display:flex; gap:4px; align-items:center}
+.statusbar .dots i{width:5px;height:5px;border-radius:50%;background:var(--muted);opacity:.5;display:inline-block}
+
+.head{position:absolute; top:46px; left:0; right:0; z-index:10; padding:8px 26px 4px; text-align:center}
+.head .hi{font-size:13px; color:var(--muted); letter-spacing:.2px}
+.head .day{font-family:'Fraunces',serif; font-weight:500; font-size:26px; color:var(--ink); margin:2px 0 0; letter-spacing:-.3px}
+.head .count{margin-top:6px; font-size:12.5px; color:var(--accent-ink); background:var(--accent-soft); display:inline-block; padding:3px 11px; border-radius:999px}
+
+.stage{position:absolute; top:150px; left:0; right:0; bottom:188px; display:flex; align-items:center; justify-content:center}
+.deck{position:relative; width:308px; height:430px}
+
+.card{position:absolute; inset:0; border-radius:28px; background:var(--card); border:1px solid var(--hair); box-shadow:0 16px 40px -22px rgba(120,90,140,.5)}
+.card.back2{ transform:translateY(26px) scale(.90); opacity:.7; z-index:1}
+.card.back1{ transform:translateY(13px) scale(.95); z-index:2}
+.card.top{ z-index:3; padding:26px 24px 22px; display:flex; flex-direction:column}
+
+.hint{position:absolute; color:var(--muted); font-size:18px; opacity:.6; z-index:4; pointer-events:none}
+.hint.left{left:-22px; top:50%; transform:translateY(-50%)}
+.hint.right{right:-22px; top:50%; transform:translateY(-50%)}
+.hint.up{top:-24px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:1px}
+.hint.down{bottom:-24px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:1px}
+.hint .lab{font-size:10px; letter-spacing:.3px; opacity:.85}
+
+.why{align-self:flex-start; font-size:12.5px; font-weight:500; color:var(--accent-ink); background:var(--accent-soft); padding:5px 12px; border-radius:999px; display:inline-flex; align-items:center; gap:6px}
+.why .dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.avatar-wrap{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:6px 0}
+.avatar{width:138px; height:138px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:'Fraunces',serif; font-weight:500; font-size:56px; color:#fff; position:relative}
+.avatar .ring{position:absolute; inset:-7px; border-radius:50%; border:3px solid var(--cold)}
+.cold-badge{position:absolute; right:2px; bottom:2px; width:30px; height:30px; border-radius:50%; background:var(--card); border:2px solid var(--card); display:flex; align-items:center; justify-content:center}
+.cold-badge .pip{width:16px;height:16px;border-radius:50%;background:var(--cold)}
+.identity{text-align:center}
+.identity .name{font-family:'Fraunces',serif; font-weight:600; font-size:27px; letter-spacing:-.3px; color:var(--ink)}
+.identity .ctx{margin-top:5px; font-size:14.5px; color:var(--muted)}
+
+.pager{display:flex; gap:7px; justify-content:center; align-items:center; margin-top:4px}
+.pager i{width:6px;height:6px;border-radius:50%;background:var(--hair);display:inline-block}
+.pager i.on{width:20px;border-radius:99px;background:var(--accent)}
+
+.actions{position:absolute; left:0; right:0; bottom:96px; z-index:12; display:flex; gap:14px; align-items:center; justify-content:center; padding:0 26px}
+.btn{border:none; cursor:pointer; font-family:inherit; font-weight:500; display:flex; align-items:center; justify-content:center; gap:8px}
+.btn-later{width:62px; height:62px; border-radius:50%; background:var(--card); border:1px solid var(--hair); color:var(--muted); font-size:22px; box-shadow:0 8px 20px -12px rgba(120,90,140,.45)}
+.btn-write{flex:1; max-width:230px; height:62px; border-radius:999px; background:var(--accent); color:#fff; font-size:17px; box-shadow:0 12px 24px -10px rgba(140,107,176,.6)}
+.btn-write .arr{font-size:15px; opacity:.9}
+.micro-labels{position:absolute; left:0; right:0; bottom:78px; z-index:12; display:flex; justify-content:center; gap:118px; font-size:10.5px; color:var(--muted)}
+
+.tabs{position:absolute; left:0; right:0; bottom:0; height:74px; z-index:15; background:rgba(255,255,255,.9); border-top:1px solid var(--hair); display:flex; align-items:center; justify-content:space-around; padding-bottom:8px; backdrop-filter:blur(8px)}
+.tab{display:flex; flex-direction:column; align-items:center; gap:3px; color:var(--muted); font-size:11px}
+.tab svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:1.7}
+.tab.active{color:var(--accent)}
+
+.empty{display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; height:100%; padding:0 40px}
+.plume{margin-bottom:22px}
+.empty .et{font-family:'Fraunces',serif; font-weight:500; font-size:24px; color:var(--ink); line-height:1.3}
+.empty .es{margin-top:10px; font-size:14px; color:var(--muted)}
+.framelabel{text-align:center; font-size:12px; color:var(--muted); margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="rationale">
+    <b>V3 · Doux & coloré.</b> La couleur vient des gens, pas du décor. Fond lilas-rosé tout doux,
+    accent prune ; ce sont les avatars et l'anneau de froideur qui font vivre l'écran. Gai et tendre
+    à la fois, comme un carnet qu'on aurait illustré soi-même.
+  </div>
+
+  <div class="frames">
+
+    <!-- ============ FRAME 1 : carte du dessus ============ -->
+    <div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="dots"><i></i><i></i><i></i></span></div>
+      <div class="head">
+        <div class="hi">Bonjour Camille</div>
+        <div class="day">Aujourd'hui</div>
+        <div class="count">3 personnes t'attendent</div>
+      </div>
+
+      <div class="stage">
+        <div class="deck">
+          <div class="card back2"></div>
+          <div class="card back1" style="--cold:var(--c-frais)"></div>
+
+          <div class="card top" style="--cold:var(--c-tiede)">
+            <span class="why"><span class="dot"></span>Relance · 5 j</span>
+            <div class="avatar-wrap">
+              <div class="avatar" style="background:#D98BA6">
+                <span class="ring"></span>
+                LM
+                <span class="cold-badge"><span class="pip"></span></span>
+              </div>
+              <div class="identity">
+                <div class="name">Léa Marchand</div>
+                <div class="ctx">Recruteuse · Doctolib</div>
+              </div>
+            </div>
+            <div class="pager"><i class="on"></i><i></i><i></i></div>
+            <span class="hint left">‹</span>
+            <span class="hint right">›</span>
+            <span class="hint up">↑<span class="lab">écrire</span></span>
+            <span class="hint down"><span class="lab">plus tard</span>↓</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-later" aria-label="Plus tard">↓</button>
+        <button class="btn btn-write">Écrire <span class="arr">↑</span></button>
+      </div>
+      <div class="micro-labels"><span>Plus tard</span><span>Écrire</span></div>
+
+      <nav class="tabs">
+        <div class="tab active">
+          <svg viewBox="0 0 24 24"><path d="M5 11l7-6 7 6v7a1 1 0 0 1-1 1h-4v-5h-4v5H6a1 1 0 0 1-1-1z"/></svg>
+          Aujourd'hui
+        </div>
+        <div class="tab">
+          <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2.3"/><path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><path d="M15 14.5c2.4.2 4 2 4 4.5"/></svg>
+          Réseau
+        </div>
+        <div class="tab">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 4v2M12 18v2M4 12h2M18 12h2M6.5 6.5l1.5 1.5M16 16l1.5 1.5M17.5 6.5L16 8M8 16l-1.5 1.5"/></svg>
+          Réglages
+        </div>
+      </nav>
+    </div>
+    <div class="framelabel">Carte du dessus · feuilleter ‹ › · agir ↑ · plus tard ↓</div>
+    </div>
+
+    <!-- ============ FRAME 2 : état vide ============ -->
+    <div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="dots"><i></i><i></i><i></i></span></div>
+      <div class="head">
+        <div class="hi">Bonjour Camille</div>
+        <div class="day">Aujourd'hui</div>
+      </div>
+
+      <div class="stage">
+        <div class="empty">
+          <div class="plume">
+            <svg width="92" height="92" viewBox="0 0 92 92" fill="none">
+              <circle cx="46" cy="46" r="44" fill="#FFFFFF" stroke="#EBE2EC"/>
+              <path d="M62 30c0 16-10 27-23 31-3 1-5 1-7 1 1-3 2-6 4-9 6-9 16-15 26-23z"
+                    fill="#EFE6F4" stroke="#8C6BB0" stroke-width="1.6" stroke-linejoin="round"/>
+              <path d="M32 62c8-7 18-15 26-26" stroke="#8C6BB0" stroke-width="1.4" stroke-linecap="round"/>
+              <path d="M38 56c3-3 7-6 11-9M36 60c4-4 9-7 14-11" stroke="#DD7E8E" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="et">C'est tout pour aujourd'hui.</div>
+          <div class="es">Trois liens entretenus. Repose ta plume.</div>
+        </div>
+      </div>
+
+      <nav class="tabs">
+        <div class="tab active">
+          <svg viewBox="0 0 24 24"><path d="M5 11l7-6 7 6v7a1 1 0 0 1-1 1h-4v-5h-4v5H6a1 1 0 0 1-1-1z"/></svg>
+          Aujourd'hui
+        </div>
+        <div class="tab">
+          <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2.3"/><path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><path d="M15 14.5c2.4.2 4 2 4 4.5"/></svg>
+          Réseau
+        </div>
+        <div class="tab">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 4v2M12 18v2M4 12h2M18 12h2M6.5 6.5l1.5 1.5M16 16l1.5 1.5M17.5 6.5L16 8M8 16l-1.5 1.5"/></svg>
+          Réglages
+        </div>
+      </nav>
+    </div>
+    <div class="framelabel">État vide · soulagement, pas déprime</div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

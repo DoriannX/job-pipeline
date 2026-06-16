@@ -1,0 +1,105 @@
+# generated: 2026-06-16
+# last_updated: 2026-06-16
+# project: job-pipeline
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: {project-root}/docs/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog -> in-progress: Automatically when first story is created (via create-story)
+#   - in-progress -> done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+#
+# SPRINT MVP SCOPE (per implementation-readiness-report-2026-06-16):
+# - Build order: Epic 1 -> 2 -> 3 -> [Jalon R1 GO/PIVOT] -> 4 -> 5
+# - Epic 6 (push) = OUT OF MVP SPRINT SCOPE. Trigger = 1er user non-founder, pas une date.
+# - Intra-epic order: 3.9 after 3.2/3.3/3.6 ; 4.3 extends 4.1.
+# - Multi-epic FRs (FR-32, FR-14, FR-16) : ne marquer 'done' que pieces completes.
+
+generated: 2026-06-16
+last_updated: 2026-06-16
+project: job-pipeline
+project_key: NOKEY
+tracking_system: file-system
+story_location: "{project-root}/docs/implementation-artifacts"
+
+development_status:
+  # ---- Epic 1: Socle, identite & design-system ----
+  epic-1: backlog
+  1-1-initialiser-le-starter-l-outillage: backlog
+  1-2-poser-le-design-system-foyer-unique: backlog
+  1-3-connexion-google-porte-de-donnees-scopee: backlog
+  1-4-coquille-de-navigation-3-onglets: backlog
+  epic-1-retrospective: optional
+
+  # ---- Epic 2: Mon reseau (Contacts) ----
+  epic-2: backlog
+  2-1-ajouter-editer-supprimer-un-contact-manuellement: backlog
+  2-2-ajout-rapide-multiple: backlog
+  2-3-galerie-reseau-triee-par-froideur-recherche: backlog
+  2-4-fiche-contact-timeline: backlog
+  2-5-import-csv-linkedin-en-backfill-asynchrone: backlog
+  epic-2-retrospective: optional
+
+  # ---- Epic 3: Le moat, bout en bout (composer, envoyer, mesurer, historiser) ----
+  epic-3: backlog
+  3-1-composeur-en-flow-champ-unique-brouillon-immortel: backlog
+  3-2-garantir-zero-tell-d-ia-sanitize: backlog
+  3-3-generer-un-message-dans-la-voix-streaming: backlog
+  3-4-ameliorer-un-message-en-place: backlog
+  3-5-seed-de-voix-optionnel-apprentissage-au-fil-de-l-eau: backlog
+  3-6-marquer-envoye-enregistrer-le-message-instrumenter-le-moat-sm-1: backlog
+  3-7-verrou-read-only-apres-envoye-modifier: backlog
+  3-8-cycle-de-statut-d-un-tap: backlog
+  3-9-evals-figes-de-la-voix-anti-regression: backlog
+  # Jalon R1 GO/PIVOT (porte de decision, PAS une story de dev) : cloture l'Epic 3.
+  # Mesurer SM-1 (Levenshtein normalisee mediane) sur 20-30 vrais messages.
+  # mediane < 20% -> GO (Epics 4-6) ; >= 20% -> PIVOT (rouvrir le mecanisme de Voix).
+  epic-3-retrospective: optional
+
+  # ---- Epic 4: Aujourd'hui & relances zero-fuite (filet in-app) ----
+  epic-4: backlog
+  4-1-file-du-jour-priorisee-ecran-par-defaut: backlog
+  4-2-swipe-deck-action-first-equivalents-tap: backlog
+  4-3-next-action-automatique-relance: backlog
+  4-4-confirmation-de-relance-1-tap-compteur-zero-fuite: backlog
+  epic-4-retrospective: optional
+
+  # ---- Epic 5: PWA, hors-ligne, confidentialite & onboarding ----
+  epic-5: backlog
+  5-1-pwa-installable-service-worker: backlog
+  5-2-resilience-hors-ligne-complete-outbox: backlog
+  5-3-reglages-modele-voix-consommation: backlog
+  5-4-confidentialite-export-suppression-transparence: backlog
+  5-5-onboarding-2-min: backlog
+  epic-5-retrospective: optional
+
+  # ---- Epic 6: Relances push (DIFFERE - hors sprint MVP, declencheur = 1er user non-founder) ----
+  epic-6: backlog
+  6-1-abonnement-web-push-permission-evenement-gagne: backlog
+  6-2-cron-scheduler-envoi-push-best-effort: backlog
+  epic-6-retrospective: optional

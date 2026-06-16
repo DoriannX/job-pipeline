@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>UX Design Validation: Plume</title>
+<style>
+  :root {
+    --bg: #fafaf9;
+    --surface: #ffffff;
+    --border: #e7e5e4;
+    --text: #1c1917;
+    --muted: #78716c;
+
+    --verdict-strong: #16a34a;
+    --verdict-adequate: #65a30d;
+    --verdict-thin: #d97706;
+    --verdict-broken: #dc2626;
+
+    --sev-low: #64748b;
+    --sev-medium: #ca8a04;
+    --sev-high: #ea580c;
+    --sev-critical: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .container { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
+
+  header.report-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .title h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  .title .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  .synthesis {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--muted);
+    border-radius: 8px;
+    padding: 18px 22px;
+    margin-bottom: 24px;
+    font-size: 15.5px;
+  }
+  .synthesis p { margin: 0 0 10px; }
+  .synthesis p:last-child { margin-bottom: 0; }
+
+  .dimension-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+  .dim-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .dim-card .dim-name { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .dim-card .dim-verdict { font-size: 14px; font-weight: 600; }
+
+  section.dimension, section.reviewer-section { margin-bottom: 14px; }
+  section.dimension details, section.reviewer-section details {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  section summary {
+    padding: 14px 20px;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  section summary::-webkit-details-marker { display: none; }
+  section summary::before {
+    content: "▸";
+    display: inline-block;
+    color: var(--muted);
+    transition: transform 0.15s ease;
+  }
+  section details[open] summary::before { transform: rotate(90deg); }
+  section summary h2 {
+    display: inline;
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    flex: 1;
+  }
+  .verdict-pill {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: white;
+  }
+  .verdict-strong { background: var(--verdict-strong); }
+  .verdict-adequate { background: var(--verdict-adequate); }
+  .verdict-thin { background: var(--verdict-thin); }
+  .verdict-broken { background: var(--verdict-broken); }
+
+  .dim-body { padding: 4px 20px 18px; }
+  .dim-judgment { color: var(--text); font-size: 14.5px; }
+  .dim-judgment p { margin: 0 0 10px; }
+
+  .findings-list { padding: 0 20px 4px; }
+  article.finding {
+    padding: 14px 0;
+    border-top: 1px solid var(--border);
+  }
+  article.finding:first-child { border-top: none; }
+  article.finding header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .badge {
+    font-size: 10.5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 1.4;
+  }
+  .badge-sev-low { background: rgba(100, 116, 139, 0.12); color: var(--sev-low); }
+  .badge-sev-medium { background: rgba(202, 138, 4, 0.14); color: var(--sev-medium); }
+  .badge-sev-high { background: rgba(234, 88, 12, 0.14); color: var(--sev-high); }
+  .badge-sev-critical { background: rgba(220, 38, 38, 0.14); color: var(--sev-critical); }
+  .finding-title { margin: 0; font-size: 15px; font-weight: 500; flex: 1; min-width: 200px; }
+  .finding-location { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; color: var(--muted); }
+  .finding-note, .finding-fix { margin-top: 6px; font-size: 14px; }
+  .finding-fix strong { color: var(--muted); font-weight: 500; }
+
+  .reviewer-source {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  .mechanical {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-top: 24px;
+    font-size: 14px;
+  }
+  .mechanical h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .mechanical ul { margin: 0; padding-left: 20px; }
+  .mechanical li { margin-bottom: 4px; color: var(--text); }
+
+  footer.report-footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  footer .meta { display: flex; gap: 24px; flex-wrap: wrap; }
+
+  .sev-summary {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+  .sev-chip {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sev-chip .count { font-size: 15px; }
+  .sev-chip.critical { color: var(--sev-critical); }
+  .sev-chip.high { color: var(--sev-high); }
+  .sev-chip.medium { color: var(--sev-medium); }
+  .sev-chip.low { color: var(--sev-low); }
+</style>
+</head>
+<body>
+  <div class="container">
+
+    <div style="background:#fef2f2;border:2px solid #dc2626;border-radius:8px;padding:12px 16px;margin:16px 0;color:#7f1d1d;font-weight:600;line-height:1.5;">⚠️ OBSOLÈTE — pré-remédiation (décision #31, 2026-06-16). Les findings Critical/High de ce rapport ont été clos par #31 et sont déjà corrigés dans DESIGN.md / EXPERIENCE.md (status: final). Ne pas s'y fier comme contrat courant ; régénérer si besoin.</div>
+
+    <header class="report-header">
+      <div class="title">
+        <h1>Plume — UX Design Validation Report</h1>
+        <div class="subtitle">docs/planning-artifacts/ux-designs/ux-job-pipeline-2026-06-15/</div>
+      </div>
+    </header>
+
+    <div class="synthesis">
+      <p>La paire de spines est <strong>prête à servir de contrat aval</strong> : couverture mécanique quasi totale, tokens complets et résolvants (100 % des cross-refs résolvent), parcours nommés du PRD tous portés par un Key Flow avec climax, et discipline d'héritage propre (noms verbatim, glossaire fidèle, refs <code>EXPERIENCE → DESIGN</code> toutes vertes). Les deux seuls trous structurels à impact aval réel : les mocks <code>.working/</code> ne sont liés inline nulle part (EXPERIENCE.md ne cite que des noms de fichiers en bloc, DESIGN.md n'en cite aucun) et deux cibles de contraste annoncées (accessibilité) sont absentes alors que les combinaisons porteuses existent. Le reste relève du polish. Aucune incohérence bloquante ; les lacunes sont honnêtement déclarées et non fabriquées.</p>
+      <p>La lentille craft <strong>durcit ce tableau d'un cran et fait remonter le seul finding critique du lot</strong> : l'illustration maison — la plume-mascotte et les avatars-blobs, déclarés « l'âme » du produit et antidote au look IA — n'est <strong>pas reproductible depuis la seule spine</strong>. DESIGN la décrit en mots, mais dans les mocks c'est un tracé SVG canonique réutilisé à l'identique sur 5 écrans ; un dev qui lit la spine redessinera une mascotte « clipart gentil » différente à chaque écran et perdra exactement le caractère fait-main visé. Ce critical recoupe et aggrave le <em>high</em> rubrique « aucun mock lié inline » : tant que les mocks restent des références non rattachées, l'asset SVG ne peut pas devenir source de vérité. La craft confirme par ailleurs que les <strong>rejets durs sont remarquablement bien encodés</strong> (ombre molle, dégradé, Inter, emoji, bleu LinkedIn, jaune vif, Mode sans-IA — tous tokens + prose + <code>Don't</code>) ; le risque résiduel n'est jamais dans le négatif banni mais dans le <em>positif difficile</em> non figé : épaisseur de trait et flou=0 non tokenisés, couleur d'erreur laissée « à confirmer » (porte entrouverte au rouge alarme banni).</p>
+    </div>
+
+    <div class="sev-summary">
+      <div class="sev-chip critical"><span class="count">1</span> Critical</div>
+      <div class="sev-chip high"><span class="count">3</span> High</div>
+      <div class="sev-chip medium"><span class="count">9</span> Medium</div>
+      <div class="sev-chip low"><span class="count">17</span> Low</div>
+    </div>
+
+    <div class="dimension-summary">
+      <div class="dim-card">
+        <div class="dim-name">Flow coverage</div>
+        <div class="dim-verdict" style="color: var(--verdict-strong)">strong</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Token completeness</div>
+        <div class="dim-verdict" style="color: var(--verdict-strong)">strong</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Component coverage</div>
+        <div class="dim-verdict" style="color: var(--verdict-strong)">strong</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">State coverage</div>
+        <div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Visual reference coverage</div>
+        <div class="dim-verdict" style="color: var(--verdict-broken)">broken</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Bloat &amp; over-specification</div>
+        <div class="dim-verdict" style="color: var(--verdict-strong)">strong</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Inheritance discipline</div>
+        <div class="dim-verdict" style="color: var(--verdict-strong)">strong</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Form conformance</div>
+        <div class="dim-verdict" style="color: var(--verdict-strong)">strong</div>
+      </div>
+    </div>
+
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>Flow coverage</h2>
+          <span class="verdict-pill verdict-strong">strong</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>UJ-1 (boucle quotidienne), UJ-2 (améliorer un brouillon écrit à la main), UJ-3 (rattrapage zéro-fuite) et l'onboarding cold-start (FR-33) sont couverts. EXPERIENCE.md livre trois Key Flows avec protagoniste nommé (Camille), étapes numérotées, beat <code>[CLIMAX]</code> explicite et chemin d'échec : Flow 1 = UJ-1, Flow 2 = onboarding &lt; 2 min, Flow 3 = UJ-3 zéro-fuite.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">UJ-2 n'a pas son propre Key Flow numéroté</h3>
+              <span class="finding-location">EXPERIENCE.md · Key Flows</span>
+            </header>
+            <div class="finding-note">Le comportement clé (« Améliorer retravaille en place, garde idées et ton », adaptation canal-email) est couvert en Component/State Patterns, mais le seul parcours partant d'un texte tapé à la main n'est jamais déroulé bout en bout. Flow 1 ne le mentionne qu'en passant (étape 7).</div>
+            <div class="finding-fix"><strong>Fix :</strong> ajouter un Flow 4 court dérivé de UJ-2, ou marquer explicitement que UJ-2 est absorbé dans Flow 1 pour qu'un consommateur ne le cherche pas.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>Token completeness</h2>
+          <span class="verdict-pill verdict-strong">strong</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>Tous les tokens du frontmatter DESIGN.md sont définis ; chaque <code>{chemin.token}</code> cité en prose dans les deux fichiers résout vers une clé existante (~115 refs DESIGN + ~28 refs EXPERIENCE, zéro orpheline). Tous les tokens couleur portent un hex. Les <code>{colors.cold.*}</code> correspondent aux valeurs corrigées (#15/#16), pas aux valeurs alarmistes obsolètes de la décision #12.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Aucune cible de contraste chiffrée pour les combinaisons porteuses</h3>
+              <span class="finding-location">DESIGN.md · Colors / EXPERIENCE.md · Accessibility Floor</span>
+            </header>
+            <div class="finding-note">L'Accessibility Floor renvoie le contraste à DESIGN.md, qui annonce des cibles sans les chiffrer. Combinaisons à risque non vérifiées : <code>ink-soft #5F726D</code> et surtout <code>ink-hint #9DB5AD</code> sur <code>surface.app #E9F3EF</code> / <code>surface.card #FBFEFD</code> (probablement &lt; 4.5:1) ; <code>accent-deep #876585</code> sur <code>accent-tint #ECE2EA</code> ; <code>mint-deep #4E8978</code> sur <code>surface.chip #DCEFE9</code>.</div>
+            <div class="finding-fix"><strong>Fix :</strong> ajouter en Colors (ou Components) un ratio cible AA pour ces paires texte-sur-fond, ou les déclarer explicitement « décoratif / non porteur de texte critique ».</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Hex brut <code>pager.dot-idle: '#C7DDD5'</code> hors du bloc colors</h3>
+              <span class="finding-location">DESIGN.md · frontmatter + Components</span>
+            </header>
+            <div class="finding-note">Un hex porteur répété en prose plutôt qu'une couleur nommée du bloc <code>colors</code>.</div>
+            <div class="finding-fix"><strong>Fix :</strong> promouvoir en <code>colors.pager-dot-idle</code> (ou réutiliser <code>line</code> / <code>mint-offset</code>) pour que tous les hex porteurs vivent dans <code>colors</code>.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Tokens <code>colors.cold.*-shade</code> référencés seulement par suffixe générique</h3>
+              <span class="finding-location">DESIGN.md · Colors</span>
+            </header>
+            <div class="finding-note">Les 4 tokens <code>-shade</code> sont définis et utilisés (ombre interne du blob) mais cités en prose seulement par « (<code>-shade</code>) », jamais par chemin individuel. Résout quand même ; traçabilité par token plus faible qu'ailleurs.</div>
+            <div class="finding-fix"><strong>Fix :</strong> aucun requis ; à noter pour le consommateur.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>Component coverage</h2>
+          <span class="verdict-pill verdict-strong">strong</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>Chaque composant nommé a une ligne visuelle dans DESIGN.Components ET une ligne comportementale dans EXPERIENCE.Component Patterns, avec règles réelles (pas de placeholder). Couplé verbatim : card-deck, button-primary/secondary, bouton intelligent Générer↔Améliorer, chip-relance, coldtag, bottom-sheet, field, channel-selector, segmented, token-pill, tabbar, toggle, stepper, pager, group-card, état vide, avatar-blob, feather-mark.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Bloc Consommation sans ligne dédiée en Component Patterns</h3>
+              <span class="finding-location">EXPERIENCE.md · Component Patterns</span>
+            </header>
+            <div class="finding-note">Documenté côté visuel (DESIGN.Components, « deux cartes-stats côte à côte… barre de progression ») mais son comportement vit dispersé dans la section produit « Coût &amp; transparence ».</div>
+            <div class="finding-fix"><strong>Fix :</strong> une ligne en Component Patterns renvoyant à Coût &amp; transparence, ou l'assumer comme contenu de surface (non-composant).</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Bouton + et champ Recherche sans ancre visuelle dédiée</h3>
+              <span class="finding-location">DESIGN.md · Components</span>
+            </header>
+            <div class="finding-note">EXPERIENCE.md liste « Bouton + (icon-button accent) » et « Recherche » comme composants comportementaux ; DESIGN.md ne leur donne aucune ligne visuelle dédiée (icon-button évoqué seulement dans Shapes « ~11 à 16px »).</div>
+            <div class="finding-fix"><strong>Fix :</strong> une ligne Components pour l'icon-button + / la barre de recherche, ou les marquer hérités d'un pattern field/button existant.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>State coverage</h2>
+          <span class="verdict-pill verdict-adequate">adequate</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>State Patterns couvre : ouverture à froid, deck non vide / terminé, premier lancement réseau vide, composeur vide / génération en cours / texte généré / échec-hors-ligne, relance due, confirmation de relance, message après envoyé, tri froideur, import CSV, suppression. Les états non rendus sont listés honnêtement en [Lacunes]. Les trous restants touchent les micro-états d'interaction et un cas-bordure de permission.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Focus / hover / pressed / disabled non traités sur aucune surface</h3>
+              <span class="finding-location">DESIGN.md · [Lacunes] / EXPERIENCE.md · Accessibility Floor</span>
+            </header>
+            <div class="finding-note">Déclaré en lacune, mais trou réel pour un dev : le bouton intelligent passe par un état désactivé pendant « Génération en cours » (champ envoyé à l'API) sans apparence définie ; l'anneau de focus clavier n'a pas d'apparence.</div>
+            <div class="finding-fix"><strong>Fix :</strong> a minima spécifier l'état désactivé du bouton primaire pendant la génération et l'anneau de focus clavier (à éliciter avant dev).</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Permission push refusée sans ligne d'état propre</h3>
+              <span class="finding-location">EXPERIENCE.md · State Patterns</span>
+            </header>
+            <div class="finding-note">La garantie in-app indépendante du push est solide, mais le traitement de l'écran quand l'utilisateur refuse la permission (ré-invite ? silence ?) n'est ni couvert ni listé en lacune côté états (seulement effleuré en [Lacunes] notifications).</div>
+            <div class="finding-fix"><strong>Fix :</strong> ajouter une ligne State Pattern « permission push refusée » renvoyant au comportement zéro-fuite in-app, ou l'expliciter en lacune.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">« Génération en cours » sans indice visuel de chargement</h3>
+              <span class="finding-location">EXPERIENCE.md · State Patterns</span>
+            </header>
+            <div class="finding-note">Correctement déclaré (« traitement de chargement précis non spécifié, voir Lacunes »), mais c'est un état très fréquent (chaque génération) laissé sans indice. Impact aval modéré car honnêtement signalé.</div>
+            <div class="finding-fix"><strong>Fix :</strong> à prioriser dans l'élicitation post-spine.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details open>
+        <summary>
+          <h2>Visual reference coverage</h2>
+          <span class="verdict-pill verdict-broken">broken</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>18 fichiers <code>.working/</code> présents (directions, swipes, index, mocks <code>plume-*</code>). Le problème n'est pas l'absence de mocks mais l'absence de <strong>liaison</strong> : aucun mock n'est rattaché inline à la section qu'il illustre, DESIGN.md — qui porte l'apparence — n'en cite aucun, et 13/18 fichiers sont orphelins dont deux doublons-pièges. C'est le seul verdict cassé du rapport et la cause structurelle qui empêche l'asset illustration de devenir source de vérité (cf. craft critical).</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-high">high</span>
+              <h3 class="finding-title">Aucun mock n'est lié inline à sa section en nommant ce qu'il illustre</h3>
+              <span class="finding-location">EXPERIENCE.md · Information Architecture / DESIGN.md (tout)</span>
+            </header>
+            <div class="finding-note">EXPERIENCE.md liste les 5 mocks validés une seule fois en bloc, sans dire quel mock illustre quelle surface/composant. DESIGN.md ne référence aucun mock alors qu'il porte l'apparence. Un consommateur ne peut pas sauter d'une ligne composant à son rendu.</div>
+            <div class="finding-fix"><strong>Fix :</strong> lier chaque mock inline à sa section en nommant ce qu'il illustre (ex. DESIGN.Components, <code>card-deck</code> → « cf. <code>plume-hero-v2.html</code> » ; bottom-sheet → <code>plume-composeur-v2.html</code>).</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">« spines-win-on-conflict » énoncé deux fois, jamais dans DESIGN.md</h3>
+              <span class="finding-location">EXPERIENCE.md · en-tête + Information Architecture</span>
+            </header>
+            <div class="finding-note">La règle apparaît dans la blockquote d'en-tête et de nouveau en bas d'Information Architecture. La règle de forme veut une affirmation unique ; DESIGN.md, lui, ne l'énonce jamais.</div>
+            <div class="finding-fix"><strong>Fix :</strong> garder l'énoncé une seule fois (idéalement près des refs de mocks) et l'ajouter à DESIGN.md si DESIGN doit aussi référencer des mocks.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Orphelins non signalés et deux doublons-pièges</h3>
+              <span class="finding-location">.working/</span>
+            </header>
+            <div class="finding-note">13 des 18 fichiers ne sont référencés par aucune spine. Surtout deux quasi-doublons des mocks retenus : <code>plume-hero-final.html</code> (vs <code>-v2</code> cité) et <code>plume-composeur-v1.html</code> (vs <code>-v2</code> cité). Le « final » dans le nom est un piège pour qui chercherait « le » mock final.</div>
+            <div class="finding-fix"><strong>Fix :</strong> préciser dans la note de référence que seuls les <code>*-v2</code> / <code>-v1</code> listés font foi et que <code>plume-hero-final.html</code> / <code>plume-composeur-v1.html</code> sont des itérations mortes (ou les déplacer/préfixer).</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>Bloat &amp; over-specification</h2>
+          <span class="verdict-pill verdict-strong">strong</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>DESIGN.md assume une voix éditoriale (légitime) ; EXPERIENCE.md reste sec et tabulaire. Pas de redite des personas/FR/scope au-delà du contexte strict. Les valeurs px apparaissent surtout là où un token n'existe pas encore (échelle relevée des mocks, déclarée non formalisée en [Lacunes]).</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Quelques px en prose là où un token existe déjà</h3>
+              <span class="finding-location">DESIGN.md · Colors / Shapes / Components</span>
+            </header>
+            <div class="finding-note">« ~32px », « ~84px », « ~56px », « ~22px » etc. ; certains doublent un token nommé (<code>card-deck</code> « coins ~32px » alors que <code>components.card-deck.rounded: 32px</code> existe ; bottom-sheet « ~34px » double <code>rounded.sheet</code>). Tolérable comme glose, mais un dev pourrait hésiter.</div>
+            <div class="finding-fix"><strong>Fix :</strong> préférer le token nommé quand il existe ; réserver les px bruts aux dimensions sans token.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Sections produit riches frôlant la redite des sources</h3>
+              <span class="finding-location">EXPERIENCE.md · Le moat voix / Coût &amp; transparence / Modèle de froideur / Relances zéro-fuite</span>
+            </header>
+            <div class="finding-note">Justifiées (portent règles comportementales et glossaire froideur) mais frôlent la redite des sources sur la partie rationale. Un dev lira surtout les règles, pas la narration. Acceptable ; à surveiller si la spine grossit.</div>
+            <div class="finding-fix"><strong>Fix :</strong> aucun requis ; à surveiller.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>Inheritance discipline</h2>
+          <span class="verdict-pill verdict-strong">strong</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>Les 4 chemins <code>sources</code> du frontmatter sont cohérents ; <code>design_ref: ./DESIGN.md</code> correct. Noms d'UJ et d'entités verbatim du glossaire source-extract (Contact, Message, Canal, Statut, Voix, Few-shot, Seed, Tell d'IA, Score de froideur, File du jour, Relance, Zéro-fuite). Noms de composants identiques entre les deux spines. Microcopy attestée reprise fidèlement. Toutes les refs de tokens d'EXPERIENCE.md résolvent vers DESIGN.md.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Protagoniste de microcopy variable (Sofiane vs Léa)</h3>
+              <span class="finding-location">EXPERIENCE.md · Voice and Tone / State Patterns vs Flow 3</span>
+            </header>
+            <div class="finding-note">La confirmation de relance est « Sofiane t'a répondu ? » dans UJ-3/source et Flow 3, mais « Léa t'a répondu ? » dans Voice and Tone et State Patterns. Les deux sont des exemples cohérents (Léa = Flow 1, Sofiane = Flow 3), pas une vraie incohérence de contrat.</div>
+            <div class="finding-fix"><strong>Fix :</strong> aucun requis ; éventuellement neutraliser en « {Prénom} t'a répondu ? » pour signaler le gabarit.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">« Mode sans-IA » volontairement absent (divergence tracée)</h3>
+              <span class="finding-location">EXPERIENCE.md · [Lacunes] / Tensions · décision #30</span>
+            </header>
+            <div class="finding-note">Correctement supprimé des spines (par #18/#19) alors qu'il reste dans le PRD/source (FR-15). La spine a raison (spines-win) et la tension est remontée explicitement. Discipline volontairement divergente et tracée — bon comportement, noté pour qui croiserait FR-15.</div>
+            <div class="finding-fix"><strong>Fix :</strong> aucun requis ; comportement correct.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>Form conformance</h2>
+          <span class="verdict-pill verdict-strong">strong</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>DESIGN.md suit l'ordre canonique exact (Brand &amp; Style → Colors → Typography → Layout &amp; Spacing → Elevation &amp; Depth → Shapes → Components → Do's and Don'ts + [Lacunes] justifiée). EXPERIENCE.md porte les défauts requis et les sections déclenchées pertinentes (Responsive &amp; Platform, Inspiration &amp; Anti-patterns). Les sections inventées (« Le moat voix », « Coût &amp; transparence », « Modèle de froideur », « Relances zéro-fuite ») sont justifiées par le domaine produit.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Sous-bloc « Tensions repérées entre décisions » déborde du rôle de contrat</h3>
+              <span class="finding-location">EXPERIENCE.md · [Lacunes]</span>
+            </header>
+            <div class="finding-note">Utile et honnête, mais c'est un contenu de journal (cf. décision #30) qui déborde un peu du rôle de contrat de la spine.</div>
+            <div class="finding-fix"><strong>Fix :</strong> OK de le garder s'il aide le consommateur aval ; sinon le rapatrier dans <code>.decision-log.md</code> dont il est la copie.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="reviewer-section">
+      <details open>
+        <summary>
+          <h2>Craft fidelity / Anti-AI-look review</h2>
+          <span class="reviewer-source">review-craft.md</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>Lentille adversariale : la spine est-elle assez spécifique pour empêcher un dev de régresser vers le « template IA » ? Verdict : solide sur la discipline systémique — la quasi-totalité des rejets durs (ombre molle, dégradé, Inter, emoji, bleu LinkedIn, listes denses, jaune vif, Mode sans-IA) sont encodés à la fois comme tokens, comme règles prose ET comme <code>Don't</code> opposables. Le risque résiduel n'est pas dans les anti-patterns négatifs (bien bannis) mais dans le <strong>positif difficile</strong> : l'illustration maison, « âme » déclarée, décrite verbalement alors que dans les mocks c'est un tracé SVG précis réutilisé à l'identique. C'est la régression la plus probable. Secondairement, 2-3 garde-fous quantitatifs (épaisseur de trait, flou=0, offset par composant) qui, s'ils dérivent, ramollissent l'ensemble vers le template.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-critical">critical</span>
+              <h3 class="finding-title">L'illustration maison — l'« âme » — n'est PAS reproductible depuis la seule spine</h3>
+              <span class="finding-location">DESIGN.md l.248-250</span>
+            </header>
+            <div class="finding-note">DESIGN décrit la plume-mascotte et les avatars-blobs en mots. Mais dans les mocks c'est un tracé SVG canonique réutilisé à l'identique sur 5 écrans (même path de blob <code>M62 10 C88 10 108 26 …</code>, même géométrie cheveux/yeux/joues/sourire, même path de plume + rachis + barbes + étincelle). Un dev qui lit la spine va redessiner sa propre mascotte → « clipart gentil » différent à chaque écran, exactement le générique anti-âme fui par l'utilisateur. Régression la plus grave et la plus probable. Recoupe le high rubrique « aucun mock lié inline ».</div>
+            <div class="finding-fix"><strong>Fix :</strong> la spine doit référencer les assets SVG canoniques comme source de vérité (les figer dans <code>assets/</code> ou pointer les paths des mocks), pas seulement les décrire ; poser la règle « la plume et le blob sont UN tracé partagé, pas redessiné par écran ». Exiger : trait encre <code>{colors.ink}</code> ~2.4-3px, blob organique non-circulaire, visage = 2 yeux arc + joues teintées + sourire courbe, plume = corps plein + rachis + barbes + étincelle mauve.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-high">high</span>
+              <h3 class="finding-title">« Hard offset net » : l'invariant flou=0 n'est pas un Don't isolé</h3>
+              <span class="finding-location">DESIGN.md l.227</span>
+            </header>
+            <div class="finding-note">D'excellents repères d'offset par composant existent (châssis <code>13px 14px 0 0</code>, bouton <code>0 6px 0 0</code>, sheet <code>0 -7px 0 0</code>). Mais l'invariant le plus important — flou = 0 — vit dans la prose (<code>Npx Npx 0 0</code>) sans être un <code>Don't</code> au même niveau que « zéro ombre molle ». Un dev pressé peut lire « offset » et mettre <code>4px 4px 8px</code> (avec flou).</div>
+            <div class="finding-fix"><strong>Fix :</strong> élever « le 3e paramètre du box-shadow est TOUJOURS 0 (rayon de flou nul) » au rang de règle dure isolée, pas noyée dans le paragraphe.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-high">high</span>
+              <h3 class="finding-title">Épaisseur et couleur de contour non tokenisées</h3>
+              <span class="finding-location">DESIGN.md l.226 / components.*</span>
+            </header>
+            <div class="finding-note">Le « contour plein ~2 à 2.5px encre » est central à l'identité (tous les mocks : <code>2.5px solid var(--trait)</code>, <code>3px</code> sur les blobs SVG). C'est en prose mais pas un token (<code>border.width</code>, <code>border.color</code>) ni dans <code>components.*</code>. Risque : un dev met <code>1px</code> (retour au plat fin générique) ou une couleur de contour grise au lieu d'encre.</div>
+            <div class="finding-fix"><strong>Fix :</strong> ajouter des tokens d'épaisseur de trait (UI ~2.5px, illustration ~3px) et rappeler que le contour est en encre, jamais gris.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Asymétrie / imperfection main encodée de façon molle</h3>
+              <span class="finding-location">DESIGN.md · Do's/Don'ts l.292-303</span>
+            </header>
+            <div class="finding-note">Le rejet de « l'absence de matière » / la « symétrie par défaut » (journal #7) est encodé mollement : le <code>Don't</code> dit « symétrie molle » / « cartes génériques » mais aucune règle positive n'impose l'asymétrie que les mocks portent (cartes <code>rotate(3.2deg)</code> / <code>rotate(-2deg)</code>, plume <code>rotate(-16)</code>, blob jamais centré).</div>
+            <div class="finding-fix"><strong>Fix :</strong> ajouter une règle « légère rotation/désalignement volontaire des éléments illustrés et des cartes empilées ; jamais le centrage parfait par défaut » dans Shapes ou Elevation, avec les valeurs d'inclinaison des mocks comme repère.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Aucune couleur d'erreur — la porte au rouge alarme banni reste entrouverte</h3>
+              <span class="finding-location">DESIGN.md · [Lacunes] l.310 / EXPERIENCE.md l.238</span>
+            </header>
+            <div class="finding-note">« Pas de couleur erreur, à confirmer » est cohérent avec le ton non alarmiste, mais tant que c'est « à confirmer » un dev face à un état d'erreur attrapera spontanément un rouge système = réintroduction frontale du rouge alarme banni.</div>
+            <div class="finding-fix"><strong>Fix :</strong> transformer la lacune en règle provisoire ferme : « en attendant décision, tout signal d'erreur reste dans la palette existante (mauve mesuré / ink-soft), jamais un rouge ad hoc ». Idem dark mode (l.309) — flaguer « ne pas improviser ».</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Densité spatiale / respiration non opposable</h3>
+              <span class="finding-location">DESIGN.md l.216-218</span>
+            </header>
+            <div class="finding-note">Le bloat encodé est surtout textuel/composant. « 2 à 3 zones max par écran » est dit mais le « grand vide poétique / respiration » reste adjectival. Un dev peut respecter « pas de bloat texte » tout en tassant les composants (gouttières serrées) → perte du calme cozy.</div>
+            <div class="finding-fix"><strong>Fix :</strong> poser un plancher de respiration : rendre opposables les marges/gouttières déjà tokenisées à 22-24px (« ne pas descendre sous <code>{spacing.gutter}</code> entre blocs majeurs »).</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Dispositif blob (fill froideur + ombre interne -shade + joues) lié aux tokens seulement verbalement</h3>
+              <span class="finding-location">DESIGN.md · avatar-blob l.250</span>
+            </header>
+            <div class="finding-note">« Froideur via couleur des gens » est bien spécifié (4 tokens + <code>-shade</code>). Mais un dev pourrait colorer le blob et oublier l'ombre interne <code>-shade</code> qui lui donne le volume fait-main (vs aplat plat enfantin).</div>
+            <div class="finding-fix"><strong>Fix :</strong> dans <code>avatar-blob</code>, expliciter « le <code>fill</code> porte la froideur ; l'ombre interne utilise le token <code>-shade</code> correspondant ; joues teintées d'un ton proche » — déjà à moitié dit, à durcir.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Signatures visuelles concrètes mocks↔spine (gap résiduel = asset illustration)</h3>
+              <span class="finding-location">DESIGN.md l.242-252 / EXPERIENCE.md l.78</span>
+            </header>
+            <div class="finding-note">La spine capture fidèlement la structure des 5 surfaces et le système couleur/typo/offset (châssis téléphone, fond app jamais blanc, timeline narrative à puce mauve, note en pointillés — tous captés). Le seul vrai gap mocks↔spine est l'asset illustration (cf. critical).</div>
+            <div class="finding-fix"><strong>Fix :</strong> couvert par le fix du critical ; le reste est cohérent.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Tous les rejets durs principaux sont encodés en Don't opposable</h3>
+              <span class="finding-location">DESIGN.md · Do's/Don'ts l.292-303</span>
+            </header>
+            <div class="finding-note">Ombre molle/flou/dégradé/glassmorphism, Inter/système, emoji/lib d'icônes, bleu LinkedIn, liste dense/CRM, jaune vif/corail/rouge alarme, Mode sans-IA : tous en <code>Don't</code> ET en règle prose. Bien protégé (voix adversariale : rien à reprocher ici).</div>
+            <div class="finding-fix"><strong>Fix :</strong> aucun ; défense robuste à préserver.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">text-shadow de matière sur bouton primaire non mentionné</h3>
+              <span class="finding-location">mocks · button-primary</span>
+            </header>
+            <div class="finding-note"><code>text-shadow:0 1px 0 rgba(0,0,0,.12)</code> dans les 3 mocks de bouton mauve : détail mineur mais un des micro-tells « objet physique » vs « bouton plat ».</div>
+            <div class="finding-fix"><strong>Fix :</strong> note optionnelle dans button-primary.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Mauve déco toléré sur la mascotte non explicité comme exception unique</h3>
+              <span class="finding-location">DESIGN.md l.248 / mocks l.322,367</span>
+            </header>
+            <div class="finding-note">Discipline mauve excellente (liste blanche exhaustive + double interdiction de dispersion). Seul angle mort : l'étincelle/joue mauve sur la mascotte (<code>ellipse fill="#B391AC"</code>) brouille un peu « action seulement » ; autorisée implicitement mais pas désignée comme exception réservée.</div>
+            <div class="finding-fix"><strong>Fix :</strong> préciser que l'exception décorative au mauve est réservée à la mascotte/aux étincelles, pour ne pas ouvrir une brèche « mauve déco » ailleurs.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Patron technique « .float + transform sur &lt;g&gt; séparés » bien préservé</h3>
+              <span class="finding-location">DESIGN.md l.248 / journal #26</span>
+            </header>
+            <div class="finding-note">Le piège d'implémentation réel (sinon la plume saute) est remonté dans DESIGN ET dans le journal. Bonne préservation.</div>
+            <div class="finding-fix"><strong>Fix :</strong> aucun ; à garder.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Tensions de réconciliation tracées en clair</h3>
+              <span class="finding-location">EXPERIENCE.md l.250-254 / journal #30</span>
+            </header>
+            <div class="finding-note">Gmail onboarding hors-MVP, Mode sans-IA résiduel dans le PRD, froideur #12 obsolète : tracées en clair, pas un risque de régression DA, bien signalées.</div>
+            <div class="finding-fix"><strong>Fix :</strong> aucun ; bonne hygiène.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <div class="mechanical">
+      <h3>Mechanical notes</h3>
+      <ul>
+        <li><strong>Cross-refs de tokens :</strong> 100 % résolvent. Aucune ref cassée <code>EXPERIENCE → DESIGN</code>. <code>design_ref</code> et les 4 <code>sources</code> frontmatter pointent vers des chemins cohérents.</li>
+        <li><strong>Hex hors <code>colors</code> :</strong> <code>pager.dot-idle '#C7DDD5'</code> (frontmatter + prose) est le seul hex porteur qui ne vit pas dans le bloc <code>colors</code>.</li>
+        <li><strong>Froideur :</strong> valeurs frontmatter = valeurs corrigées #15/#16 (<code>#C9C2D6 / #8FBCA8 / #CBA7C0 / #A7BCC6</code>), PAS les valeurs alarmistes obsolètes de la décision #12 (<code>#F4B266 / #E08A8A</code>). Cohérent.</li>
+        <li><strong>Noms de composants :</strong> identiques entre les deux spines (vérifié 1:1). Glossaire froideur identique entre EXPERIENCE.Modèle de froideur et DESIGN.Colors.</li>
+        <li><strong>Liens de mocks :</strong> EXPERIENCE.md ne lie pas les fichiers en Markdown, il les cite en texte brut ; DESIGN.md n'en cite aucun. 13/18 fichiers <code>.working/</code> orphelins ; 2 doublons-pièges (<code>plume-hero-final.html</code>, <code>plume-composeur-v1.html</code>).</li>
+        <li><strong>Complétude frontmatter :</strong> DESIGN.md complet (name, description, status, updated, sources, colors, typography, rounded, spacing, components). EXPERIENCE.md complet (name, status, updated, design_ref, sources).</li>
+        <li><strong>Garde-fous quantitatifs non tokenisés (craft) :</strong> épaisseur de trait (~2.5px UI / ~3px illustration), invariant flou=0, et l'asset SVG canonique de l'illustration restent en prose, pas en token/asset opposable.</li>
+      </ul>
+    </div>
+
+    <footer class="report-footer">
+      <div class="meta">
+        <span>DESIGN: ../DESIGN.md</span>
+        <span>EXPERIENCE: ./EXPERIENCE.md</span>
+        <span>Rubric: review-rubric.md</span>
+        <span>Reviewers: review-craft.md</span>
+        <span>Generated: 2026-06-16</span>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

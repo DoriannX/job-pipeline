@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plume · Rendu héros v2 · Froideur recolorée + mauve réparti</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!--
+  Plume — RENDU HÉROS v2 (atelier UX).
+  Deux corrections seulement, le reste à l'identique de plume-hero-final.html :
+
+  ===== CORRECTION 1 — FROIDEUR RECOLORÉE (illustration des blobs INCHANGÉE) =====
+  L'illustration des blobs (trait, visage, style) reste EXACTEMENT la même.
+  Seule la COULEUR de la froideur change : fini le jaune/apricot qui jurait.
+  Nouvelle échelle, douce et harmonieuse, dans la famille menthe/mauve/froid :
+    jamais contacté #C9C2D6 (gris-lavande)
+    frais           #8FBCA8 (menthe-vert doux)
+    tiède           #CBA7C0 (mauve-rosé doux)
+    froid           #A7BCC6 (bleu-gris poussiéreux)
+  Carte Léa Marchand = tiède → blob #CBA7C0 (au lieu de #F4B266).
+  Le visage/trait du blob reste dessiné en encre #2E3F3B.
+
+  ===== CORRECTION 2 — MAUVE MIEUX RÉPARTI (système d'accent cohérent) =====
+  La menthe reste la base dominante. Le mauve #B391AC (offset profond #876585)
+  revient comme fil rouge récurrent et délibéré sur PLUSIEURS points justes :
+    · bouton « Écrire » (aplat mauve plein, texte blanc, hard offset #876585)
+    · onglet actif de la barre du bas (icône + label + soulignement) en mauve
+    · chip « Relance · 5 j » : fond mauve-tint #ECE2EA, encre mauve profond #876585
+    · point actif du pager en mauve
+    · plume-logo de l'en-tête : détail mauve
+    · étincelles de l'état vide en mauve
+    · fin highlight sur l'élément de carte sélectionné
+  Tout le reste (fonds, cartes, encre, contours/offsets des cartes, hints de
+  gestes) reste menthe #7FBEAF / menthe profonde #4E8978 / encre #2E3F3B.
+
+  Profondeur : aplats francs + hard offset net teinté. JAMAIS d'ombre molle.
+  Typo Fraunces (noms/titres) + Quicksand (corps/boutons). SVG inline maison.
+  Aucun emoji, aucune lib d'icônes, aucun réseau hors Google Fonts.
+-->
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500;1,9..144,600&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ---------- Tokens d'atelier (neutres, hors palette app) ---------- */
+  :root{
+    --atelier:#E4EEEA;        /* fond d'atelier doux, non blanc, derrière les téléphones */
+    --atelier-2:#EDF4F1;      /* voile clair pour la texture du fond */
+    --trait:#2E3F3B;          /* trait d'illustration : encre douce, jamais noir */
+
+    /* ===== FROIDEUR RECOLORÉE — douce, désaturée, famille menthe/mauve/froid ===== */
+    --c-jamais:#C9C2D6;       /* gris-lavande */
+    --c-frais:#8FBCA8;        /* menthe-vert doux */
+    --c-tiede:#CBA7C0;        /* mauve-rosé doux (ancien #F4B266) */
+    --c-froid:#A7BCC6;        /* bleu-gris poussiéreux */
+    /* ombres internes des blobs, teintées dans le même ton, juste plus profondes */
+    --c-jamais-sh:#B3AAC6;
+    --c-frais-sh:#73A28C;
+    --c-tiede-sh:#B289A6;
+    --c-froid-sh:#8AA2AE;
+
+    /* ===== PALETTE — base menthe ===== */
+    --pal-bg:#E9F3EF;
+    --pal-card:#FBFEFD;
+    --pal-ink:#2E3F3B;
+    --pal-soft:#5F726D;
+    --pal-brand:#7FBEAF;          /* vert-bleu de base : contours, offsets, edges */
+    --pal-brand-deep:#4E8978;     /* menthe profonde : texte/détails sur menthe */
+    --pal-chip:#DCEFE9;           /* chip neutre */
+    --pal-back2:#DCEBE5;
+    --pal-back1:#EAF4F0;
+    --pal-note:#EDF6F2;
+    --pal-line:#CFE3DB;
+    --pal-hint:#9DB5AD;
+    --pal-pager:#C7DDD5;
+    --pal-later-off:#BFD9D0;      /* offset du ghost menthe, doux */
+    --pal-tab-off:#9DB5AD;
+
+    /* ===== ACCENT — mauve poussiéreux (fil rouge réparti) ===== */
+    --acc:#B391AC;
+    --acc-deep:#876585;
+    --acc-on:#FFFFFF;
+    --acc-chip:#ECE2EA;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased;}
+  body{
+    background:
+      radial-gradient(1200px 520px at 18% -8%, var(--atelier-2), transparent 60%),
+      radial-gradient(1000px 520px at 92% 4%, var(--atelier-2), transparent 60%),
+      var(--atelier);
+    font-family:"Quicksand",system-ui,sans-serif;
+    color:var(--pal-ink);
+    padding:44px 24px 72px;
+    line-height:1.5;
+  }
+  .display{font-family:"Fraunces",serif;}
+
+  /* ---------- En-tête / encart ---------- */
+  .head{max-width:1100px;margin:0 auto 18px;}
+  .brandline{display:flex;align-items:center;gap:15px;margin-bottom:18px;flex-wrap:wrap;}
+  .brandline h1{
+    font-family:"Fraunces",serif;font-weight:600;font-size:38px;
+    letter-spacing:-.01em;color:var(--pal-ink);line-height:1;
+  }
+  .brandline .tag{
+    font-size:12px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--pal-brand-deep);background:var(--pal-chip);border:2px solid var(--pal-brand);
+    padding:5px 12px 4px;border-radius:999px;
+  }
+  /* la pointe mauve dès l'en-tête : un petit badge accent */
+  .brandline .tag.spice{
+    color:#fff;background:var(--acc);border-color:var(--acc-deep);
+  }
+  .choose{
+    background:var(--pal-card);border:2.5px solid var(--trait);border-radius:20px;
+    padding:18px 24px;max-width:1100px;
+    /* hard offset net teinté menthe, JAMAIS flou */
+    box-shadow:8px 8px 0 0 var(--pal-brand);
+  }
+  .choose p{font-size:15.5px;color:var(--pal-soft);}
+  .choose p b{color:var(--pal-ink);font-weight:700;}
+  .choose p .em{color:var(--acc-deep);font-weight:700;}
+  .choose .swatches{display:flex;flex-wrap:wrap;gap:22px;margin-top:16px;align-items:center;}
+  .swgrp{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;color:var(--pal-brand-deep);}
+  .swgrp.acc{color:var(--acc-deep);}
+  .swgrp .chiplets{display:flex;gap:0;}
+  .swgrp .chiplets i{
+    width:22px;height:22px;display:block;border:1.5px solid var(--trait);
+    border-right-width:0;
+  }
+  .swgrp .chiplets i:first-child{border-radius:6px 0 0 6px;}
+  .swgrp .chiplets i:last-child{border-radius:0 6px 6px 0;border-right-width:1.5px;}
+
+  /* ---------- Scène : deux téléphones EN GRAND ---------- */
+  .scene{
+    display:flex;flex-wrap:wrap;gap:64px;justify-content:center;
+    margin:54px auto 58px;max-width:1100px;
+  }
+  .phone-wrap{display:flex;flex-direction:column;align-items:center;gap:15px;}
+  .phone-label{
+    font-family:"Fraunces",serif;font-style:italic;font-weight:500;
+    font-size:19px;color:var(--pal-brand-deep);
+  }
+  .phone-label .acc{color:var(--acc-deep);font-style:normal;font-weight:600;}
+
+  /* ---------- Châssis téléphone (large ~420px) ---------- */
+  .phone{
+    width:420px;max-width:94vw;border-radius:50px;
+    background:var(--trait);padding:12px;
+    /* hard offset net teinté, jamais flou */
+    box-shadow:13px 14px 0 0 #CADFD8;
+  }
+  .screen{
+    position:relative;width:100%;height:818px;border-radius:40px;overflow:hidden;
+    background:var(--pal-bg);
+  }
+  .notch{
+    position:absolute;top:12px;left:50%;transform:translateX(-50%);
+    width:128px;height:28px;border-radius:999px;background:var(--trait);z-index:40;
+  }
+
+  /* ---------- Topbar app ---------- */
+  .topbar{
+    position:absolute;top:0;left:0;right:0;height:80px;z-index:20;
+    display:flex;align-items:flex-end;justify-content:space-between;
+    padding:0 24px 12px;
+  }
+  .topbar .greet{display:flex;flex-direction:column;}
+  .topbar .greet .day{font-size:12.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--pal-brand-deep);}
+  .topbar .greet .who{font-family:"Fraunces",serif;font-weight:600;font-size:22px;color:var(--pal-ink);line-height:1.05;}
+  .topbar .mark{width:37px;height:37px;}
+
+  /* ---------- Deck Tinder ---------- */
+  .deck{position:absolute;top:100px;left:0;right:0;display:flex;justify-content:center;}
+  .deck-stage{position:relative;width:336px;height:502px;}
+  .card{
+    position:absolute;left:0;right:0;border-radius:32px;background:var(--pal-card);
+    border:2.5px solid var(--pal-brand);
+  }
+  .card.back2{top:26px;left:22px;right:22px;height:464px;background:var(--pal-back2);transform:rotate(3.2deg);}
+  .card.back1{top:15px;left:12px;right:12px;height:478px;background:var(--pal-back1);transform:rotate(-2deg);}
+  .card.front{top:0;height:502px;z-index:5;display:flex;flex-direction:column;overflow:hidden;border-color:var(--trait);}
+  /* fin highlight mauve sur la carte SÉLECTIONNÉE (celle qu'on s'apprête à écrire) */
+  .card.front::before{
+    content:"";position:absolute;inset:0;border-radius:30px;pointer-events:none;
+    border:2px solid var(--acc);opacity:.30;margin:3px;
+  }
+
+  .card .chip-row{display:flex;justify-content:space-between;align-items:center;padding:19px 22px 0;position:relative;z-index:2;}
+  /* chip « Relance » — désormais en MAUVE-TINT (fil rouge d'accent) */
+  .chip{
+    display:inline-flex;align-items:center;gap:7px;
+    font-size:13.5px;font-weight:700;color:var(--acc-deep);
+    background:var(--acc-chip);border:2px solid var(--acc);border-radius:999px;
+    padding:6px 14px 5px;
+  }
+  /* le point reprend la FROIDEUR (tiède recoloré) — la couleur vient des gens */
+  .chip .dot{width:9px;height:9px;border-radius:50%;background:var(--c-tiede);border:1.5px solid var(--c-tiede-sh);}
+  .coldtag{
+    font-size:12.5px;font-weight:600;color:var(--pal-soft);
+    display:inline-flex;align-items:center;gap:6px;
+  }
+  .coldtag .sw{width:11px;height:11px;border-radius:3px;border:1.5px solid var(--trait);background:var(--c-tiede);}
+
+  .card .avatar{display:flex;justify-content:center;margin:16px 0 6px;position:relative;z-index:2;}
+  .card .id{padding:2px 26px 0;text-align:center;position:relative;z-index:2;}
+  .card .id .name{font-family:"Fraunces",serif;font-weight:600;font-size:32px;color:var(--pal-ink);line-height:1.04;}
+  .card .id .role{font-size:15.5px;font-weight:600;color:var(--pal-brand-deep);margin-top:4px;}
+  .card .id .org{font-size:14.5px;font-weight:500;color:var(--pal-soft);margin-top:1px;}
+  .card .note{
+    margin:17px 24px 0;padding:14px 16px;border-radius:17px;position:relative;z-index:2;
+    background:var(--pal-note);border:2px dashed var(--pal-line);
+    font-size:14.5px;color:var(--pal-soft);line-height:1.45;
+  }
+  .card .note .q{font-family:"Fraunces",serif;font-style:italic;color:var(--pal-ink);}
+
+  .hints{margin-top:auto;padding:0 22px 18px;display:flex;justify-content:space-between;align-items:center;position:relative;z-index:2;}
+  .hint{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--pal-hint);}
+  .hint svg{display:block;}
+
+  /* pager — point actif en MAUVE (fil rouge d'accent) */
+  .pager{
+    position:absolute;top:614px;left:0;right:0;display:flex;justify-content:center;
+    align-items:center;gap:8px;z-index:8;
+  }
+  .pager .p{width:7px;height:7px;border-radius:50%;background:var(--pal-pager);}
+  .pager .p.on{width:24px;border-radius:999px;background:var(--acc);}
+
+  /* ---------- Boutons chunky ---------- */
+  .actions{
+    position:absolute;left:0;right:0;bottom:104px;padding:0 24px;z-index:15;
+    display:flex;gap:14px;align-items:stretch;
+  }
+  .btn{
+    border:2.5px solid var(--trait);border-radius:22px;
+    font-family:"Quicksand",sans-serif;font-weight:700;cursor:default;
+    display:flex;align-items:center;justify-content:center;gap:9px;
+  }
+  /* PRINCIPAL « Écrire » — APLAT PLEIN MAUVE, texte blanc, hard offset profond mauve */
+  .btn-write{
+    flex:1.7;background:var(--acc);color:var(--acc-on);font-size:20px;padding:18px 0;
+    box-shadow:0 6px 0 0 var(--acc-deep);
+  }
+  .btn-write .lbl{text-shadow:0 1px 0 rgba(0,0,0,.12);}
+  /* SECONDAIRE « Plus tard » — ghost / contour menthe, repousse sans culpabiliser */
+  .btn-later{
+    flex:1;background:transparent;color:var(--pal-brand-deep);font-size:15.5px;padding:18px 0;
+    border-color:var(--pal-brand);box-shadow:0 6px 0 0 var(--pal-later-off);
+  }
+
+  /* ---------- Tab bar ---------- */
+  .tabs{
+    position:absolute;left:0;right:0;bottom:0;height:86px;z-index:18;
+    background:var(--pal-card);border-top:2.5px solid var(--trait);
+    display:flex;align-items:center;justify-content:space-around;padding-bottom:10px;
+  }
+  .tab{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11.5px;font-weight:600;color:var(--pal-tab-off);padding-top:6px;}
+  /* onglet actif : label MAUVE (fil rouge d'accent) */
+  .tab.on{color:var(--acc-deep);}
+  .tab .pill{padding:5px 15px;border-radius:999px;}
+  /* pastille de l'onglet actif : mauve-tint pour accompagner */
+  .tab.on .pill{background:var(--acc-chip);}
+  /* indicateur d'onglet actif — soulignement MAUVE */
+  .tab.on::after{
+    content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);
+    width:26px;height:4px;border-radius:999px;background:var(--acc);
+  }
+
+  /* ---------- État vide ---------- */
+  .empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;}
+  .empty .sky{flex:1;display:flex;align-items:center;justify-content:center;width:100%;}
+  .empty .copy{text-align:center;padding:0 44px 10px;}
+  .empty .copy h2{font-family:"Fraunces",serif;font-weight:600;font-size:29px;color:var(--pal-ink);line-height:1.12;}
+  .empty .copy p{font-size:15.5px;color:var(--pal-soft);margin-top:12px;line-height:1.5;}
+  .empty .copy .meta{font-size:13.5px;font-weight:600;color:var(--pal-brand-deep);margin-top:20px;display:inline-flex;align-items:center;gap:7px;}
+
+  .float{animation:float 5.5s ease-in-out infinite;}
+  @keyframes float{0%,100%{transform:translateY(0) rotate(-3deg);}50%{transform:translateY(-13px) rotate(2deg);}}
+  .drift1{animation:drift 7s ease-in-out infinite;}
+  .drift2{animation:drift 9s ease-in-out infinite reverse;}
+  @keyframes drift{0%,100%{transform:translateY(0);}50%{transform:translateY(-9px);}}
+  .twinkle{animation:twk 3.4s ease-in-out infinite;transform-origin:center;}
+  .twinkle.b{animation-duration:4.6s;animation-delay:.8s;}
+  .twinkle.c{animation-duration:4s;animation-delay:1.6s;}
+  @keyframes twk{0%,100%{opacity:.35;transform:scale(.78);}50%{opacity:1;transform:scale(1.08);}}
+
+  /* ---------- Bande de validation « froideur recolorée » ---------- */
+  .coldband{
+    max-width:1100px;margin:8px auto 0;
+    background:var(--pal-card);border:2.5px solid var(--trait);border-radius:20px;
+    padding:20px 24px 24px;
+    box-shadow:8px 8px 0 0 var(--acc);   /* hard offset mauve, net — clin d'œil au fil rouge */
+  }
+  .coldband .ttl{
+    font-family:"Fraunces",serif;font-weight:600;font-size:20px;color:var(--pal-ink);
+    display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  }
+  .coldband .ttl small{font-family:"Quicksand",sans-serif;font-weight:600;font-size:13.5px;color:var(--pal-soft);}
+  .coldband .row{display:flex;flex-wrap:wrap;gap:30px;margin-top:18px;justify-content:flex-start;}
+  .coldcell{display:flex;flex-direction:column;align-items:center;gap:9px;width:150px;}
+  .coldcell .lbl{font-size:13.5px;font-weight:700;color:var(--pal-brand-deep);}
+  .coldcell .hex{font-size:11.5px;font-weight:600;letter-spacing:.04em;color:var(--pal-soft);font-family:"Quicksand",sans-serif;}
+
+  .foot{max-width:1100px;margin:34px auto 0;font-size:13px;color:#7D938C;text-align:center;}
+  .foot .acc{color:var(--acc-deep);font-weight:600;}
+
+  @media (max-width:960px){
+    .scene{gap:44px;}
+  }
+</style>
+</head>
+<body>
+
+<!-- ================= EN-TÊTE + ENCART ================= -->
+<header class="head">
+  <div class="brandline">
+    <svg width="42" height="42" viewBox="0 0 48 48" aria-hidden="true">
+      <g transform="rotate(-16 24 24)">
+        <path d="M30 7 C18 11 11 24 11 36 C20 33 26 36 32 30 C29 30 26 31 23 32 C28 27 33 21 34 12 C32 16 29 19 26 22 C30 17 31 12 30 7 Z"
+              fill="#7FBEAF" stroke="#2E3F3B" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M27 12 C23 18 19 27 16 34" fill="none" stroke="#2E3F3B" stroke-width="1.6" stroke-linecap="round"/>
+        <line x1="11" y1="36" x2="6" y2="43" stroke="#2E3F3B" stroke-width="2.2" stroke-linecap="round"/>
+        <!-- détail mauve sur la plume-logo de l'en-tête -->
+        <path d="M37 9 l1.1 3 l3 1.1 l-3 1.1 l-1.1 3 l-1.1 -3 l-3 -1.1 l3 -1.1 z" fill="#B391AC"/>
+      </g>
+    </svg>
+    <h1>Plume</h1>
+    <span class="tag">Rendu héros v2</span>
+    <span class="tag spice">Froideur recolorée + mauve réparti</span>
+  </div>
+  <div class="choose">
+    <p><b>Plume — froideur recolorée + mauve réparti.</b> Les blobs gardent leur illustration ; seule leur couleur de froideur change pour des tons doux dans la famille menthe/mauve/froid (fini le jaune vif). Le <span class="em">mauve poussiéreux</span> devient un fil rouge : bouton « Écrire », onglet actif, chip « Relance », point du pager, plume-logo et étincelles. La menthe reste la base dominante.</p>
+    <div class="swatches">
+      <span class="swgrp">Base menthe d'eau
+        <span class="chiplets"><i style="background:#E9F3EF"></i><i style="background:#FBFEFD"></i><i style="background:#7FBEAF"></i><i style="background:#DCEFE9"></i><i style="background:#2E3F3B"></i></span>
+      </span>
+      <span class="swgrp acc">Accent mauve poussiéreux
+        <span class="chiplets"><i style="background:#B391AC"></i><i style="background:#876585"></i><i style="background:#ECE2EA"></i></span>
+      </span>
+      <span class="swgrp">Froideur recolorée
+        <span class="chiplets"><i style="background:#C9C2D6"></i><i style="background:#8FBCA8"></i><i style="background:#CBA7C0"></i><i style="background:#A7BCC6"></i></span>
+      </span>
+    </div>
+  </div>
+</header>
+
+<!-- ================= LES DEUX TÉLÉPHONES ================= -->
+<section class="scene">
+
+  <!-- ---------- TÉLÉPHONE 1 : AUJOURD'HUI ---------- -->
+  <div class="phone-wrap">
+    <span class="phone-label">Aujourd'hui</span>
+    <div class="phone">
+      <div class="screen">
+        <div class="notch"></div>
+
+        <!-- topbar -->
+        <div class="topbar">
+          <div class="greet">
+            <span class="day">Lundi · 15 juin</span>
+            <span class="who">Salut Camille</span>
+          </div>
+          <svg class="mark" viewBox="0 0 48 48" aria-hidden="true">
+            <g transform="rotate(-16 24 24)">
+              <path d="M30 7 C18 11 11 24 11 36 C20 33 26 36 32 30 C29 30 26 31 23 32 C28 27 33 21 34 12 C32 16 29 19 26 22 C30 17 31 12 30 7 Z"
+                    fill="#7FBEAF" stroke="#2E3F3B" stroke-width="2" stroke-linejoin="round"/>
+              <line x1="11" y1="36" x2="6" y2="43" stroke="#2E3F3B" stroke-width="2.2" stroke-linecap="round"/>
+              <!-- détail mauve sur la plume-logo -->
+              <path d="M37 9 l1 2.6 l2.6 1 l-2.6 1 l-1 2.6 l-1 -2.6 l-2.6 -1 l2.6 -1 z" fill="#B391AC"/>
+            </g>
+          </svg>
+        </div>
+
+        <!-- deck -->
+        <div class="deck">
+          <div class="deck-stage">
+            <div class="card back2"></div>
+            <div class="card back1"></div>
+
+            <div class="card front">
+              <div class="chip-row">
+                <span class="chip"><span class="dot"></span>Relance · 5 j</span>
+                <span class="coldtag"><span class="sw"></span>Tiède</span>
+              </div>
+
+              <!-- avatar illustré : MÊME blob, MÊME trait, recoloré en tiède mauve-rosé #CBA7C0 -->
+              <div class="avatar">
+                <svg width="134" height="134" viewBox="0 0 124 124" aria-hidden="true">
+                  <path d="M62 10
+                           C88 10 108 26 110 52
+                           C112 78 96 104 66 110
+                           C40 115 16 98 12 70
+                           C8 44 24 18 50 12
+                           C54 11 58 10 62 10 Z"
+                        fill="#CBA7C0" stroke="#2E3F3B" stroke-width="3" stroke-linejoin="round"/>
+                  <path d="M30 78 C26 64 30 50 42 44 C36 58 36 70 44 82 C40 84 34 83 30 78 Z" fill="#B289A6"/>
+                  <path d="M28 44 C36 24 60 18 80 28 C92 34 96 46 94 56
+                           C88 44 78 38 66 40 C70 34 66 30 60 31
+                           C56 38 48 40 42 38 C44 46 38 50 32 52
+                           C30 49 28 47 28 44 Z"
+                        fill="#5A3D2A" stroke="#2E3F3B" stroke-width="2.4" stroke-linejoin="round"/>
+                  <path d="M44 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+                  <path d="M70 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+                  <ellipse cx="42" cy="80" rx="6" ry="4" fill="#B884A8" opacity=".7"/>
+                  <ellipse cx="84" cy="80" rx="6" ry="4" fill="#B884A8" opacity=".7"/>
+                  <path d="M54 84 q9 9 18 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+                  <text x="100" y="30" font-family="Fraunces,serif" font-size="17" font-weight="600" fill="#7A567C">L</text>
+                </svg>
+              </div>
+
+              <div class="id">
+                <div class="name">Léa Marchand</div>
+                <div class="role">Recruteuse</div>
+                <div class="org">Doctolib</div>
+              </div>
+
+              <div class="note">
+                Vous aviez parlé du poste back-end. <span class="q">« Un petit mot pour reprendre le fil ? »</span>
+              </div>
+
+              <!-- hints de gestes : ↑ écrire / ‹ › feuilleter / ↓ plus tard -->
+              <div class="hints">
+                <span class="hint">
+                  <svg width="15" height="15" viewBox="0 0 24 24"><path d="M8 14 L12 9 L16 14" fill="none" stroke="#9DB5AD" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  écrire
+                </span>
+                <span class="hint">
+                  <svg width="34" height="14" viewBox="0 0 48 24"><path d="M12 12 L6 12 M9 9 L6 12 L9 15" fill="none" stroke="#9DB5AD" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M36 12 L42 12 M39 9 L42 12 L39 15" fill="none" stroke="#9DB5AD" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  feuilleter
+                </span>
+                <span class="hint">
+                  <svg width="15" height="15" viewBox="0 0 24 24"><path d="M8 10 L12 15 L16 10" fill="none" stroke="#9DB5AD" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  plus tard
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- pager : point actif MAUVE -->
+        <div class="pager">
+          <span class="p on"></span>
+          <span class="p"></span>
+          <span class="p"></span>
+          <span class="p"></span>
+        </div>
+
+        <!-- boutons chunky : Écrire mauve · Plus tard ghost menthe -->
+        <div class="actions">
+          <div class="btn btn-write">
+            <svg width="23" height="23" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20 L5 16 L16 5 L19 8 L8 19 Z" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/><path d="M14 7 L17 10" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>
+            <span class="lbl">Écrire</span>
+          </div>
+          <div class="btn btn-later">
+            <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="#4E8978" stroke-width="2.2"/><path d="M12 8 L12 12 L15 14" fill="none" stroke="#4E8978" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Plus tard
+          </div>
+        </div>
+
+        <!-- tab bar : Aujourd'hui actif, label + pastille + soulignement MAUVE -->
+        <div class="tabs">
+          <div class="tab on">
+            <span class="pill">
+              <svg width="25" height="25" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3" fill="none" stroke="#876585" stroke-width="2.1"/><path d="M4 9 L20 9" stroke="#876585" stroke-width="2.1"/><path d="M8 3 L8 7 M16 3 L16 7" stroke="#876585" stroke-width="2.1" stroke-linecap="round"/><circle cx="12" cy="14.5" r="2" fill="#B391AC"/></svg>
+            </span>
+            Aujourd'hui
+          </div>
+          <div class="tab">
+            <span class="pill">
+              <svg width="25" height="25" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="none" stroke="#9DB5AD" stroke-width="2.1"/><circle cx="17" cy="10" r="2.4" fill="none" stroke="#9DB5AD" stroke-width="2.1"/><path d="M3 19 C3 14 13 14 13 19" fill="none" stroke="#9DB5AD" stroke-width="2.1" stroke-linecap="round"/><path d="M14 18 C14 15 21 15 21 18" fill="none" stroke="#9DB5AD" stroke-width="2.1" stroke-linecap="round"/></svg>
+            </span>
+            Réseau
+          </div>
+          <div class="tab">
+            <span class="pill">
+              <svg width="25" height="25" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="none" stroke="#9DB5AD" stroke-width="2.1"/><path d="M12 3 L12 6 M12 18 L12 21 M3 12 L6 12 M18 12 L21 12 M5.6 5.6 L7.7 7.7 M16.3 16.3 L18.4 18.4 M18.4 5.6 L16.3 7.7 M7.7 16.3 L5.6 18.4" stroke="#9DB5AD" stroke-width="2.1" stroke-linecap="round"/></svg>
+            </span>
+            Réglages
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- TÉLÉPHONE 2 : ÉTAT VIDE ---------- -->
+  <div class="phone-wrap">
+    <span class="phone-label">C'est tout pour aujourd'hui</span>
+    <div class="phone">
+      <div class="screen">
+        <div class="notch"></div>
+
+        <div class="topbar">
+          <div class="greet">
+            <span class="day">Lundi · 15 juin</span>
+            <span class="who">Salut Camille</span>
+          </div>
+          <svg class="mark" viewBox="0 0 48 48" aria-hidden="true">
+            <g transform="rotate(-16 24 24)">
+              <path d="M30 7 C18 11 11 24 11 36 C20 33 26 36 32 30 C29 30 26 31 23 32 C28 27 33 21 34 12 C32 16 29 19 26 22 C30 17 31 12 30 7 Z"
+                    fill="#7FBEAF" stroke="#2E3F3B" stroke-width="2" stroke-linejoin="round"/>
+              <line x1="11" y1="36" x2="6" y2="43" stroke="#2E3F3B" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M37 9 l1 2.6 l2.6 1 l-2.6 1 l-1 2.6 l-1 -2.6 l-2.6 -1 l2.6 -1 z" fill="#B391AC"/>
+            </g>
+          </svg>
+        </div>
+
+        <div class="empty">
+          <div class="sky">
+            <svg width="330" height="470" viewBox="0 0 300 430" aria-hidden="true">
+              <!-- petits nuages plats qui dérivent -->
+              <g class="drift1"><path d="M40 96 C40 86 54 84 60 88 C66 80 84 82 84 94 C92 92 96 102 88 106 L48 106 C38 106 36 99 40 96 Z" fill="#FFFFFF" opacity=".75"/></g>
+              <g class="drift2"><path d="M196 150 C196 142 208 140 213 144 C218 137 233 139 233 149 C240 147 244 156 237 159 L203 159 C194 159 192 153 196 150 Z" fill="#FFFFFF" opacity=".65"/></g>
+
+              <!-- ÉTINCELLES MAUVES — micro-délice, fil rouge d'accent -->
+              <g class="twinkle"><path d="M70 200 l2.4 6.6 l6.6 2.4 l-6.6 2.4 l-2.4 6.6 l-2.4 -6.6 l-6.6 -2.4 l6.6 -2.4 z" fill="#B391AC"/></g>
+              <g class="twinkle b"><path d="M236 232 l1.8 5 l5 1.8 l-5 1.8 l-1.8 5 l-1.8 -5 l-5 -1.8 l5 -1.8 z" fill="#B391AC"/></g>
+              <g class="twinkle c"><path d="M205 92 l1.4 4 l4 1.4 l-4 1.4 l-1.4 4 l-1.4 -4 l-4 -1.4 l4 -1.4 z" fill="#876585"/></g>
+              <circle cx="58" cy="270" r="2.6" fill="#B391AC" opacity=".65"/>
+              <circle cx="244" cy="120" r="2.4" fill="#7FBEAF" opacity=".6"/>
+              <circle cx="96" cy="150" r="2" fill="#876585" opacity=".5"/>
+
+              <!-- trajectoire de vol pointillée -->
+              <path d="M210 60 C150 110 230 180 150 240" fill="none" stroke="#BBD7CD" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="1 11"/>
+
+              <!-- LA PLUME-PERSONNAGE qui plane, en grand -->
+              <g class="float" transform="translate(150 240)">
+                <g transform="rotate(-14)">
+                  <!-- corps de la plume, menthe plein -->
+                  <path d="M44 -76 C8 -64 -14 -24 -14 14 C16 4 36 12 54 -8
+                           C45 -8 36 -5 27 -2
+                           C44 -19 60 -40 63 -68
+                           C57 -56 48 -47 39 -38
+                           C51 -53 54 -64 44 -76 Z"
+                        fill="#7FBEAF" stroke="#2E3F3B" stroke-width="3" stroke-linejoin="round"/>
+                  <!-- rachis -->
+                  <path d="M38 -64 C24 -42 8 -12 -6 10" fill="none" stroke="#2E3F3B" stroke-width="2.2" stroke-linecap="round"/>
+                  <!-- barbes -->
+                  <path d="M30 -50 l11 -7 M22 -36 l11 -7 M13 -22 l11 -7 M4 -8 l11 -7" stroke="#4E8978" stroke-width="1.8" stroke-linecap="round"/>
+                  <!-- tige -->
+                  <line x1="-14" y1="14" x2="-26" y2="30" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+                  <!-- petit visage amical -->
+                  <path d="M20 -52 q4 -5 8 0" fill="none" stroke="#2E3F3B" stroke-width="2.4" stroke-linecap="round"/>
+                  <path d="M33 -56 q4 -5 8 0" fill="none" stroke="#2E3F3B" stroke-width="2.4" stroke-linecap="round"/>
+                  <!-- joue : infime touche mauve poussiéreux sur la mascotte -->
+                  <ellipse cx="22" cy="-42" rx="4.5" ry="3" fill="#B391AC" opacity=".7"/>
+                  <path d="M26 -46 q5 5 10 0" fill="none" stroke="#2E3F3B" stroke-width="2.4" stroke-linecap="round"/>
+                </g>
+              </g>
+            </svg>
+          </div>
+          <div class="copy">
+            <h2>C'est tout pour aujourd'hui.</h2>
+            <p>Quatre liens repris, en douceur. Repose ta plume, elle t'attendra demain.</p>
+            <span class="meta">
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 13 L10 18 L19 6" fill="none" stroke="#4E8978" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              4 cartes feuilletées
+            </span>
+          </div>
+        </div>
+
+        <!-- tab bar identique : Aujourd'hui actif, label + pastille + soulignement MAUVE -->
+        <div class="tabs">
+          <div class="tab on">
+            <span class="pill">
+              <svg width="25" height="25" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3" fill="none" stroke="#876585" stroke-width="2.1"/><path d="M4 9 L20 9" stroke="#876585" stroke-width="2.1"/><path d="M8 3 L8 7 M16 3 L16 7" stroke="#876585" stroke-width="2.1" stroke-linecap="round"/><circle cx="12" cy="14.5" r="2" fill="#B391AC"/></svg>
+            </span>
+            Aujourd'hui
+          </div>
+          <div class="tab">
+            <span class="pill">
+              <svg width="25" height="25" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="none" stroke="#9DB5AD" stroke-width="2.1"/><circle cx="17" cy="10" r="2.4" fill="none" stroke="#9DB5AD" stroke-width="2.1"/><path d="M3 19 C3 14 13 14 13 19" fill="none" stroke="#9DB5AD" stroke-width="2.1" stroke-linecap="round"/><path d="M14 18 C14 15 21 15 21 18" fill="none" stroke="#9DB5AD" stroke-width="2.1" stroke-linecap="round"/></svg>
+            </span>
+            Réseau
+          </div>
+          <div class="tab">
+            <span class="pill">
+              <svg width="25" height="25" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="none" stroke="#9DB5AD" stroke-width="2.1"/><path d="M12 3 L12 6 M12 18 L12 21 M3 12 L6 12 M18 12 L21 12 M5.6 5.6 L7.7 7.7 M16.3 16.3 L18.4 18.4 M18.4 5.6 L16.3 7.7 M7.7 16.3 L5.6 18.4" stroke="#9DB5AD" stroke-width="2.1" stroke-linecap="round"/></svg>
+            </span>
+            Réglages
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<!-- ================= BANDE DE VALIDATION : 4 FROIDEURS RECOLORÉES ================= -->
+<section class="coldband">
+  <div class="ttl">Froideur recolorée — la nouvelle échelle <small>4 blobs, même illustration, tons doux désaturés (famille menthe / mauve / froid)</small></div>
+  <div class="row">
+
+    <!-- jamais contacté -->
+    <div class="coldcell">
+      <svg width="92" height="92" viewBox="0 0 124 124" aria-hidden="true">
+        <path d="M62 10 C88 10 108 26 110 52 C112 78 96 104 66 110 C40 115 16 98 12 70 C8 44 24 18 50 12 C54 11 58 10 62 10 Z"
+              fill="#C9C2D6" stroke="#2E3F3B" stroke-width="3" stroke-linejoin="round"/>
+        <path d="M30 78 C26 64 30 50 42 44 C36 58 36 70 44 82 C40 84 34 83 30 78 Z" fill="#B3AAC6"/>
+        <path d="M28 44 C36 24 60 18 80 28 C92 34 96 46 94 56 C88 44 78 38 66 40 C70 34 66 30 60 31 C56 38 48 40 42 38 C44 46 38 50 32 52 C30 49 28 47 28 44 Z"
+              fill="#5A3D2A" stroke="#2E3F3B" stroke-width="2.4" stroke-linejoin="round"/>
+        <path d="M44 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+        <path d="M70 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+        <ellipse cx="42" cy="80" rx="6" ry="4" fill="#A99FC0" opacity=".7"/>
+        <ellipse cx="84" cy="80" rx="6" ry="4" fill="#A99FC0" opacity=".7"/>
+        <path d="M54 84 q9 9 18 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+      </svg>
+      <span class="lbl">Jamais contacté</span>
+      <span class="hex">#C9C2D6</span>
+    </div>
+
+    <!-- frais -->
+    <div class="coldcell">
+      <svg width="92" height="92" viewBox="0 0 124 124" aria-hidden="true">
+        <path d="M62 10 C88 10 108 26 110 52 C112 78 96 104 66 110 C40 115 16 98 12 70 C8 44 24 18 50 12 C54 11 58 10 62 10 Z"
+              fill="#8FBCA8" stroke="#2E3F3B" stroke-width="3" stroke-linejoin="round"/>
+        <path d="M30 78 C26 64 30 50 42 44 C36 58 36 70 44 82 C40 84 34 83 30 78 Z" fill="#73A28C"/>
+        <path d="M28 44 C36 24 60 18 80 28 C92 34 96 46 94 56 C88 44 78 38 66 40 C70 34 66 30 60 31 C56 38 48 40 42 38 C44 46 38 50 32 52 C30 49 28 47 28 44 Z"
+              fill="#5A3D2A" stroke="#2E3F3B" stroke-width="2.4" stroke-linejoin="round"/>
+        <path d="M44 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+        <path d="M70 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+        <ellipse cx="42" cy="80" rx="6" ry="4" fill="#6FA088" opacity=".7"/>
+        <ellipse cx="84" cy="80" rx="6" ry="4" fill="#6FA088" opacity=".7"/>
+        <path d="M54 84 q9 9 18 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+      </svg>
+      <span class="lbl">Frais</span>
+      <span class="hex">#8FBCA8</span>
+    </div>
+
+    <!-- tiède (= Léa) -->
+    <div class="coldcell">
+      <svg width="92" height="92" viewBox="0 0 124 124" aria-hidden="true">
+        <path d="M62 10 C88 10 108 26 110 52 C112 78 96 104 66 110 C40 115 16 98 12 70 C8 44 24 18 50 12 C54 11 58 10 62 10 Z"
+              fill="#CBA7C0" stroke="#2E3F3B" stroke-width="3" stroke-linejoin="round"/>
+        <path d="M30 78 C26 64 30 50 42 44 C36 58 36 70 44 82 C40 84 34 83 30 78 Z" fill="#B289A6"/>
+        <path d="M28 44 C36 24 60 18 80 28 C92 34 96 46 94 56 C88 44 78 38 66 40 C70 34 66 30 60 31 C56 38 48 40 42 38 C44 46 38 50 32 52 C30 49 28 47 28 44 Z"
+              fill="#5A3D2A" stroke="#2E3F3B" stroke-width="2.4" stroke-linejoin="round"/>
+        <path d="M44 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+        <path d="M70 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+        <ellipse cx="42" cy="80" rx="6" ry="4" fill="#B884A8" opacity=".7"/>
+        <ellipse cx="84" cy="80" rx="6" ry="4" fill="#B884A8" opacity=".7"/>
+        <path d="M54 84 q9 9 18 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+      </svg>
+      <span class="lbl">Tiède · Léa</span>
+      <span class="hex">#CBA7C0</span>
+    </div>
+
+    <!-- froid -->
+    <div class="coldcell">
+      <svg width="92" height="92" viewBox="0 0 124 124" aria-hidden="true">
+        <path d="M62 10 C88 10 108 26 110 52 C112 78 96 104 66 110 C40 115 16 98 12 70 C8 44 24 18 50 12 C54 11 58 10 62 10 Z"
+              fill="#A7BCC6" stroke="#2E3F3B" stroke-width="3" stroke-linejoin="round"/>
+        <path d="M30 78 C26 64 30 50 42 44 C36 58 36 70 44 82 C40 84 34 83 30 78 Z" fill="#8AA2AE"/>
+        <path d="M28 44 C36 24 60 18 80 28 C92 34 96 46 94 56 C88 44 78 38 66 40 C70 34 66 30 60 31 C56 38 48 40 42 38 C44 46 38 50 32 52 C30 49 28 47 28 44 Z"
+              fill="#5A3D2A" stroke="#2E3F3B" stroke-width="2.4" stroke-linejoin="round"/>
+        <path d="M44 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+        <path d="M70 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+        <ellipse cx="42" cy="80" rx="6" ry="4" fill="#86A0AD" opacity=".7"/>
+        <ellipse cx="84" cy="80" rx="6" ry="4" fill="#86A0AD" opacity=".7"/>
+        <path d="M54 84 q9 9 18 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+      </svg>
+      <span class="lbl">Froid</span>
+      <span class="hex">#A7BCC6</span>
+    </div>
+
+  </div>
+</section>
+
+<p class="foot">Plume · craft « carnet vivant illustré » intact — illustration maison SVG, aplat plein + hard offset net teinté, zéro ombre molle. Base <b style="color:#4E8978">menthe d'eau</b>, fil rouge <span class="acc">mauve poussiéreux</span> réparti. La froideur (recolorée, douce) vient des gens.</p>
+
+</body>
+</html>

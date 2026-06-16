@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plume — Direction A · Encre & papier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Spectral:wght@400;500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   DIRECTION A — ENCRE & PAPIER
+   Métaphore : le manuscrit, le carnet relié, l'encre qui sèche.
+   Palette :
+     papier crème  #F4EBDD   (fond, grain de papier)
+     papier clair  #FBF6EC   (cartes, page intérieure)
+     encre profonde#2B2622   (texte, presque noir mais chaud)
+     encre sépia   #5A4A3A   (texte secondaire)
+     trait léger   #E4D7C3   (filets, séparateurs)
+     accent rouge  #9A3B2E   (cachet, sceau de cire, action)
+   Typo : Fraunces (titres, sérif à plume) + Spectral (corps sérif)
+          + Inter (micro-UI, chiffres).
+   Mouvement : quasi nul. Tout repose, comme l'encre sur la page.
+   ============================================================ */
+:root{
+  --paper:#F4EBDD; --page:#FBF6EC; --ink:#2B2622; --sepia:#5A4A3A;
+  --rule:#E4D7C3; --seal:#9A3B2E; --seal-soft:#C97A5E;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Spectral',Georgia,serif; color:var(--ink);
+  background:#E7DAC6;
+  -webkit-font-smoothing:antialiased; line-height:1.55;
+  display:flex; flex-direction:column; align-items:center;
+  padding:28px 16px 48px; min-height:100vh;
+}
+.rationale{
+  max-width:390px; font-family:'Spectral',serif; font-size:13px;
+  color:#4a3f33; background:#FBF6EC; border:1px solid var(--rule);
+  border-left:3px solid var(--seal); padding:14px 16px; margin-bottom:22px;
+  line-height:1.5;
+}
+.rationale b{font-family:'Fraunces',serif; font-weight:600;}
+.phone{
+  width:390px; max-width:100%; background:var(--paper);
+  border-radius:30px; overflow:hidden; position:relative;
+  box-shadow:0 22px 50px rgba(43,38,34,.28), inset 0 0 0 1px rgba(90,74,58,.10);
+  /* grain de papier discret */
+  background-image:radial-gradient(rgba(90,74,58,.05) .5px, transparent .5px);
+  background-size:4px 4px;
+}
+.statusbar{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:12px 24px 0; font-family:'Inter',sans-serif; font-size:12px;
+  font-weight:500; color:var(--sepia);
+}
+.screen{padding:8px 22px 96px;}
+
+/* En-tête manuscrit */
+.head{padding:20px 2px 8px;}
+.dateline{
+  font-family:'Inter',sans-serif; font-size:11px; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--seal-soft); font-weight:500;
+}
+.head h1{
+  font-family:'Fraunces',serif; font-weight:500; font-size:34px;
+  letter-spacing:-.01em; margin:2px 0 0; line-height:1.05;
+  font-variation-settings:'opsz' 80;
+}
+.head h1 .nib{font-style:italic; font-weight:400;}
+
+/* compteur zéro-fuite : ligne d'inventaire écrite à la main */
+.tally{
+  display:flex; align-items:center; gap:10px; margin:16px 2px 6px;
+  font-family:'Spectral',serif; font-style:italic; font-size:15px;
+  color:var(--sepia);
+}
+.tally .dot{width:7px;height:7px;border-radius:50%;background:var(--seal);flex:none;}
+.tally b{font-style:normal; font-weight:500; color:var(--ink);}
+.rule{height:1px;background:var(--rule);margin:14px 0 2px;
+  background-image:linear-gradient(to right,var(--rule) 70%,transparent);}
+
+.queue-label{
+  font-family:'Inter',sans-serif; font-size:11px; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--seal-soft); font-weight:500;
+  margin:20px 2px 10px;
+}
+
+/* Carte = page d'un carnet */
+.entry{
+  background:var(--page); border:1px solid var(--rule);
+  border-radius:4px; padding:16px 18px 15px; margin-bottom:14px;
+  position:relative;
+}
+.entry::before{ /* marge gauche du cahier */
+  content:""; position:absolute; left:11px; top:14px; bottom:14px;
+  width:1px; background:var(--seal-soft); opacity:.30;
+}
+.entry .inner{padding-left:14px;}
+.entry .kicker{
+  font-family:'Inter',sans-serif; font-size:11px; font-weight:500;
+  letter-spacing:.05em; text-transform:uppercase; color:var(--seal);
+  display:flex; align-items:center; gap:7px;
+}
+.entry .name{
+  font-family:'Fraunces',serif; font-weight:500; font-size:21px;
+  margin:5px 0 1px; letter-spacing:-.01em;
+}
+.entry .role{font-size:14px; color:var(--sepia);}
+.entry .note{
+  font-family:'Spectral',serif; font-style:italic; font-size:14.5px;
+  color:#6b5c4b; margin:9px 0 0; line-height:1.45;
+}
+.entry .note::before{content:"« "; color:var(--seal-soft);}
+.entry .note::after{content:" »"; color:var(--seal-soft);}
+
+/* footer carte : froideur + action vers composeur */
+.entry .foot{
+  display:flex; justify-content:space-between; align-items:center;
+  margin-top:13px; padding-top:11px; border-top:1px dotted var(--rule);
+  padding-left:14px;
+}
+.coldness{display:flex; align-items:center; gap:7px;
+  font-family:'Inter',sans-serif; font-size:11.5px; color:var(--sepia);}
+.coldness .pips{display:flex; gap:3px;}
+.coldness .pip{width:6px;height:6px;border-radius:50%;border:1px solid var(--seal-soft);}
+.coldness .pip.on{background:var(--seal-soft);}
+.compose{
+  font-family:'Inter',sans-serif; font-size:12.5px; font-weight:500;
+  color:var(--page); background:var(--ink); border:none;
+  padding:8px 14px; border-radius:3px; cursor:pointer;
+  display:inline-flex; align-items:center; gap:6px; text-decoration:none;
+}
+.compose:hover{background:var(--seal);}
+
+/* carte qui vieillit : relance en retard, traitement doux */
+.entry.aging{background:#FBF1E4; border-color:#E9D2BC;}
+.entry.aging .kicker{color:#B0653F;}
+.entry.aging .badge{
+  font-family:'Spectral',serif; font-style:italic; font-size:12.5px;
+  color:#8a5635; background:#F3DFCB; border-radius:3px;
+  padding:2px 9px; margin-left:auto;
+}
+.kicker .right-cal{margin-left:auto; font-style:normal;}
+
+/* barre d'onglets : tranche du carnet */
+.tabs{
+  position:absolute; left:0; right:0; bottom:0;
+  display:flex; background:var(--page); border-top:1px solid var(--rule);
+  padding:9px 18px calc(9px + env(safe-area-inset-bottom));
+}
+.tab{flex:1; text-align:center; font-family:'Inter',sans-serif;
+  font-size:11px; color:var(--sepia); text-decoration:none;}
+.tab i{display:block; font-size:20px; margin-bottom:3px; opacity:.7;}
+.tab.active{color:var(--ink);}
+.tab.active i{opacity:1;}
+.tab.active::after{content:""; display:block; width:18px; height:2px;
+  background:var(--seal); margin:5px auto 0; border-radius:2px;}
+
+.seal{ /* petite plume-sceau en filigrane coin */
+  position:absolute; top:64px; right:26px; font-size:34px;
+  color:var(--seal); opacity:.14; transform:rotate(12deg);
+}
+</style>
+</head>
+<body>
+<div class="rationale">
+  <b>A · Encre &amp; papier.</b> Plume comprise comme l'écriture elle-même :
+  un carnet relié, du papier crème grainé, chaque contact est une entrée
+  manuscrite. Sérif à empattement (Fraunces) pour l'intime, l'encre sépia
+  pour le calme, un seul rouge de cachet de cire pour agir.
+</div>
+
+<div class="phone">
+  <i class="seal" aria-hidden="true">&#9998;</i>
+  <div class="statusbar"><span>9:41</span><span>Plume</span></div>
+
+  <div class="screen">
+    <div class="head">
+      <div class="dateline">Lundi 15 juin</div>
+      <h1>Aujourd'hui<span class="nib">.</span></h1>
+    </div>
+
+    <div class="tally">
+      <span class="dot" aria-hidden="true"></span>
+      <span>Rien ne traîne. <b>3 relances à jour</b>, rien d'oublié.</span>
+    </div>
+
+    <div class="rule"></div>
+
+    <div class="queue-label">Ta file du jour</div>
+
+    <!-- Carte 1 : relance qui vieillit (douce) -->
+    <article class="entry aging">
+      <div class="inner">
+        <div class="kicker">
+          Relance due
+          <span class="badge">repose depuis 5 jours</span>
+        </div>
+        <div class="name">Léa Marchand</div>
+        <div class="role">Recruteuse · Doctolib</div>
+        <p class="note">relancer, ça fait 5 jours</p>
+      </div>
+      <div class="foot">
+        <div class="coldness">
+          <span class="pips" aria-hidden="true">
+            <span class="pip on"></span><span class="pip on"></span><span class="pip"></span>
+          </span>
+          tiède
+        </div>
+        <a class="compose" href="#">Écrire un mot</a>
+      </div>
+    </article>
+
+    <!-- Carte 2 : premier message -->
+    <article class="entry">
+      <div class="inner">
+        <div class="kicker">Premier message</div>
+        <div class="name">Thomas Berger</div>
+        <div class="role">Lead dev · Alan</div>
+        <p class="note">présenté par Camille</p>
+      </div>
+      <div class="foot">
+        <div class="coldness">
+          <span class="pips" aria-hidden="true">
+            <span class="pip"></span><span class="pip"></span><span class="pip"></span>
+          </span>
+          jamais contacté
+        </div>
+        <a class="compose" href="#">Écrire un mot</a>
+      </div>
+    </article>
+
+    <!-- Carte 3 : relance due, fraîche -->
+    <article class="entry">
+      <div class="inner">
+        <div class="kicker">Relance due</div>
+        <div class="name">Sophie Nkamga</div>
+        <div class="role">CTO · Pennylane</div>
+        <p class="note">reprendre le fil, elle attendait ton retour</p>
+      </div>
+      <div class="foot">
+        <div class="coldness">
+          <span class="pips" aria-hidden="true">
+            <span class="pip on"></span><span class="pip"></span><span class="pip"></span>
+          </span>
+          frais
+        </div>
+        <a class="compose" href="#">Écrire un mot</a>
+      </div>
+    </article>
+
+  </div>
+
+  <nav class="tabs">
+    <a class="tab active" href="#"><i class="ti ti-sun" aria-hidden="true"></i>Aujourd'hui</a>
+    <a class="tab" href="#"><i class="ti ti-users" aria-hidden="true"></i>Réseau</a>
+    <a class="tab" href="#"><i class="ti ti-settings" aria-hidden="true"></i>Réglages</a>
+  </nav>
+</div>
+</body>
+</html>

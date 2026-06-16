@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plume · Onboarding v1 · premier lancement</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!--
+  Plume — FLOW D'ONBOARDING v1 (atelier UX).
+  DA reprise À L'IDENTIQUE de plume-hero-v2.html :
+    Palette Menthe d'eau × Mauve poussiéreux, typo Fraunces (titres/noms) + Quicksand (corps/boutons),
+    illustration maison SVG inline (plume-mascotte + blobs), boutons chunky,
+    profondeur = contour plein + hard offset net teinté (JAMAIS d'ombre molle),
+    aucun emoji, aucune lib d'icônes, microcopy FR warm sans tiret cadratin.
+  Règle d'or : ZÉRO BLOAT, UNE seule décision par écran, ton warm et personnel.
+  5 écrans côte à côte : bienvenue+Google / seed voix optionnel+Passer / 1er contact /
+  PWA écran d'accueil / c'est parti -> Aujourd'hui. Pager 1..5, courant en mauve.
+-->
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500;1,9..144,600&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ---------- Tokens d'atelier (neutres, hors palette app) ---------- */
+  :root{
+    --atelier:#E4EEEA;
+    --atelier-2:#EDF4F1;
+    --trait:#2E3F3B;
+
+    /* ===== PALETTE — base menthe ===== */
+    --pal-bg:#E9F3EF;
+    --pal-card:#FBFEFD;
+    --pal-ink:#2E3F3B;
+    --pal-soft:#5F726D;
+    --pal-brand:#7FBEAF;
+    --pal-brand-deep:#4E8978;
+    --pal-chip:#DCEFE9;
+    --pal-note:#EDF6F2;
+    --pal-line:#CFE3DB;
+    --pal-hint:#9DB5AD;
+    --pal-pager:#C7DDD5;
+    --pal-later-off:#BFD9D0;
+
+    /* ===== ACCENT — mauve poussiéreux (fil rouge) ===== */
+    --acc:#B391AC;
+    --acc-deep:#876585;
+    --acc-on:#FFFFFF;
+    --acc-chip:#ECE2EA;
+
+    /* froideur recolorée (rappel, pour la plume tiède du seed) */
+    --c-tiede:#CBA7C0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased;}
+  body{
+    background:
+      radial-gradient(1200px 520px at 18% -8%, var(--atelier-2), transparent 60%),
+      radial-gradient(1000px 520px at 92% 4%, var(--atelier-2), transparent 60%),
+      var(--atelier);
+    font-family:"Quicksand",system-ui,sans-serif;
+    color:var(--pal-ink);
+    padding:44px 24px 72px;
+    line-height:1.5;
+  }
+  .display{font-family:"Fraunces",serif;}
+
+  /* ---------- En-tête / encart ---------- */
+  .head{max-width:1500px;margin:0 auto 18px;}
+  .brandline{display:flex;align-items:center;gap:15px;margin-bottom:18px;flex-wrap:wrap;}
+  .brandline h1{
+    font-family:"Fraunces",serif;font-weight:600;font-size:38px;
+    letter-spacing:-.01em;color:var(--pal-ink);line-height:1;
+  }
+  .brandline .tag{
+    font-size:12px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--pal-brand-deep);background:var(--pal-chip);border:2px solid var(--pal-brand);
+    padding:5px 12px 4px;border-radius:999px;
+  }
+  .brandline .tag.spice{color:#fff;background:var(--acc);border-color:var(--acc-deep);}
+  .choose{
+    background:var(--pal-card);border:2.5px solid var(--trait);border-radius:20px;
+    padding:18px 24px;max-width:1500px;
+    box-shadow:8px 8px 0 0 var(--pal-brand);
+  }
+  .choose p{font-size:15.5px;color:var(--pal-soft);}
+  .choose p b{color:var(--pal-ink);font-weight:700;}
+  .choose p .em{color:var(--acc-deep);font-weight:700;}
+  .choose .steps{display:flex;flex-wrap:wrap;gap:10px 14px;margin-top:14px;align-items:center;font-size:13.5px;font-weight:600;color:var(--pal-brand-deep);}
+  .choose .steps span{display:inline-flex;align-items:center;gap:7px;}
+  .choose .steps .n{
+    width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:700;color:#fff;background:var(--acc);border:2px solid var(--acc-deep);
+  }
+  .choose .steps .arrow{color:var(--pal-hint);font-weight:700;}
+
+  /* ---------- Scène : cinq téléphones côte à côte ---------- */
+  .scene{
+    display:flex;flex-wrap:wrap;gap:48px;justify-content:center;
+    margin:54px auto 18px;max-width:1640px;
+  }
+  .phone-wrap{display:flex;flex-direction:column;align-items:center;gap:15px;}
+  .phone-label{
+    font-family:"Fraunces",serif;font-style:italic;font-weight:500;
+    font-size:18px;color:var(--pal-brand-deep);text-align:center;
+  }
+  .phone-label .acc{color:var(--acc-deep);font-style:normal;font-weight:600;}
+
+  /* ---------- Châssis téléphone (~400px) ---------- */
+  .phone{
+    width:400px;max-width:94vw;border-radius:50px;
+    background:var(--trait);padding:12px;
+    box-shadow:13px 14px 0 0 #CADFD8;
+  }
+  .screen{
+    position:relative;width:100%;height:818px;border-radius:40px;overflow:hidden;
+    background:var(--pal-bg);
+    display:flex;flex-direction:column;
+  }
+  .notch{
+    position:absolute;top:12px;left:50%;transform:translateX(-50%);
+    width:128px;height:28px;border-radius:999px;background:var(--trait);z-index:40;
+  }
+
+  /* ---------- Pager 1..5 en haut ---------- */
+  .pager{
+    position:absolute;top:54px;left:0;right:0;display:flex;justify-content:center;
+    align-items:center;gap:9px;z-index:30;
+  }
+  .pager .p{width:8px;height:8px;border-radius:50%;background:var(--pal-pager);}
+  .pager .p.on{width:26px;border-radius:999px;background:var(--acc);}
+
+  /* ---------- Corps d'écran d'onboarding ---------- */
+  .ob{
+    position:absolute;inset:0;top:80px;
+    display:flex;flex-direction:column;align-items:center;
+    padding:0 30px 34px;
+  }
+  .ob .art{flex:1;display:flex;align-items:center;justify-content:center;width:100%;min-height:0;}
+  .ob .body{width:100%;}
+  .ob .title{
+    font-family:"Fraunces",serif;font-weight:600;font-size:31px;color:var(--pal-ink);
+    line-height:1.1;text-align:center;letter-spacing:-.01em;
+  }
+  .ob .title.brand{font-size:46px;}
+  .ob .promise{
+    font-size:16px;color:var(--pal-soft);text-align:center;margin-top:14px;line-height:1.5;
+  }
+  .ob .promise b{color:var(--pal-ink);font-weight:700;}
+  .ob .reassure{
+    font-size:13px;color:var(--pal-hint);text-align:center;margin-top:14px;line-height:1.45;font-weight:500;
+  }
+
+  /* ---------- Boutons chunky (repris à l'identique) ---------- */
+  .btn{
+    border:2.5px solid var(--trait);border-radius:22px;
+    font-family:"Quicksand",sans-serif;font-weight:700;cursor:default;
+    display:flex;align-items:center;justify-content:center;gap:11px;width:100%;
+  }
+  .btn-primary{
+    background:var(--acc);color:var(--acc-on);font-size:19px;padding:18px 0;
+    box-shadow:0 6px 0 0 var(--acc-deep);
+  }
+  .btn-primary .lbl{text-shadow:0 1px 0 rgba(0,0,0,.12);}
+  /* lien ghost très évident, repousse sans culpabiliser */
+  .ghost{
+    display:block;width:100%;text-align:center;margin-top:18px;
+    font-family:"Quicksand",sans-serif;font-weight:700;font-size:15px;
+    color:var(--pal-brand-deep);cursor:default;
+    background:none;border:none;
+  }
+  .ghost u{text-decoration-color:var(--pal-brand);text-underline-offset:3px;}
+
+  /* ---------- Champs ---------- */
+  .field{
+    width:100%;background:var(--pal-card);
+    border:2.5px solid var(--trait);border-radius:18px;
+    box-shadow:0 5px 0 0 var(--pal-line);
+    padding:15px 17px;font-family:"Quicksand",sans-serif;font-weight:600;
+    font-size:16px;color:var(--pal-ink);margin-bottom:18px;
+  }
+  .field .ph{color:var(--pal-hint);font-weight:500;}
+  textarea.field{height:128px;line-height:1.5;font-weight:500;resize:none;}
+  textarea.field .ph{font-style:italic;}
+
+  /* liens discrets sous le bouton (écran 3) */
+  .underlinks{display:flex;flex-direction:column;gap:11px;margin-top:18px;align-items:center;}
+  .underlinks a{
+    font-family:"Quicksand",sans-serif;font-weight:600;font-size:13.5px;
+    color:var(--pal-soft);cursor:default;display:inline-flex;align-items:center;gap:8px;
+  }
+  .underlinks a svg{display:block;}
+  .underlinks a u{text-decoration-color:var(--pal-line);text-underline-offset:3px;}
+
+  /* ---------- animations (reprises) ---------- */
+  .float{animation:float 5.5s ease-in-out infinite;}
+  @keyframes float{0%,100%{transform:translateY(0) rotate(-3deg);}50%{transform:translateY(-13px) rotate(2deg);}}
+  .twinkle{animation:twk 3.4s ease-in-out infinite;transform-origin:center;}
+  .twinkle.b{animation-duration:4.6s;animation-delay:.8s;}
+  .twinkle.c{animation-duration:4s;animation-delay:1.6s;}
+  @keyframes twk{0%,100%{opacity:.35;transform:scale(.78);}50%{opacity:1;transform:scale(1.08);}}
+
+  .foot{max-width:1500px;margin:34px auto 0;font-size:13px;color:#7D938C;text-align:center;}
+  .foot .acc{color:var(--acc-deep);font-weight:600;}
+
+  @media (max-width:980px){.scene{gap:40px;}}
+</style>
+</head>
+<body>
+
+<!-- ================= EN-TÊTE + ENCART ================= -->
+<header class="head">
+  <div class="brandline">
+    <svg width="42" height="42" viewBox="0 0 48 48" aria-hidden="true">
+      <g transform="rotate(-16 24 24)">
+        <path d="M30 7 C18 11 11 24 11 36 C20 33 26 36 32 30 C29 30 26 31 23 32 C28 27 33 21 34 12 C32 16 29 19 26 22 C30 17 31 12 30 7 Z"
+              fill="#7FBEAF" stroke="#2E3F3B" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M27 12 C23 18 19 27 16 34" fill="none" stroke="#2E3F3B" stroke-width="1.6" stroke-linecap="round"/>
+        <line x1="11" y1="36" x2="6" y2="43" stroke="#2E3F3B" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M37 9 l1.1 3 l3 1.1 l-3 1.1 l-1.1 3 l-1.1 -3 l-3 -1.1 l3 -1.1 z" fill="#B391AC"/>
+      </g>
+    </svg>
+    <h1>Plume</h1>
+    <span class="tag">Onboarding v1</span>
+    <span class="tag spice">Premier lancement</span>
+  </div>
+  <div class="choose">
+    <p><b>Plume — onboarding &lt; 2 min</b> <span class="em">(bienvenue &rarr; voix &rarr; 1er contact &rarr; PWA &rarr; c'est parti)</span>. Une seule décision par écran, ton warm, zéro courbe d'apprentissage. La plume-mascotte est le fil conducteur, le mauve marque l'étape courante. Les deux étapes douces (voix, PWA) se passent en un lien.</p>
+    <div class="steps">
+      <span><span class="n">1</span>Bienvenue</span><span class="arrow">&rarr;</span>
+      <span><span class="n">2</span>Ta voix <em style="font-style:normal;color:var(--pal-hint);font-weight:600;">(optionnel)</em></span><span class="arrow">&rarr;</span>
+      <span><span class="n">3</span>1er contact</span><span class="arrow">&rarr;</span>
+      <span><span class="n">4</span>Écran d'accueil <em style="font-style:normal;color:var(--pal-hint);font-weight:600;">(optionnel)</em></span><span class="arrow">&rarr;</span>
+      <span><span class="n">5</span>C'est parti</span>
+    </div>
+  </div>
+</header>
+
+<!-- ================= LES CINQ ÉCRANS ================= -->
+<section class="scene">
+
+  <!-- ================== ÉCRAN 1 — BIENVENUE ================== -->
+  <div class="phone-wrap">
+    <span class="phone-label">1 &middot; Bienvenue</span>
+    <div class="phone">
+      <div class="screen">
+        <div class="notch"></div>
+        <div class="pager">
+          <span class="p on"></span><span class="p"></span><span class="p"></span><span class="p"></span><span class="p"></span>
+        </div>
+
+        <div class="ob">
+          <div class="art">
+            <svg width="220" height="240" viewBox="0 0 220 240" aria-hidden="true">
+              <!-- étincelles mauves -->
+              <g class="twinkle"><path d="M40 56 l2.4 6.6 l6.6 2.4 l-6.6 2.4 l-2.4 6.6 l-2.4 -6.6 l-6.6 -2.4 l6.6 -2.4 z" fill="#B391AC"/></g>
+              <g class="twinkle b"><path d="M186 92 l1.8 5 l5 1.8 l-5 1.8 l-1.8 5 l-1.8 -5 l-5 -1.8 l5 -1.8 z" fill="#B391AC"/></g>
+              <g class="twinkle c"><path d="M176 40 l1.4 4 l4 1.4 l-4 1.4 l-1.4 4 l-1.4 -4 l-4 -1.4 l4 -1.4 z" fill="#876585"/></g>
+              <!-- LA PLUME-MASCOTTE en grand -->
+              <g transform="translate(110 132)"><g class="float">
+                <g transform="rotate(-12) scale(1.18)">
+                  <path d="M44 -76 C8 -64 -14 -24 -14 14 C16 4 36 12 54 -8
+                           C45 -8 36 -5 27 -2
+                           C44 -19 60 -40 63 -68
+                           C57 -56 48 -47 39 -38
+                           C51 -53 54 -64 44 -76 Z"
+                        fill="#7FBEAF" stroke="#2E3F3B" stroke-width="3" stroke-linejoin="round"/>
+                  <path d="M38 -64 C24 -42 8 -12 -6 10" fill="none" stroke="#2E3F3B" stroke-width="2.2" stroke-linecap="round"/>
+                  <path d="M30 -50 l11 -7 M22 -36 l11 -7 M13 -22 l11 -7 M4 -8 l11 -7" stroke="#4E8978" stroke-width="1.8" stroke-linecap="round"/>
+                  <line x1="-14" y1="14" x2="-26" y2="30" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+                  <path d="M20 -52 q4 -5 8 0" fill="none" stroke="#2E3F3B" stroke-width="2.4" stroke-linecap="round"/>
+                  <path d="M33 -56 q4 -5 8 0" fill="none" stroke="#2E3F3B" stroke-width="2.4" stroke-linecap="round"/>
+                  <ellipse cx="22" cy="-42" rx="4.5" ry="3" fill="#B391AC" opacity=".7"/>
+                  <path d="M26 -46 q5 5 10 0" fill="none" stroke="#2E3F3B" stroke-width="2.4" stroke-linecap="round"/>
+                </g>
+              </g></g>
+            </svg>
+          </div>
+          <div class="body">
+            <div class="title brand">Plume</div>
+            <p class="promise">Tes messages à ton réseau, écrits comme toi.<br><b>Jamais comme un robot.</b></p>
+            <div style="margin-top:30px;">
+              <div class="btn btn-primary">
+                <!-- logo Google dessiné en SVG -->
+                <svg width="22" height="22" viewBox="0 0 48 48" aria-hidden="true">
+                  <path fill="#FFFFFF" d="M44.5 20H24v8.5h11.8C34.3 33.6 29.7 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.3 0 6.3 1.2 8.6 3.3l6-6C42.8 5 33.9 1 24 1 11.8 1 2 10.8 2 23s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-3z" opacity="0"/>
+                  <path fill="#4285F4" d="M43.6 20.5H42V20H24v8h11.3C33.6 32.9 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/>
+                  <path fill="#34A853" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.5 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
+                  <path fill="#FBBC05" d="M24 44c5.4 0 10.3-2.1 14-5.4l-6.5-5.5C29.5 34.6 26.9 36 24 36c-5.2 0-9.6-3.1-11.3-7.6l-6.5 5C9.6 39.6 16.2 44 24 44z"/>
+                  <path fill="#EA4335" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.2-4.1 5.6l6.5 5.5C42.5 35.7 44 30.3 44 24c0-1.3-.1-2.4-.4-3.5z"/>
+                </svg>
+                <span class="lbl">Continuer avec Google</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================== ÉCRAN 2 — SEED VOIX (OPTIONNEL) ================== -->
+  <div class="phone-wrap">
+    <span class="phone-label">2 &middot; Ta voix <span class="acc">(optionnel)</span></span>
+    <div class="phone">
+      <div class="screen">
+        <div class="notch"></div>
+        <div class="pager">
+          <span class="p"></span><span class="p on"></span><span class="p"></span><span class="p"></span><span class="p"></span>
+        </div>
+
+        <div class="ob">
+          <div class="art" style="flex:0 0 auto;padding:8px 0 4px;">
+            <svg width="150" height="120" viewBox="0 0 150 120" aria-hidden="true">
+              <g class="twinkle b"><path d="M124 20 l1.6 4.4 l4.4 1.6 l-4.4 1.6 l-1.6 4.4 l-1.6 -4.4 l-4.4 -1.6 l4.4 -1.6 z" fill="#B391AC"/></g>
+              <!-- mascotte qui écoute, plus petite -->
+              <g transform="translate(75 64)">
+                <g transform="rotate(-12) scale(.72)">
+                  <path d="M44 -76 C8 -64 -14 -24 -14 14 C16 4 36 12 54 -8
+                           C45 -8 36 -5 27 -2 C44 -19 60 -40 63 -68
+                           C57 -56 48 -47 39 -38 C51 -53 54 -64 44 -76 Z"
+                        fill="#7FBEAF" stroke="#2E3F3B" stroke-width="3" stroke-linejoin="round"/>
+                  <path d="M38 -64 C24 -42 8 -12 -6 10" fill="none" stroke="#2E3F3B" stroke-width="2.2" stroke-linecap="round"/>
+                  <path d="M30 -50 l11 -7 M22 -36 l11 -7 M13 -22 l11 -7" stroke="#4E8978" stroke-width="1.8" stroke-linecap="round"/>
+                  <line x1="-14" y1="14" x2="-26" y2="30" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+                  <path d="M20 -52 q4 -5 8 0" fill="none" stroke="#2E3F3B" stroke-width="2.4" stroke-linecap="round"/>
+                  <path d="M33 -56 q4 -5 8 0" fill="none" stroke="#2E3F3B" stroke-width="2.4" stroke-linecap="round"/>
+                  <ellipse cx="22" cy="-42" rx="4.5" ry="3" fill="#B391AC" opacity=".7"/>
+                  <path d="M26 -46 q5 5 10 0" fill="none" stroke="#2E3F3B" stroke-width="2.4" stroke-linecap="round"/>
+                </g>
+              </g>
+            </svg>
+          </div>
+          <div class="body" style="margin-top:8px;">
+            <div class="title">Apprends ta voix à Plume</div>
+            <p class="promise">Colle un ou deux messages que tu as déjà envoyés, je m'en inspirerai.</p>
+            <div style="margin-top:22px;">
+              <textarea class="field" readonly placeholder="Colle ici un message que tu as déjà envoyé…"></textarea>
+              <div class="btn btn-primary"><span class="lbl">Continuer</span></div>
+              <button class="ghost"><u>Passer pour l'instant</u></button>
+            </div>
+            <p class="reassure">Tu peux le faire plus tard, et j'apprends à chaque message.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================== ÉCRAN 3 — PREMIER CONTACT ================== -->
+  <div class="phone-wrap">
+    <span class="phone-label">3 &middot; Premier contact</span>
+    <div class="phone">
+      <div class="screen">
+        <div class="notch"></div>
+        <div class="pager">
+          <span class="p"></span><span class="p"></span><span class="p on"></span><span class="p"></span><span class="p"></span>
+        </div>
+
+        <div class="ob">
+          <div class="art" style="flex:0 0 auto;padding:10px 0 0;">
+            <!-- un blob "tiède" (la 1re personne du réseau), même illustration recolorée -->
+            <svg width="124" height="124" viewBox="0 0 124 124" aria-hidden="true">
+              <path d="M62 10 C88 10 108 26 110 52 C112 78 96 104 66 110 C40 115 16 98 12 70 C8 44 24 18 50 12 C54 11 58 10 62 10 Z"
+                    fill="#CBA7C0" stroke="#2E3F3B" stroke-width="3" stroke-linejoin="round"/>
+              <path d="M30 78 C26 64 30 50 42 44 C36 58 36 70 44 82 C40 84 34 83 30 78 Z" fill="#B289A6"/>
+              <path d="M28 44 C36 24 60 18 80 28 C92 34 96 46 94 56 C88 44 78 38 66 40 C70 34 66 30 60 31 C56 38 48 40 42 38 C44 46 38 50 32 52 C30 49 28 47 28 44 Z"
+                    fill="#5A3D2A" stroke="#2E3F3B" stroke-width="2.4" stroke-linejoin="round"/>
+              <path d="M44 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+              <path d="M70 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+              <ellipse cx="42" cy="80" rx="6" ry="4" fill="#B884A8" opacity=".7"/>
+              <ellipse cx="84" cy="80" rx="6" ry="4" fill="#B884A8" opacity=".7"/>
+              <path d="M54 84 q9 9 18 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="body" style="margin-top:6px;">
+            <div class="title">Par qui on commence ?</div>
+            <div style="margin-top:24px;">
+              <input class="field" type="text" readonly placeholder="Prénom et nom">
+              <div class="btn btn-primary">
+                <svg width="21" height="21" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5 L12 19 M5 12 L19 12" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></svg>
+                <span class="lbl">Ajouter</span>
+              </div>
+              <div class="underlinks">
+                <a><svg width="16" height="16" viewBox="0 0 24 24"><circle cx="7" cy="8" r="3" fill="none" stroke="#5F726D" stroke-width="2"/><circle cx="16" cy="9" r="2.4" fill="none" stroke="#5F726D" stroke-width="2"/><path d="M2 18 C2 13 12 13 12 18 M13 17 C13 14 21 14 21 17" fill="none" stroke="#5F726D" stroke-width="2" stroke-linecap="round"/></svg><u>Ajouter plusieurs</u></a>
+                <a><svg width="16" height="16" viewBox="0 0 24 24"><path d="M12 3 L12 14 M8 11 L12 15 L16 11" fill="none" stroke="#5F726D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17 L4 20 L20 20 L20 17" fill="none" stroke="#5F726D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><u>Importer mon réseau (CSV / Gmail)</u></a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================== ÉCRAN 4 — PWA ÉCRAN D'ACCUEIL (OPTIONNEL) ================== -->
+  <div class="phone-wrap">
+    <span class="phone-label">4 &middot; Écran d'accueil <span class="acc">(optionnel)</span></span>
+    <div class="phone">
+      <div class="screen">
+        <div class="notch"></div>
+        <div class="pager">
+          <span class="p"></span><span class="p"></span><span class="p"></span><span class="p on"></span><span class="p"></span>
+        </div>
+
+        <div class="ob">
+          <div class="art">
+            <!-- illustration maison : un écran d'accueil de téléphone avec l'icône plume -->
+            <svg width="186" height="300" viewBox="0 0 186 300" aria-hidden="true">
+              <!-- châssis du mini-téléphone -->
+              <rect x="33" y="14" width="120" height="252" rx="26" fill="#2E3F3B"/>
+              <rect x="40" y="22" width="106" height="236" rx="20" fill="#E9F3EF"/>
+              <rect x="74" y="29" width="38" height="8" rx="4" fill="#2E3F3B"/>
+              <!-- grille d'icônes neutres -->
+              <g fill="#CFE3DB">
+                <rect x="52" y="58" width="26" height="26" rx="8"/>
+                <rect x="86" y="58" width="26" height="26" rx="8"/>
+                <rect x="120" y="58" width="22" height="26" rx="8"/>
+                <rect x="52" y="96" width="26" height="26" rx="8"/>
+                <rect x="86" y="96" width="26" height="26" rx="8"/>
+                <rect x="120" y="96" width="22" height="26" rx="8"/>
+              </g>
+              <!-- l'icône Plume, mise en avant (contour + hard offset mauve) -->
+              <rect x="50" y="138" width="34" height="34" rx="10" fill="#876585"/>
+              <rect x="47" y="135" width="34" height="34" rx="10" fill="#FBFEFD" stroke="#2E3F3B" stroke-width="2.5"/>
+              <g transform="translate(64 152) rotate(-16) scale(.42)">
+                <path d="M30 7 C18 11 11 24 11 36 C20 33 26 36 32 30 C29 30 26 31 23 32 C28 27 33 21 34 12 C32 16 29 19 26 22 C30 17 31 12 30 7 Z"
+                      fill="#7FBEAF" stroke="#2E3F3B" stroke-width="3.4" stroke-linejoin="round"/>
+                <line x1="11" y1="36" x2="6" y2="43" stroke="#2E3F3B" stroke-width="3.6" stroke-linecap="round"/>
+              </g>
+              <!-- flèche douce "ajouté ici" -->
+              <path d="M118 150 C104 150 100 150 92 152" fill="none" stroke="#B391AC" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="1 7"/>
+              <path d="M97 147 L91 152 L97 157" fill="none" stroke="#B391AC" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+              <g fill="#CFE3DB">
+                <rect x="100" y="138" width="26" height="26" rx="8" opacity=".0"/>
+                <rect x="120" y="138" width="22" height="26" rx="8"/>
+                <rect x="52" y="178" width="26" height="26" rx="8"/>
+                <rect x="86" y="178" width="26" height="26" rx="8"/>
+                <rect x="120" y="178" width="22" height="26" rx="8"/>
+              </g>
+              <!-- dock -->
+              <rect x="48" y="222" width="90" height="26" rx="13" fill="#DCEFE9"/>
+            </svg>
+          </div>
+          <div class="body">
+            <div class="title">Garde Plume sous la main</div>
+            <p class="promise">Ajoute Plume à ton écran d'accueil pour recevoir tes rappels de relance.</p>
+            <div style="margin-top:26px;">
+              <div class="btn btn-primary">
+                <svg width="21" height="21" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="3" fill="none" stroke="#fff" stroke-width="2.2"/><path d="M12 8 L12 16 M8 12 L16 12" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>
+                <span class="lbl">Ajouter à l'écran d'accueil</span>
+              </div>
+              <button class="ghost"><u>Plus tard</u></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================== ÉCRAN 5 — C'EST PARTI ================== -->
+  <div class="phone-wrap">
+    <span class="phone-label">5 &middot; C'est parti</span>
+    <div class="phone">
+      <div class="screen">
+        <div class="notch"></div>
+        <div class="pager">
+          <span class="p"></span><span class="p"></span><span class="p"></span><span class="p"></span><span class="p on"></span>
+        </div>
+
+        <div class="ob">
+          <div class="art">
+            <svg width="240" height="300" viewBox="0 0 240 300" aria-hidden="true">
+              <!-- trajectoire de vol pointillée (clin d'oeil à l'état vide) -->
+              <path d="M186 44 C120 96 200 168 116 226" fill="none" stroke="#BBD7CD" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="1 11"/>
+              <!-- étincelles mauves -->
+              <g class="twinkle"><path d="M56 90 l2.4 6.6 l6.6 2.4 l-6.6 2.4 l-2.4 6.6 l-2.4 -6.6 l-6.6 -2.4 l6.6 -2.4 z" fill="#B391AC"/></g>
+              <g class="twinkle b"><path d="M196 140 l1.8 5 l5 1.8 l-5 1.8 l-1.8 5 l-1.8 -5 l-5 -1.8 l5 -1.8 z" fill="#B391AC"/></g>
+              <g class="twinkle c"><path d="M186 70 l1.4 4 l4 1.4 l-4 1.4 l-1.4 4 l-1.4 -4 l-4 -1.4 l4 -1.4 z" fill="#876585"/></g>
+              <!-- LA PLUME-MASCOTTE qui plane -->
+              <g transform="translate(118 158)"><g class="float">
+                <g transform="rotate(-14) scale(1.22)">
+                  <path d="M44 -76 C8 -64 -14 -24 -14 14 C16 4 36 12 54 -8
+                           C45 -8 36 -5 27 -2 C44 -19 60 -40 63 -68
+                           C57 -56 48 -47 39 -38 C51 -53 54 -64 44 -76 Z"
+                        fill="#7FBEAF" stroke="#2E3F3B" stroke-width="3" stroke-linejoin="round"/>
+                  <path d="M38 -64 C24 -42 8 -12 -6 10" fill="none" stroke="#2E3F3B" stroke-width="2.2" stroke-linecap="round"/>
+                  <path d="M30 -50 l11 -7 M22 -36 l11 -7 M13 -22 l11 -7 M4 -8 l11 -7" stroke="#4E8978" stroke-width="1.8" stroke-linecap="round"/>
+                  <line x1="-14" y1="14" x2="-26" y2="30" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+                  <path d="M20 -52 q4 -5 8 0" fill="none" stroke="#2E3F3B" stroke-width="2.4" stroke-linecap="round"/>
+                  <path d="M33 -56 q4 -5 8 0" fill="none" stroke="#2E3F3B" stroke-width="2.4" stroke-linecap="round"/>
+                  <ellipse cx="22" cy="-42" rx="4.5" ry="3" fill="#B391AC" opacity=".7"/>
+                  <path d="M26 -46 q5 5 10 0" fill="none" stroke="#2E3F3B" stroke-width="2.4" stroke-linecap="round"/>
+                </g>
+              </g></g>
+            </svg>
+          </div>
+          <div class="body">
+            <div class="title">Tout est prêt, Camille.</div>
+            <div style="margin-top:30px;">
+              <div class="btn btn-primary">
+                <span class="lbl">Voir ma journée</span>
+                <svg width="21" height="21" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12 L19 12 M13 6 L19 12 L13 18" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<p class="foot">Plume &middot; onboarding warm, une décision par écran, <span class="acc">zéro bloat</span>. DA figée reprise à l'identique : menthe d'eau &times; mauve poussiéreux, Fraunces + Quicksand, SVG maison, contour plein + hard offset net, zéro ombre molle, aucun emoji.</p>
+
+</body>
+</html>

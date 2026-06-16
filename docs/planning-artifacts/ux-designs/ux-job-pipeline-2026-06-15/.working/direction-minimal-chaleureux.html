@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plume — Direction C · Minimal chaleureux</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   DIRECTION C — MINIMAL CHALEUREUX
+   Métaphore : l'outil fonctionnel qu'on a réchauffé. Notion, mais
+   chez soi : coins très arrondis, sable, terracotta, blocs nets.
+   Palette :
+     sable fond     #F7F2EB   (page)
+     blanc cassé    #FFFDFA   (blocs / cartes)
+     encre warm     #36302A   (texte)
+     gris-taupe     #8C8278   (secondaire)
+     trait sable    #ECE3D6
+     terracotta     #C8623C   (accent / action)
+     terracotta clr #F3E0D6   (fills doux)
+     sauge          #A7B59A   (état "froid" sans bleu)
+   Typo : Inter (sans-serif fonctionnel, deux graisses).
+   Mouvement : sobre — micro-feedback au tap (scale), rien de plus.
+   Densité : la plus structurée des quatre, mais aérée et ronde.
+   ============================================================ */
+:root{
+  --sand:#F7F2EB; --block:#FFFDFA; --tx:#36302A; --tx2:#8C8278;
+  --line:#ECE3D6; --terra:#C8623C; --terra-dk:#9E4928; --terra-soft:#F3E0D6;
+  --sage:#92A382;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Inter',system-ui,sans-serif; color:var(--tx);
+  background:#EFE7DA; -webkit-font-smoothing:antialiased; line-height:1.55;
+  display:flex; flex-direction:column; align-items:center;
+  padding:28px 16px 48px; min-height:100vh;
+}
+.rationale{
+  max-width:390px; font-size:13px; color:#5e564d; background:#FFFDFA;
+  border:1px solid var(--line); border-radius:14px; padding:15px 18px;
+  margin-bottom:22px; line-height:1.55;
+}
+.rationale b{font-weight:600; color:var(--terra-dk);}
+.phone{
+  width:390px; max-width:100%; background:var(--sand);
+  border-radius:32px; overflow:hidden; position:relative;
+  box-shadow:0 24px 54px rgba(54,48,42,.22);
+}
+.statusbar{display:flex; justify-content:space-between; align-items:center;
+  padding:14px 24px 0; font-size:12px; font-weight:600; color:var(--tx2);}
+.screen{padding:6px 20px 100px;}
+
+/* en-tête avec petite plume ronde */
+.head{display:flex; align-items:center; gap:12px; padding:22px 4px 6px;}
+.logo{width:38px;height:38px;border-radius:13px;background:var(--terra-soft);
+  display:flex;align-items:center;justify-content:center;color:var(--terra-dk);
+  font-size:20px; flex:none;}
+.head .ttl{flex:1;}
+.head h1{font-weight:600; font-size:24px; letter-spacing:-.4px; line-height:1.1;}
+.head .sub{font-size:13px; color:var(--tx2); margin-top:1px;}
+
+/* compteur zéro-fuite : bloc rassurant arrondi */
+.status-block{
+  background:#EEF1E9; border:1px solid #DCE3D2; border-radius:16px;
+  padding:13px 16px; margin:18px 0 10px; display:flex; align-items:center; gap:11px;
+}
+.status-block .ic{width:26px;height:26px;border-radius:9px;background:#fff;
+  display:flex;align-items:center;justify-content:center;color:var(--sage);
+  font-size:15px; flex:none;}
+.status-block .t{font-size:13.5px; color:#4f5544;}
+.status-block .t b{font-weight:600; color:#3c4233;}
+
+.section-h{display:flex; align-items:center; justify-content:space-between;
+  margin:26px 4px 12px;}
+.section-h .lbl{font-size:13px; font-weight:600; color:var(--tx);}
+.section-h .count{font-size:12px; color:var(--tx2); background:#fff;
+  border:1px solid var(--line); border-radius:999px; padding:2px 10px;}
+
+/* carte : bloc Notion réchauffé */
+.block{
+  background:var(--block); border:1px solid var(--line); border-radius:18px;
+  padding:15px 16px; margin-bottom:12px; transition:transform .1s;
+}
+.block:active{transform:scale(.99);}
+.block .top{display:flex; align-items:center; gap:11px;}
+.avatar{width:40px;height:40px;border-radius:13px;flex:none;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:600;font-size:14px; background:var(--terra-soft); color:var(--terra-dk);}
+.block .who{flex:1; min-width:0;}
+.block .name{font-weight:600; font-size:16px; letter-spacing:-.2px;}
+.block .role{font-size:12.5px; color:var(--tx2);}
+.tag{font-size:11px; font-weight:500; padding:3px 9px; border-radius:8px;
+  display:inline-flex; align-items:center; gap:5px; white-space:nowrap;}
+.tag.due{background:var(--terra-soft); color:var(--terra-dk);}
+.tag.first{background:#E7EEF3; color:#3a6079;}
+.note{font-size:13.5px; color:#6a625a; margin:11px 0 0;
+  background:var(--sand); border-radius:11px; padding:9px 12px; line-height:1.45;}
+
+.block .foot{display:flex; align-items:center; justify-content:space-between; margin-top:13px;}
+.cold{display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--tx2);}
+.cold .dot{width:9px;height:9px;border-radius:50%; border:1.5px solid;}
+.cold.never .dot{border-color:#c9c0b4;}
+.cold.fresh .dot{border-color:var(--sage); background:var(--sage);}
+.cold.warm  .dot{border-color:#D8954E; background:#F0D9BC;}
+.cold.cold  .dot{border-color:#9DB0BD; background:#D9E4EA;}
+.go{font-weight:600; font-size:13px; color:#fff; background:var(--terra);
+  border:none; border-radius:11px; padding:9px 16px; cursor:pointer;
+  display:inline-flex; align-items:center; gap:6px; text-decoration:none;}
+.go:hover{background:var(--terra-dk);}
+
+/* carte qui vieillit — fond tiédi, liseré doux, pas alarmant */
+.block.aging{background:#FFF7F1; border-color:#F2DBCB;}
+.block.aging .pill{margin-left:auto; font-size:11px; font-weight:500;
+  color:#a8623a; background:#F7E5D8; border-radius:8px; padding:3px 9px;}
+
+/* barre d'onglets segmentée, ronde */
+.tabs{position:absolute; left:0; right:0; bottom:0; display:flex;
+  background:var(--block); border-top:1px solid var(--line);
+  padding:8px 16px calc(8px + env(safe-area-inset-bottom));}
+.tab{flex:1; text-align:center; font-size:11px; font-weight:500;
+  color:var(--tx2); text-decoration:none; padding:5px 0; border-radius:12px;}
+.tab i{display:block; font-size:21px; margin-bottom:2px;}
+.tab.active{color:var(--terra-dk);}
+.tab.active i{color:var(--terra);}
+</style>
+</head>
+<body>
+<div class="rationale">
+  <b>C · Minimal chaleureux.</b> L'efficacité d'un Notion, réchauffée :
+  blocs nets aux coins très arrondis, fond sable, accents terracotta et
+  sauge. Lisible d'un coup d'œil, structuré mais jamais froid ni dense.
+  Sans-serif net (Inter), zéro gris d'entreprise.
+</div>
+
+<div class="phone">
+  <div class="statusbar"><span>9:41</span><span>Plume</span></div>
+
+  <div class="screen">
+    <div class="head">
+      <div class="logo" aria-hidden="true"><i class="ti ti-feather"></i></div>
+      <div class="ttl">
+        <h1>Aujourd'hui</h1>
+        <div class="sub">Lundi 15 juin · bonjour Camille</div>
+      </div>
+    </div>
+
+    <div class="status-block">
+      <span class="ic" aria-hidden="true"><i class="ti ti-circle-check"></i></span>
+      <span class="t">Rien ne traîne · <b>3 relances à jour</b></span>
+    </div>
+
+    <div class="section-h">
+      <span class="lbl">Ta file du jour</span>
+      <span class="count">3 à faire</span>
+    </div>
+
+    <!-- carte qui vieillit -->
+    <article class="block aging">
+      <div class="top">
+        <div class="avatar" aria-hidden="true">LM</div>
+        <div class="who">
+          <div class="name">Léa Marchand</div>
+          <div class="role">Recruteuse · Doctolib</div>
+        </div>
+        <span class="pill">+5 j</span>
+      </div>
+      <p class="note">relancer, ça fait 5 jours</p>
+      <div class="foot">
+        <span class="cold warm"><span class="dot" aria-hidden="true"></span>tiède</span>
+        <a class="go" href="#"><i class="ti ti-pencil" aria-hidden="true"></i>Composer</a>
+      </div>
+    </article>
+
+    <!-- premier message -->
+    <article class="block">
+      <div class="top">
+        <div class="avatar" aria-hidden="true" style="background:#E7EEF3;color:#3a6079;">TB</div>
+        <div class="who">
+          <div class="name">Thomas Berger</div>
+          <div class="role">Lead dev · Alan</div>
+        </div>
+        <span class="tag first">Premier message</span>
+      </div>
+      <p class="note">présenté par Camille</p>
+      <div class="foot">
+        <span class="cold never"><span class="dot" aria-hidden="true"></span>jamais contacté</span>
+        <a class="go" href="#"><i class="ti ti-pencil" aria-hidden="true"></i>Composer</a>
+      </div>
+    </article>
+
+    <!-- relance fraîche -->
+    <article class="block">
+      <div class="top">
+        <div class="avatar" aria-hidden="true">SN</div>
+        <div class="who">
+          <div class="name">Sophie Nkamga</div>
+          <div class="role">CTO · Pennylane</div>
+        </div>
+        <span class="tag due">Relance due</span>
+      </div>
+      <p class="note">reprendre le fil, elle attendait ton retour</p>
+      <div class="foot">
+        <span class="cold fresh"><span class="dot" aria-hidden="true"></span>frais</span>
+        <a class="go" href="#"><i class="ti ti-pencil" aria-hidden="true"></i>Composer</a>
+      </div>
+    </article>
+
+  </div>
+
+  <nav class="tabs">
+    <a class="tab active" href="#"><i class="ti ti-sun" aria-hidden="true"></i>Aujourd'hui</a>
+    <a class="tab" href="#"><i class="ti ti-users" aria-hidden="true"></i>Réseau</a>
+    <a class="tab" href="#"><i class="ti ti-settings" aria-hidden="true"></i>Réglages</a>
+  </nav>
+</div>
+</body>
+</html>

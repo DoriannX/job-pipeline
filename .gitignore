@@ -1,11 +1,11 @@
-# Secrets — ne JAMAIS committer
+# Secrets — ne JAMAIS committer (repo PUBLIC)
 .env
 
-# Données générées
+# Données générées au runtime
 data/
 output/
 
-# Python
+# Python — environnements & caches (régénérés via `pip install -r requirements.txt`)
 __pycache__/
 *.py[cod]
 .venv/
@@ -13,8 +13,8 @@ venv/
 .pytest_cache/
 *.egg-info/
 
-# Tooling local (bmad-method + skills Claude Code) — non requis pour le repo/cloud.
-# Reste sur le disque ; simplement non versionné. Retire ces lignes pour les suivre.
-_bmad/
-.claude/
-docs/
+# Worktrees git internes — non committables (checkouts liés)
+.claude/worktrees/
+
+# NB : _bmad/, docs/ et .claude/ (skills dont story-loop, settings) SONT versionnés
+# pour qu'un clone soit identique. Retire-les de ce fichier = arrête de les suivre.

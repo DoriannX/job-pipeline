@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plume · Paquet de cartes — 3 ambiances</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{ --ink:#2E2A26; --muted:#857c71; --hair:#E7DFD3; --page:#F6F1EA; }
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  font-family:'Inter',-apple-system,system-ui,sans-serif;
+  background:radial-gradient(130% 60% at 50% -10%, #FBF7F1, var(--page));
+  color:var(--ink); min-height:100vh; padding:34px 20px 60px;
+}
+header{max-width:1240px; margin:0 auto 30px; text-align:center}
+header h1{font-family:'Fraunces',serif; font-weight:600; font-size:34px; margin:0; letter-spacing:-.5px}
+header .sub{margin:8px auto 0; max-width:660px; color:var(--muted); font-size:15px; line-height:1.55}
+.mech{
+  max-width:760px; margin:18px auto 0; display:flex; flex-wrap:wrap; gap:8px; justify-content:center;
+}
+.mech span{
+  background:#fff; border:1px solid var(--hair); border-radius:999px; padding:6px 13px;
+  font-size:12.5px; color:#5e574d;
+}
+.mech b{color:var(--ink); font-weight:600}
+
+.grid{
+  max-width:1240px; margin:0 auto;
+  display:grid; gap:26px;
+  grid-template-columns:repeat(auto-fit, minmax(370px, 1fr));
+}
+.cardcol{
+  background:#fff; border:1px solid var(--hair); border-radius:22px; overflow:hidden;
+  box-shadow:0 18px 50px -30px rgba(80,60,40,.5); display:flex; flex-direction:column;
+}
+.colhead{padding:18px 20px 14px}
+.colhead .tag{
+  display:inline-block; font-size:11.5px; font-weight:600; letter-spacing:.5px; text-transform:uppercase;
+  padding:4px 11px; border-radius:999px; margin-bottom:9px;
+}
+.colhead h2{font-family:'Fraunces',serif; font-weight:600; font-size:21px; margin:0}
+.colhead p{margin:5px 0 0; font-size:13px; color:var(--muted); line-height:1.5}
+
+.swatches{display:flex; gap:8px; padding:0 20px 14px; flex-wrap:wrap}
+.sw{display:flex; align-items:center; gap:7px; font-size:11px; color:var(--muted)}
+.sw .chip{width:20px; height:20px; border-radius:7px; border:1px solid rgba(0,0,0,.08)}
+.coldrow{display:flex; gap:6px; padding:0 20px 16px; align-items:center}
+.coldrow .lbl{font-size:10.5px; color:var(--muted); margin-right:2px}
+.coldrow .pip{width:15px; height:15px; border-radius:50%}
+
+.viewport{border-top:1px solid var(--hair); background:var(--vbg); position:relative; height:560px}
+.viewport iframe{
+  width:390px; height:780px; border:0; transform:scale(.70); transform-origin:top center;
+  position:absolute; left:50%; top:16px; margin-left:-195px;
+}
+.openrow{padding:13px 20px; border-top:1px solid var(--hair); display:flex; justify-content:space-between; align-items:center}
+.openrow a{font-size:13px; font-weight:500; color:#4F6F5A; text-decoration:none}
+.openrow .file{font-size:11px; color:var(--muted); font-family:ui-monospace,monospace}
+
+footer{max-width:1240px; margin:34px auto 0; text-align:center; font-size:12px; color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Plume — le paquet du jour</h1>
+  <p class="sub">Onglet « Aujourd'hui » : une carte à la fois, façon paquet qu'on feuillette.
+     Même mécanique exacte dans les trois, seule l'ambiance de couleur change.</p>
+  <div class="mech">
+    <span><b>‹ ›</b> feuilleter le paquet</span>
+    <span><b>↑</b> écrire</span>
+    <span><b>↓</b> plus tard</span>
+    <span>boutons qui doublent le vertical</span>
+    <span>deck qui dépasse</span>
+    <span>état vide apaisé</span>
+  </div>
+</header>
+
+<div class="grid">
+
+  <!-- V1 -->
+  <div class="cardcol" style="--vbg:#F1E9DD">
+    <div class="colhead">
+      <span class="tag" style="background:#E4ECE6; color:#3A5444">V1 · Clair & warm</span>
+      <h2>Carnet de jour, baigné de lumière</h2>
+      <p>Ivoire-lin, un seul accent sauge. Beaucoup d'air.</p>
+    </div>
+    <div class="swatches">
+      <div class="sw"><span class="chip" style="background:#F6F1EA"></span>fond</div>
+      <div class="sw"><span class="chip" style="background:#FFFCF8"></span>carte</div>
+      <div class="sw"><span class="chip" style="background:#4F6F5A"></span>accent</div>
+      <div class="sw"><span class="chip" style="background:#2E2A26"></span>encre</div>
+    </div>
+    <div class="coldrow">
+      <span class="lbl">froideur</span>
+      <span class="pip" style="background:#B9B2A6" title="jamais contacté"></span>
+      <span class="pip" style="background:#6FA98E" title="frais"></span>
+      <span class="pip" style="background:#E2A24B" title="tiède"></span>
+      <span class="pip" style="background:#C9776B" title="froid"></span>
+    </div>
+    <div class="viewport"><iframe src="swipe-v1-clair-warm.html" title="V1 clair et warm"></iframe></div>
+    <div class="openrow">
+      <a href="swipe-v1-clair-warm.html" target="_blank">Ouvrir en grand →</a>
+      <span class="file">swipe-v1-clair-warm.html</span>
+    </div>
+  </div>
+
+  <!-- V2 -->
+  <div class="cardcol" style="--vbg:#211C18">
+    <div class="colhead">
+      <span class="tag" style="background:#3C3326; color:#F4D49A">V2 · Sombre & intime</span>
+      <h2>À la lampe de chevet</h2>
+      <p>Anthracite brun-tiède, accent abricot doré. L'intime de nuit.</p>
+    </div>
+    <div class="swatches">
+      <div class="sw"><span class="chip" style="background:#211C18"></span>fond</div>
+      <div class="sw"><span class="chip" style="background:#2E2823"></span>carte</div>
+      <div class="sw"><span class="chip" style="background:#E8B25E"></span>accent</div>
+      <div class="sw"><span class="chip" style="background:#F2E9DD"></span>encre</div>
+    </div>
+    <div class="coldrow">
+      <span class="lbl">froideur</span>
+      <span class="pip" style="background:#8A8076" title="jamais contacté"></span>
+      <span class="pip" style="background:#6FC6A0" title="frais"></span>
+      <span class="pip" style="background:#E8B25E" title="tiède"></span>
+      <span class="pip" style="background:#E08A78" title="froid"></span>
+    </div>
+    <div class="viewport"><iframe src="swipe-v2-sombre-intime.html" title="V2 sombre et intime"></iframe></div>
+    <div class="openrow">
+      <a href="swipe-v2-sombre-intime.html" target="_blank">Ouvrir en grand →</a>
+      <span class="file">swipe-v2-sombre-intime.html</span>
+    </div>
+  </div>
+
+  <!-- V3 -->
+  <div class="cardcol" style="--vbg:#F2E7EF">
+    <div class="colhead">
+      <span class="tag" style="background:#EFE6F4; color:#674C8A">V3 · Doux & coloré</span>
+      <h2>La couleur vient des gens</h2>
+      <p>Lilas-rosé pastel, accent prune. Vivant mais tendre.</p>
+    </div>
+    <div class="swatches">
+      <div class="sw"><span class="chip" style="background:#F7EFF4"></span>fond</div>
+      <div class="sw"><span class="chip" style="background:#FFFFFF"></span>carte</div>
+      <div class="sw"><span class="chip" style="background:#8C6BB0"></span>accent</div>
+      <div class="sw"><span class="chip" style="background:#3A3340"></span>encre</div>
+    </div>
+    <div class="coldrow">
+      <span class="lbl">froideur</span>
+      <span class="pip" style="background:#B5AEC0" title="jamais contacté"></span>
+      <span class="pip" style="background:#62B89A" title="frais"></span>
+      <span class="pip" style="background:#EBA94E" title="tiède"></span>
+      <span class="pip" style="background:#DD7E8E" title="froid"></span>
+    </div>
+    <div class="viewport"><iframe src="swipe-v3-doux-colore.html" title="V3 doux et coloré"></iframe></div>
+    <div class="openrow">
+      <a href="swipe-v3-doux-colore.html" target="_blank">Ouvrir en grand →</a>
+      <span class="file">swipe-v3-doux-colore.html</span>
+    </div>
+  </div>
+
+</div>
+
+<footer>Froideur · 4 états cohérents partout : jamais contacté · frais · tiède · froid &nbsp;—&nbsp; Plume, atelier UX 2026-06-15</footer>
+</body>
+</html>

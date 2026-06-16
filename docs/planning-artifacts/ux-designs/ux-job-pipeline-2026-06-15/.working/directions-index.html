@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plume — 4 directions visuelles · écran « Aujourd'hui »</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#E7E0D4; --panel:#FBF7EF; --tx:#332E27; --tx2:#7C7264; --line:#DDD3C2;
+  --accent:#B14A33;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var(--tx);
+  -webkit-font-smoothing:antialiased; padding:34px 20px 60px;}
+header{max-width:1640px; margin:0 auto 28px;}
+header .eyebrow{font-size:11px; letter-spacing:.22em; text-transform:uppercase;
+  color:var(--accent); font-weight:600;}
+header h1{font-family:'Newsreader',serif; font-weight:500; font-size:34px;
+  letter-spacing:-.01em; margin:6px 0 4px;}
+header p{font-size:14px; color:var(--tx2); max-width:760px; line-height:1.6;}
+.grid{max-width:1640px; margin:0 auto; display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:26px;}
+.panel{background:var(--panel); border:1px solid var(--line); border-radius:18px;
+  padding:20px 20px 24px; display:flex; flex-direction:column; align-items:center;}
+.panel .meta{width:100%; margin-bottom:14px;}
+.panel .tag{font-size:11px; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--accent); font-weight:600;}
+.panel h2{font-family:'Newsreader',serif; font-weight:500; font-size:22px;
+  margin:3px 0 6px; letter-spacing:-.01em;}
+.panel .desc{font-size:13px; color:var(--tx2); line-height:1.55;}
+.panel .swatches{display:flex; gap:7px; margin-top:11px; flex-wrap:wrap;}
+.sw{display:flex; align-items:center; gap:6px; font-size:11px; color:var(--tx2);
+  font-family:'Inter',sans-serif;}
+.sw i{width:15px;height:15px;border-radius:5px;border:1px solid rgba(0,0,0,.12); display:block;}
+.frame-wrap{width:100%; display:flex; justify-content:center;
+  background:repeating-linear-gradient(45deg,#efe8db,#efe8db 12px,#ece4d5 12px,#ece4d5 24px);
+  border-radius:14px; padding:16px 0;}
+iframe{width:390px; height:760px; border:none; border-radius:26px;
+  background:#fff; box-shadow:0 16px 40px rgba(51,46,39,.22);}
+@media(max-width:820px){iframe{width:340px;height:710px;}}
+footer{max-width:1640px; margin:34px auto 0; font-size:12px; color:var(--tx2);
+  text-align:center; line-height:1.7;}
+</style>
+</head>
+<body>
+<header>
+  <div class="eyebrow">Plume · atelier UX · 15 juin 2026</div>
+  <h1>Quatre directions visuelles</h1>
+  <p>Le même écran d'entrée quotidien, l'onglet « Aujourd'hui », interprété
+  selon quatre personnalités complètes. Toutes restent dans le cadre :
+  sobre, warm, intime, zéro courbe d'apprentissage. Chacune décline la
+  « plume » sous un angle distinct (écriture, apesanteur, outil réchauffé,
+  revue typographique).</p>
+</header>
+
+<div class="grid">
+
+  <section class="panel">
+    <div class="meta">
+      <div class="tag">Direction A</div>
+      <h2>Encre &amp; papier</h2>
+      <div class="desc">Le manuscrit : carnet relié, papier crème grainé,
+        chaque contact est une entrée écrite à la main. Sérif Fraunces,
+        encre sépia, cachet de cire rouge pour agir.</div>
+      <div class="swatches">
+        <span class="sw"><i style="background:#F4EBDD"></i>#F4EBDD</span>
+        <span class="sw"><i style="background:#2B2622"></i>#2B2622</span>
+        <span class="sw"><i style="background:#9A3B2E"></i>#9A3B2E</span>
+      </div>
+    </div>
+    <div class="frame-wrap"><iframe src="direction-encre-papier.html" title="Direction A — Encre & papier"></iframe></div>
+  </section>
+
+  <section class="panel">
+    <div class="meta">
+      <div class="tag">Direction B</div>
+      <h2>Légèreté &amp; air</h2>
+      <div class="desc">L'apesanteur : cartes blanches qui planent, typos
+        rondes et fines (Quicksand), énormément de respiration. Pêche chaude
+        pour agir, bleu-ciel calme pour la froideur.</div>
+      <div class="swatches">
+        <span class="sw"><i style="background:#FCFBF9"></i>#FCFBF9</span>
+        <span class="sw"><i style="background:#E8A07C"></i>#E8A07C</span>
+        <span class="sw"><i style="background:#9DBDBA"></i>#9DBDBA</span>
+      </div>
+    </div>
+    <div class="frame-wrap"><iframe src="direction-legerete-air.html" title="Direction B — Légèreté & air"></iframe></div>
+  </section>
+
+  <section class="panel">
+    <div class="meta">
+      <div class="tag">Direction C</div>
+      <h2>Minimal chaleureux</h2>
+      <div class="desc">Notion réchauffé : blocs nets très arrondis, fond
+        sable, accents terracotta et sauge. La direction la plus structurée,
+        lisible d'un coup d'œil sans jamais virer au CRM.</div>
+      <div class="swatches">
+        <span class="sw"><i style="background:#F7F2EB"></i>#F7F2EB</span>
+        <span class="sw"><i style="background:#C8623C"></i>#C8623C</span>
+        <span class="sw"><i style="background:#92A382"></i>#92A382</span>
+      </div>
+    </div>
+    <div class="frame-wrap"><iframe src="direction-minimal-chaleureux.html" title="Direction C — Minimal chaleureux"></iframe></div>
+  </section>
+
+  <section class="panel">
+    <div class="meta">
+      <div class="tag">Direction D</div>
+      <h2>Éditorial intime</h2>
+      <div class="desc">Une revue tenue pour soi : tout passe par la typo
+        (Newsreader), filets fins plutôt que cartes, texte sombre sur crème,
+        une seule couleur de rouille. Hiérarchie par la taille et l'italique.</div>
+      <div class="swatches">
+        <span class="sw"><i style="background:#F6F1E8"></i>#F6F1E8</span>
+        <span class="sw"><i style="background:#211F1B"></i>#211F1B</span>
+        <span class="sw"><i style="background:#B14A33"></i>#B14A33</span>
+      </div>
+    </div>
+    <div class="frame-wrap"><iframe src="direction-editorial-intime.html" title="Direction D — Éditorial intime"></iframe></div>
+  </section>
+
+</div>
+
+<footer>
+  Chaque direction inclut l'état « relance qui vieillit » (traitement doux,
+  non alarmant), le score de froideur sur 4 états, et une affordance claire
+  vers le composeur depuis chaque carte.<br>
+  Microcopy française, ton warm/intime, zéro tell d'IA, aucun tiret cadratin.
+</footer>
+</body>
+</html>

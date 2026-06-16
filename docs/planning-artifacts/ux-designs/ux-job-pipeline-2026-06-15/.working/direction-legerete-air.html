@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plume — Direction B · Légèreté & air</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600&family=Nunito+Sans:opsz,wght@6..12,300;6..12,400;6..12,600&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   DIRECTION B — LÉGÈRETÉ & AIR
+   Métaphore : la plume qui plane, l'air entre les choses.
+   Beaucoup de blanc, énormément d'espace, rien ne pèse.
+   Palette :
+     air            #FCFBF9   (fond presque blanc, chaud)
+     blanc pur      #FFFFFF   (cartes flottantes)
+     texte doux     #4B4742   (gris chaud, jamais noir dur)
+     texte estompé  #9A938A
+     trait vapeur   #EFEAE2
+     accent pêche   #E8A07C   (chaleur douce, action)
+     ciel doux      #BFD3D1   (touche fraîche, froideur)
+   Typo : Quicksand (titres ronds, légers) + Nunito Sans light (corps).
+   Mouvement : suggéré — flottement très lent, ombres diffuses qui
+   donnent l'impression que les cartes ne touchent pas le sol.
+   ============================================================ */
+:root{
+  --air:#FCFBF9; --card:#FFFFFF; --tx:#4B4742; --tx2:#9A938A;
+  --vapor:#EFEAE2; --peach:#E8A07C; --peach-dk:#B86F4E; --sky:#9DBDBA;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Nunito Sans',system-ui,sans-serif; font-weight:400;
+  color:var(--tx); background:#F2EEE7;
+  -webkit-font-smoothing:antialiased; line-height:1.6;
+  display:flex; flex-direction:column; align-items:center;
+  padding:28px 16px 48px; min-height:100vh;
+}
+.rationale{
+  max-width:390px; font-size:13px; color:#5b554d; background:#fff;
+  border:1px solid var(--vapor); border-radius:16px;
+  padding:15px 18px; margin-bottom:22px; line-height:1.55; font-weight:400;
+}
+.rationale b{font-family:'Quicksand',sans-serif; font-weight:600; color:var(--peach-dk);}
+.phone{
+  width:390px; max-width:100%; background:var(--air);
+  border-radius:34px; overflow:hidden; position:relative;
+  box-shadow:0 26px 60px rgba(75,71,66,.16);
+}
+.statusbar{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:14px 26px 0; font-size:12px; font-weight:600; color:var(--tx2);
+  font-family:'Quicksand',sans-serif;
+}
+.screen{padding:6px 24px 104px;}
+
+/* en-tête très aéré */
+.head{padding:30px 4px 4px;}
+.head .hi{font-size:14px; color:var(--tx2); font-weight:400;}
+.head h1{
+  font-family:'Quicksand',sans-serif; font-weight:500; font-size:32px;
+  letter-spacing:-.5px; margin-top:2px; color:#3f3b36;
+}
+
+/* compteur zéro-fuite : pilule légère qui flotte */
+.calm{
+  display:inline-flex; align-items:center; gap:9px; margin:22px 0 4px;
+  background:#fff; border:1px solid var(--vapor); border-radius:999px;
+  padding:9px 16px 9px 13px; font-size:13.5px; color:#5b554d;
+  box-shadow:0 8px 20px rgba(75,71,66,.07);
+}
+.calm .feather{
+  width:22px;height:22px;border-radius:50%; flex:none;
+  display:flex;align-items:center;justify-content:center;
+  background:#EAF2F1; color:var(--sky); font-size:13px;
+}
+.calm b{font-family:'Quicksand',sans-serif; font-weight:600; color:var(--tx);}
+
+.queue-label{
+  font-family:'Quicksand',sans-serif; font-size:13px; font-weight:500;
+  color:var(--tx2); margin:34px 4px 16px;
+}
+
+/* cartes flottantes — beaucoup d'air interne */
+.card{
+  background:var(--card); border-radius:22px; padding:20px 20px 16px;
+  margin-bottom:18px; border:1px solid #F4F0EA;
+  box-shadow:0 14px 34px rgba(75,71,66,.08);
+}
+.card .row1{display:flex; align-items:flex-start; gap:13px;}
+.feather-mark{ /* trait de plume qui plane sur chaque carte */
+  width:34px; height:34px; border-radius:50%; flex:none;
+  display:flex; align-items:center; justify-content:center;
+  background:#FBEFE7; color:var(--peach-dk); font-size:18px;
+}
+.card .kicker{font-size:11.5px; letter-spacing:.04em; text-transform:uppercase;
+  color:var(--peach-dk); font-weight:600;}
+.card .name{font-family:'Quicksand',sans-serif; font-weight:600; font-size:19px;
+  color:#3f3b36; margin-top:2px; letter-spacing:-.2px;}
+.card .role{font-size:13.5px; color:var(--tx2); font-weight:400;}
+.card .note{font-size:14px; color:#6c655c; margin:13px 0 0;
+  font-weight:400; line-height:1.5;}
+
+.card .foot{display:flex; align-items:center; justify-content:space-between;
+  margin-top:16px;}
+.cold{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--tx2);}
+.cold .bar{display:flex; gap:4px;}
+.cold .seg{width:14px;height:4px;border-radius:3px;background:var(--vapor);}
+.cold .seg.on{background:var(--sky);}
+.go{
+  font-family:'Quicksand',sans-serif; font-weight:600; font-size:13px;
+  color:#fff; background:var(--peach); border:none; border-radius:999px;
+  padding:9px 18px; cursor:pointer; text-decoration:none;
+  display:inline-flex; align-items:center; gap:6px;
+  box-shadow:0 8px 18px rgba(232,160,124,.4);
+}
+.go:hover{background:var(--peach-dk);}
+
+/* carte qui vieillit — flotte plus bas, halo plus chaud, jamais alarmant */
+.card.aging{background:#FFFAF6; border-color:#FBE6D8;}
+.card.aging .feather-mark{background:#FBE0CF;}
+.card.aging .since{
+  margin-left:auto; font-size:11.5px; color:#bb7c57; font-weight:600;
+  background:#FBEFE6; border-radius:999px; padding:4px 11px; align-self:flex-start;
+}
+
+/* barre d'onglets — légère, flottante */
+.tabs{
+  position:absolute; left:14px; right:14px; bottom:14px;
+  display:flex; background:#fff; border:1px solid var(--vapor);
+  border-radius:24px; padding:8px 8px calc(8px + env(safe-area-inset-bottom));
+  box-shadow:0 14px 34px rgba(75,71,66,.12);
+}
+.tab{flex:1; text-align:center; font-family:'Quicksand',sans-serif;
+  font-size:11px; font-weight:500; color:var(--tx2); text-decoration:none;
+  padding:5px 0; border-radius:18px;}
+.tab i{display:block; font-size:20px; margin-bottom:3px; font-weight:300;}
+.tab.active{color:var(--peach-dk); background:#FBEFE7;}
+</style>
+</head>
+<body>
+<div class="rationale">
+  <b>B · Légèreté &amp; air.</b> Plume comprise comme l'apesanteur : des
+  cartes blanches qui semblent planer, des typos rondes (Quicksand) et
+  fines, énormément de respiration. Rien ne pèse, rien ne presse. Une seule
+  pêche chaude pour agir, un bleu-ciel calme pour la froideur.
+</div>
+
+<div class="phone">
+  <div class="statusbar"><span>9:41</span><span>Plume</span></div>
+
+  <div class="screen">
+    <div class="head">
+      <div class="hi">Bonjour Camille</div>
+      <h1>Aujourd'hui</h1>
+    </div>
+
+    <div class="calm">
+      <span class="feather" aria-hidden="true"><i class="ti ti-feather"></i></span>
+      <span>Rien ne traîne · <b>3 relances à jour</b></span>
+    </div>
+
+    <div class="queue-label">Ta file du jour, sans rien forcer</div>
+
+    <!-- carte qui vieillit -->
+    <article class="card aging">
+      <div class="row1">
+        <span class="feather-mark" aria-hidden="true"><i class="ti ti-clock-hour-4"></i></span>
+        <div>
+          <div class="kicker">Relance due</div>
+          <div class="name">Léa Marchand</div>
+          <div class="role">Recruteuse · Doctolib</div>
+        </div>
+        <span class="since">il y a 5 jours</span>
+      </div>
+      <p class="note">relancer, ça fait 5 jours</p>
+      <div class="foot">
+        <div class="cold">
+          <span class="bar" aria-hidden="true"><span class="seg on"></span><span class="seg on"></span><span class="seg"></span></span>
+          tiède
+        </div>
+        <a class="go" href="#">Reprendre le fil</a>
+      </div>
+    </article>
+
+    <!-- premier message -->
+    <article class="card">
+      <div class="row1">
+        <span class="feather-mark" aria-hidden="true"><i class="ti ti-send"></i></span>
+        <div>
+          <div class="kicker">Premier message</div>
+          <div class="name">Thomas Berger</div>
+          <div class="role">Lead dev · Alan</div>
+        </div>
+      </div>
+      <p class="note">présenté par Camille</p>
+      <div class="foot">
+        <div class="cold">
+          <span class="bar" aria-hidden="true"><span class="seg"></span><span class="seg"></span><span class="seg"></span></span>
+          jamais contacté
+        </div>
+        <a class="go" href="#">Écrire</a>
+      </div>
+    </article>
+
+    <!-- relance fraîche -->
+    <article class="card">
+      <div class="row1">
+        <span class="feather-mark" aria-hidden="true"><i class="ti ti-clock-hour-4"></i></span>
+        <div>
+          <div class="kicker">Relance due</div>
+          <div class="name">Sophie Nkamga</div>
+          <div class="role">CTO · Pennylane</div>
+        </div>
+      </div>
+      <p class="note">reprendre le fil, en douceur</p>
+      <div class="foot">
+        <div class="cold">
+          <span class="bar" aria-hidden="true"><span class="seg on"></span><span class="seg"></span><span class="seg"></span></span>
+          frais
+        </div>
+        <a class="go" href="#">Reprendre le fil</a>
+      </div>
+    </article>
+
+  </div>
+
+  <nav class="tabs">
+    <a class="tab active" href="#"><i class="ti ti-feather" aria-hidden="true"></i>Aujourd'hui</a>
+    <a class="tab" href="#"><i class="ti ti-users" aria-hidden="true"></i>Réseau</a>
+    <a class="tab" href="#"><i class="ti ti-settings" aria-hidden="true"></i>Réglages</a>
+  </nav>
+</div>
+</body>
+</html>

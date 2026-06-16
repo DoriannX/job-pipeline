@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plume · Le composeur (ta voix) · v1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!--
+  Plume — LE COMPOSEUR (atelier UX) · v1.
+  DA figée reprise à la lettre de plume-hero-v2.html :
+    · palette Menthe d'eau × Mauve poussiéreux (mêmes hex, mêmes tokens)
+    · typo Fraunces (titres/noms) + Quicksand (corps/boutons)
+    · illustration maison SVG inline (plume-mascotte + blob de Léa, trait encre)
+    · boutons chunky, ZÉRO ombre molle (profondeur = contour plein + hard offset net teinté)
+    · aucun emoji, aucune lib d'icônes (SVG inline tracé main), microcopy FR warm sans tiret cadratin
+  Le mauve = fil rouge d'accent (action principale, états actifs) ; la menthe reste dominante.
+
+  Le composeur = bottom-sheet qui monte depuis le bas. La carte du contact (Léa Marchand,
+  recruteuse Doctolib, froideur tiède, chip Relance · 5 j) reste visible en haut, en contexte.
+  La feuille occupe ~70% du bas.
+
+  3 états côte à côte :
+   1. Champ vide      → canal LinkedIn pré-réglé, placeholder warm, gros bouton « Générer » mauve,
+                         toggle Mode sans IA (off), réassurance voix, contrôle modèle replié.
+   2. Texte généré    → message crédible à la voix de Camille, bouton « Améliorer », « Copier » (mauve),
+                         petit « régénérer » discret.
+   3. Mode sans IA on → boutons IA masqués, champ tapé main + « Copier » + note de confidentialité,
+                         inset : sélecteur de canal déplié (4 canaux).
+-->
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500;1,9..144,600&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ---------- Tokens d'atelier (neutres, hors palette app) ---------- */
+  :root{
+    --atelier:#E4EEEA;
+    --atelier-2:#EDF4F1;
+    --trait:#2E3F3B;
+
+    /* Froideur recolorée — famille menthe/mauve/froid */
+    --c-jamais:#C9C2D6;
+    --c-frais:#8FBCA8;
+    --c-tiede:#CBA7C0;        /* Léa = tiède */
+    --c-froid:#A7BCC6;
+    --c-tiede-sh:#B289A6;
+
+    /* PALETTE — base menthe */
+    --pal-bg:#E9F3EF;
+    --pal-card:#FBFEFD;
+    --pal-ink:#2E3F3B;
+    --pal-soft:#5F726D;
+    --pal-brand:#7FBEAF;
+    --pal-brand-deep:#4E8978;
+    --pal-chip:#DCEFE9;
+    --pal-back2:#DCEBE5;
+    --pal-back1:#EAF4F0;
+    --pal-note:#EDF6F2;
+    --pal-line:#CFE3DB;
+    --pal-hint:#9DB5AD;
+    --pal-pager:#C7DDD5;
+    --pal-tab-off:#9DB5AD;
+
+    /* ACCENT — mauve poussiéreux (fil rouge) */
+    --acc:#B391AC;
+    --acc-deep:#876585;
+    --acc-on:#FFFFFF;
+    --acc-chip:#ECE2EA;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased;}
+  body{
+    background:
+      radial-gradient(1200px 520px at 18% -8%, var(--atelier-2), transparent 60%),
+      radial-gradient(1000px 520px at 92% 4%, var(--atelier-2), transparent 60%),
+      var(--atelier);
+    font-family:"Quicksand",system-ui,sans-serif;
+    color:var(--pal-ink);
+    padding:44px 24px 72px;
+    line-height:1.5;
+  }
+  .display{font-family:"Fraunces",serif;}
+
+  /* ---------- En-tête / encart ---------- */
+  .head{max-width:1320px;margin:0 auto 18px;}
+  .brandline{display:flex;align-items:center;gap:15px;margin-bottom:18px;flex-wrap:wrap;}
+  .brandline h1{
+    font-family:"Fraunces",serif;font-weight:600;font-size:38px;
+    letter-spacing:-.01em;color:var(--pal-ink);line-height:1;
+  }
+  .brandline .tag{
+    font-size:12px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--pal-brand-deep);background:var(--pal-chip);border:2px solid var(--pal-brand);
+    padding:5px 12px 4px;border-radius:999px;
+  }
+  .brandline .tag.spice{color:#fff;background:var(--acc);border-color:var(--acc-deep);}
+  .choose{
+    background:var(--pal-card);border:2.5px solid var(--trait);border-radius:20px;
+    padding:18px 24px;max-width:1320px;
+    box-shadow:8px 8px 0 0 var(--pal-brand);
+  }
+  .choose p{font-size:15.5px;color:var(--pal-soft);}
+  .choose p b{color:var(--pal-ink);font-weight:700;}
+  .choose p .em{color:var(--acc-deep);font-weight:700;}
+
+  /* ---------- Scène : trois téléphones EN GRAND ---------- */
+  .scene{
+    display:flex;flex-wrap:wrap;gap:58px;justify-content:center;
+    margin:54px auto 40px;max-width:1320px;align-items:flex-start;
+  }
+  .phone-wrap{display:flex;flex-direction:column;align-items:center;gap:15px;}
+  .phone-label{
+    font-family:"Fraunces",serif;font-style:italic;font-weight:500;
+    font-size:19px;color:var(--pal-brand-deep);text-align:center;
+  }
+  .phone-label .acc{color:var(--acc-deep);font-style:normal;font-weight:600;}
+
+  /* ---------- Châssis téléphone (~400px) ---------- */
+  .phone{
+    width:400px;max-width:94vw;border-radius:50px;
+    background:var(--trait);padding:12px;
+    box-shadow:13px 14px 0 0 #CADFD8;
+  }
+  .screen{
+    position:relative;width:100%;height:818px;border-radius:40px;overflow:hidden;
+    background:var(--pal-bg);
+  }
+  .notch{
+    position:absolute;top:12px;left:50%;transform:translateX(-50%);
+    width:128px;height:28px;border-radius:999px;background:var(--trait);z-index:40;
+  }
+
+  /* ---------- Contexte : carte du contact en haut (scrim sur 30%) ---------- */
+  .context-top{
+    position:absolute;top:0;left:0;right:0;height:246px;z-index:5;
+    padding:54px 22px 0;
+  }
+  .scrim{position:absolute;inset:0;background:var(--pal-bg);}
+  /* mini-topbar discrète dans le contexte */
+  .ctx-bar{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .ctx-back{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;color:var(--pal-brand-deep);}
+  .ctx-step{font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--pal-hint);}
+
+  /* la carte contact, compacte et horizontale */
+  .contact{
+    position:relative;z-index:2;display:flex;align-items:center;gap:15px;
+    background:var(--pal-card);border:2.5px solid var(--trait);border-radius:26px;
+    padding:14px 18px;
+  }
+  .contact .av{flex:0 0 auto;width:64px;height:64px;}
+  .contact .meta{flex:1;min-width:0;}
+  .contact .meta .name{font-family:"Fraunces",serif;font-weight:600;font-size:22px;color:var(--pal-ink);line-height:1.05;}
+  .contact .meta .role{font-size:13.5px;font-weight:600;color:var(--pal-brand-deep);margin-top:2px;}
+  .contact .meta .role b{color:var(--pal-soft);font-weight:500;}
+  .contact .badges{display:flex;flex-direction:column;align-items:flex-end;gap:7px;flex:0 0 auto;}
+  .chip{
+    display:inline-flex;align-items:center;gap:7px;white-space:nowrap;
+    font-size:12.5px;font-weight:700;color:var(--acc-deep);
+    background:var(--acc-chip);border:2px solid var(--acc);border-radius:999px;
+    padding:5px 12px 4px;
+  }
+  .chip .dot{width:8px;height:8px;border-radius:50%;background:var(--c-tiede);border:1.5px solid var(--c-tiede-sh);}
+  .coldtag{font-size:12px;font-weight:600;color:var(--pal-soft);display:inline-flex;align-items:center;gap:6px;}
+  .coldtag .sw{width:11px;height:11px;border-radius:3px;border:1.5px solid var(--trait);background:var(--c-tiede);}
+
+  /* ---------- Le bottom-sheet du composeur (monte du bas, ~70%) ---------- */
+  .sheet{
+    position:absolute;left:0;right:0;bottom:0;height:592px;z-index:10;
+    background:var(--pal-card);
+    border:2.5px solid var(--trait);border-bottom:none;
+    border-radius:34px 34px 0 0;
+    /* hard offset net teinté vers le haut, JAMAIS flou — la feuille flotte au-dessus du contexte */
+    box-shadow:0 -7px 0 0 var(--acc);
+    display:flex;flex-direction:column;
+    padding:0 22px 22px;
+  }
+  .grab{width:46px;height:5px;border-radius:999px;background:var(--pal-line);margin:11px auto 14px;flex:0 0 auto;}
+
+  .sheet-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:13px;flex:0 0 auto;}
+  .sheet-head .t{font-family:"Fraunces",serif;font-weight:600;font-size:21px;color:var(--pal-ink);}
+  .sheet-head .t .plume-tick{display:inline-block;vertical-align:middle;margin-left:5px;}
+
+  /* ---------- Sélecteur de canal (chips/onglets) ---------- */
+  .channels{display:flex;gap:8px;margin-bottom:14px;flex:0 0 auto;}
+  .ch{
+    flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;
+    padding:9px 0 8px;border-radius:15px;
+    border:2px solid var(--pal-line);background:var(--pal-card);
+    font-size:11.5px;font-weight:600;color:var(--pal-soft);
+  }
+  .ch svg{display:block;}
+  /* canal actif = mauve plein, fil rouge */
+  .ch.on{
+    background:var(--acc);border-color:var(--acc-deep);color:#fff;
+    box-shadow:0 4px 0 0 var(--acc-deep);
+  }
+
+  /* ---------- Champ unique (source de vérité) ---------- */
+  .field{
+    flex:1;min-height:0;position:relative;
+    border:2.5px solid var(--trait);border-radius:22px;
+    background:var(--pal-note);
+    padding:16px 17px;overflow:hidden;display:flex;flex-direction:column;
+  }
+  .field .ph{color:var(--pal-hint);font-size:15.5px;line-height:1.55;font-weight:500;}
+  .field .msg{color:var(--pal-ink);font-size:15.5px;line-height:1.62;font-weight:500;}
+  .field .msg .sig{color:var(--pal-ink);}
+  /* le curseur, infime, dans le champ vide */
+  .field .caret{display:inline-block;width:2px;height:19px;background:var(--acc);vertical-align:-4px;animation:blink 1.1s step-end infinite;}
+  @keyframes blink{50%{opacity:0;}}
+  /* badge « ta voix » au pied du champ */
+  .voicebadge{
+    margin-top:auto;padding-top:13px;display:flex;align-items:center;gap:7px;
+    font-size:12px;font-weight:600;color:var(--pal-brand-deep);
+  }
+  .voicebadge .sub{color:var(--pal-hint);font-weight:500;}
+
+  /* note quand champ généré : minuscule trace IA assumée et douce */
+  .gentag{
+    position:absolute;top:13px;right:14px;
+    display:inline-flex;align-items:center;gap:5px;
+    font-size:10.5px;font-weight:700;letter-spacing:.04em;color:var(--acc-deep);
+    background:var(--acc-chip);border:1.5px solid var(--acc);border-radius:999px;
+    padding:3px 9px 2px;
+  }
+
+  /* ---------- Rangée réglages discrets (modèle replié + mode sans IA) ---------- */
+  .controls{
+    flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;
+    margin:13px 0;gap:12px;
+  }
+  /* contrôle modèle DISCRET, replié */
+  .model{
+    display:inline-flex;align-items:center;gap:7px;
+    font-size:12px;font-weight:600;color:var(--pal-soft);
+    background:var(--pal-chip);border:1.5px solid var(--pal-line);border-radius:999px;
+    padding:5px 11px 4px;
+  }
+  .model .v{color:var(--pal-brand-deep);font-weight:700;}
+  .model .chev{opacity:.65;}
+
+  /* toggle Mode sans IA */
+  .toggle{display:inline-flex;align-items:center;gap:9px;font-size:12.5px;font-weight:600;color:var(--pal-soft);}
+  .toggle .sw{
+    width:40px;height:23px;border-radius:999px;position:relative;flex:0 0 auto;
+    border:2px solid var(--trait);background:var(--pal-back2);
+  }
+  .toggle .sw .knob{
+    position:absolute;top:1.5px;left:2px;width:16px;height:16px;border-radius:50%;
+    background:var(--pal-card);border:2px solid var(--trait);
+  }
+  .toggle.on .sw{background:var(--acc);border-color:var(--acc-deep);}
+  .toggle.on .sw .knob{left:18px;}
+  .toggle.on{color:var(--acc-deep);}
+
+  /* ---------- Boutons chunky du composeur ---------- */
+  .cta{flex:0 0 auto;display:flex;gap:11px;align-items:stretch;}
+  .btn{
+    border:2.5px solid var(--trait);border-radius:20px;
+    font-family:"Quicksand",sans-serif;font-weight:700;cursor:default;
+    display:flex;align-items:center;justify-content:center;gap:9px;
+  }
+  /* PRINCIPAL mauve plein, hard offset profond mauve */
+  .btn-primary{
+    flex:2;background:var(--acc);color:var(--acc-on);font-size:18px;padding:16px 0;
+    box-shadow:0 6px 0 0 var(--acc-deep);
+  }
+  .btn-primary .lbl{text-shadow:0 1px 0 rgba(0,0,0,.12);}
+  /* SECONDAIRE ghost menthe */
+  .btn-ghost{
+    flex:1.15;background:transparent;color:var(--pal-brand-deep);font-size:15px;padding:16px 0;
+    border-color:var(--pal-brand);box-shadow:0 6px 0 0 #BFD9D0;
+  }
+  /* petit régénérer discret (carré, ghost) */
+  .btn-mini{
+    flex:0 0 auto;width:56px;background:transparent;color:var(--pal-soft);padding:16px 0;
+    border-color:var(--pal-line);box-shadow:0 6px 0 0 var(--pal-back2);
+  }
+
+  /* note de confidentialité (mode sans IA) */
+  .privacy{
+    flex:0 0 auto;margin-bottom:13px;
+    display:flex;align-items:flex-start;gap:9px;
+    background:var(--pal-note);border:2px dashed var(--pal-line);border-radius:16px;
+    padding:11px 13px;font-size:12.5px;color:var(--pal-soft);line-height:1.45;
+  }
+  .privacy svg{flex:0 0 auto;margin-top:1px;}
+  .privacy b{color:var(--pal-brand-deep);font-weight:700;}
+
+  /* ---------- Inset : sélecteur de canal déplié (état 3) ---------- */
+  .inset{
+    position:absolute;z-index:30;right:-26px;bottom:118px;
+    width:188px;background:var(--pal-card);
+    border:2.5px solid var(--trait);border-radius:22px;
+    box-shadow:7px 8px 0 0 var(--acc);
+    padding:13px 13px 14px;
+  }
+  .inset .cap{
+    font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--acc-deep);margin-bottom:10px;
+  }
+  .inset .opt{
+    display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:13px;
+    font-size:13.5px;font-weight:600;color:var(--pal-ink);margin-bottom:6px;
+    border:2px solid transparent;
+  }
+  .inset .opt:last-child{margin-bottom:0;}
+  .inset .opt.on{background:var(--acc-chip);border-color:var(--acc);color:var(--acc-deep);font-weight:700;}
+  .inset .opt .ico{flex:0 0 auto;width:22px;height:22px;display:flex;align-items:center;justify-content:center;}
+  .inset .opt .pref{margin-left:auto;font-size:10px;font-weight:700;color:var(--acc-deep);}
+  /* petite flèche cornée qui rattache l'inset au téléphone */
+  .inset::after{
+    content:"";position:absolute;left:-13px;top:34px;width:18px;height:18px;
+    background:var(--pal-card);border-left:2.5px solid var(--trait);border-bottom:2.5px solid var(--trait);
+    transform:rotate(45deg);
+  }
+
+  .foot{max-width:1320px;margin:30px auto 0;font-size:13px;color:#7D938C;text-align:center;}
+  .foot .acc{color:var(--acc-deep);font-weight:600;}
+
+  @media (max-width:1340px){.scene{gap:44px;}}
+</style>
+</head>
+<body>
+
+<!-- ================= EN-TÊTE + ENCART ================= -->
+<header class="head">
+  <div class="brandline">
+    <svg width="42" height="42" viewBox="0 0 48 48" aria-hidden="true">
+      <g transform="rotate(-16 24 24)">
+        <path d="M30 7 C18 11 11 24 11 36 C20 33 26 36 32 30 C29 30 26 31 23 32 C28 27 33 21 34 12 C32 16 29 19 26 22 C30 17 31 12 30 7 Z"
+              fill="#7FBEAF" stroke="#2E3F3B" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M27 12 C23 18 19 27 16 34" fill="none" stroke="#2E3F3B" stroke-width="1.6" stroke-linecap="round"/>
+        <line x1="11" y1="36" x2="6" y2="43" stroke="#2E3F3B" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M37 9 l1.1 3 l3 1.1 l-3 1.1 l-1.1 3 l-1.1 -3 l-3 -1.1 l3 -1.1 z" fill="#B391AC"/>
+      </g>
+    </svg>
+    <h1>Plume</h1>
+    <span class="tag">Le composeur</span>
+    <span class="tag spice">Ta voix</span>
+  </div>
+  <div class="choose">
+    <p><b>Plume — le composeur (ta voix) : vide -&gt; généré -&gt; Mode sans IA.</b> Le composeur monte du bas en <b>bottom-sheet</b> ; la carte de <span class="em">Léa Marchand</span> (recruteuse Doctolib, froideur tiède) reste en contexte. Canal pré-réglé sur son préféré, <span class="em">LinkedIn</span>, changeable en un tap. Champ unique = source de vérité. Le <span class="em">mauve</span> porte l'action principale et les états actifs ; la menthe reste la base.</p>
+  </div>
+</header>
+
+<!-- ================= LES TROIS ÉTATS ================= -->
+<section class="scene">
+
+  <!-- =========================================================
+       ÉTAT 1 — CHAMP VIDE / GÉNÉRER
+  ========================================================== -->
+  <div class="phone-wrap">
+    <span class="phone-label">1 · Champ vide <span class="acc">— Générer</span></span>
+    <div class="phone">
+      <div class="screen">
+        <div class="notch"></div>
+
+        <!-- contexte : carte de Léa visible en haut -->
+        <div class="context-top">
+          <div class="scrim"></div>
+          <div class="ctx-bar">
+            <span class="ctx-back">
+              <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6 L8 12 L14 18" fill="none" stroke="#4E8978" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Léa, en bref
+            </span>
+            <span class="ctx-step">Relance</span>
+          </div>
+          <div class="contact">
+            <svg class="av" viewBox="0 0 124 124" aria-hidden="true">
+              <path d="M62 10 C88 10 108 26 110 52 C112 78 96 104 66 110 C40 115 16 98 12 70 C8 44 24 18 50 12 C54 11 58 10 62 10 Z"
+                    fill="#CBA7C0" stroke="#2E3F3B" stroke-width="3.5" stroke-linejoin="round"/>
+              <path d="M30 78 C26 64 30 50 42 44 C36 58 36 70 44 82 C40 84 34 83 30 78 Z" fill="#B289A6"/>
+              <path d="M28 44 C36 24 60 18 80 28 C92 34 96 46 94 56 C88 44 78 38 66 40 C70 34 66 30 60 31 C56 38 48 40 42 38 C44 46 38 50 32 52 C30 49 28 47 28 44 Z"
+                    fill="#5A3D2A" stroke="#2E3F3B" stroke-width="2.8" stroke-linejoin="round"/>
+              <path d="M44 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3.4" stroke-linecap="round"/>
+              <path d="M70 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3.4" stroke-linecap="round"/>
+              <ellipse cx="42" cy="80" rx="6" ry="4" fill="#B884A8" opacity=".7"/>
+              <ellipse cx="84" cy="80" rx="6" ry="4" fill="#B884A8" opacity=".7"/>
+              <path d="M54 84 q9 9 18 0" fill="none" stroke="#2E3F3B" stroke-width="3.4" stroke-linecap="round"/>
+            </svg>
+            <div class="meta">
+              <div class="name">Léa Marchand</div>
+              <div class="role">Recruteuse <b>· Doctolib</b></div>
+            </div>
+            <div class="badges">
+              <span class="chip"><span class="dot"></span>Relance · 5 j</span>
+              <span class="coldtag"><span class="sw"></span>Tiède</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- bottom-sheet : composeur -->
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="sheet-head">
+            <span class="t">Écrire à Léa<svg class="plume-tick" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5 C11 7 7 14 7 21 C12 19 15 20 19 16 C17 16 15 17 13 18 C16 14 18 10 18 5 Z" fill="#B391AC" stroke="#2E3F3B" stroke-width="1.4" stroke-linejoin="round"/></svg></span>
+          </div>
+
+          <!-- sélecteur de canal pré-réglé : LinkedIn actif (mauve), changeable -->
+          <div class="channels">
+            <div class="ch on">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="#fff" stroke-width="2"/><circle cx="7.5" cy="8" r="1.4" fill="#fff"/><path d="M7.5 11 L7.5 17 M12 17 L12 13.5 C12 11.8 15 11.6 15 13.8 L15 17" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              LinkedIn
+            </div>
+            <div class="ch">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="3" fill="none" stroke="#5F726D" stroke-width="2"/><path d="M4 8 L12 13 L20 8" fill="none" stroke="#5F726D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Email
+            </div>
+            <div class="ch">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 C7 4 3.5 7.4 3.5 11.5 C3.5 13.2 4.2 14.7 5.3 15.9 L4.4 19 L7.7 18.1 C9 18.8 10.4 19 12 19 C17 19 20.5 15.6 20.5 11.5 C20.5 7.4 17 4 12 4 Z" fill="none" stroke="#5F726D" stroke-width="2" stroke-linejoin="round"/></svg>
+              WhatsApp
+            </div>
+            <div class="ch">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5 C4 4 4.6 4 5 4 L19 4 C19.4 4 20 4 20 5 L20 15 C20 16 19.4 16 19 16 L9 16 L5 19.5 L5 16 C4.4 16 4 16 4 15 Z" fill="none" stroke="#5F726D" stroke-width="2" stroke-linejoin="round"/></svg>
+              SMS
+            </div>
+          </div>
+
+          <!-- champ unique vide : placeholder warm -->
+          <div class="field">
+            <span class="ph">Écris un mot à Léa, ou laisse Plume te proposer un premier jet…<span class="caret"></span></span>
+            <div class="voicebadge">
+              <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5 C11 7 7 14 7 21 C12 19 15 20 19 16 C17 16 15 17 13 18 C16 14 18 10 18 5 Z" fill="none" stroke="#4E8978" stroke-width="1.8" stroke-linejoin="round"/></svg>
+              Plume écrit comme toi <span class="sub">d'après tes messages passés</span>
+            </div>
+          </div>
+
+          <!-- réglages discrets : modèle replié · mode sans IA off -->
+          <div class="controls">
+            <span class="model">
+              <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 L5 14 L11 14 L9 21 L19 9 L13 9 Z" fill="none" stroke="#4E8978" stroke-width="2" stroke-linejoin="round"/></svg>
+              Plume <span class="v">Rapide</span>
+              <svg class="chev" width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10 L12 15 L17 10" fill="none" stroke="#5F726D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+            <span class="toggle">
+              Mode sans IA
+              <span class="sw"><span class="knob"></span></span>
+            </span>
+          </div>
+
+          <!-- bouton intelligent : champ vide -> Générer (mauve, chunky) -->
+          <div class="cta">
+            <div class="btn btn-primary">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 l1.8 5 l5 1.8 l-5 1.8 l-1.8 5 l-1.8 -5 l-5 -1.8 l5 -1.8 z" fill="#fff"/><circle cx="19" cy="5" r="1.6" fill="#fff"/></svg>
+              <span class="lbl">Générer</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       ÉTAT 2 — TEXTE GÉNÉRÉ / AMÉLIORER + COPIER
+  ========================================================== -->
+  <div class="phone-wrap">
+    <span class="phone-label">2 · Texte généré <span class="acc">— Améliorer + Copier</span></span>
+    <div class="phone">
+      <div class="screen">
+        <div class="notch"></div>
+
+        <div class="context-top">
+          <div class="scrim"></div>
+          <div class="ctx-bar">
+            <span class="ctx-back">
+              <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6 L8 12 L14 18" fill="none" stroke="#4E8978" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Léa, en bref
+            </span>
+            <span class="ctx-step">Relance</span>
+          </div>
+          <div class="contact">
+            <svg class="av" viewBox="0 0 124 124" aria-hidden="true">
+              <path d="M62 10 C88 10 108 26 110 52 C112 78 96 104 66 110 C40 115 16 98 12 70 C8 44 24 18 50 12 C54 11 58 10 62 10 Z"
+                    fill="#CBA7C0" stroke="#2E3F3B" stroke-width="3.5" stroke-linejoin="round"/>
+              <path d="M30 78 C26 64 30 50 42 44 C36 58 36 70 44 82 C40 84 34 83 30 78 Z" fill="#B289A6"/>
+              <path d="M28 44 C36 24 60 18 80 28 C92 34 96 46 94 56 C88 44 78 38 66 40 C70 34 66 30 60 31 C56 38 48 40 42 38 C44 46 38 50 32 52 C30 49 28 47 28 44 Z"
+                    fill="#5A3D2A" stroke="#2E3F3B" stroke-width="2.8" stroke-linejoin="round"/>
+              <path d="M44 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3.4" stroke-linecap="round"/>
+              <path d="M70 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3.4" stroke-linecap="round"/>
+              <ellipse cx="42" cy="80" rx="6" ry="4" fill="#B884A8" opacity=".7"/>
+              <ellipse cx="84" cy="80" rx="6" ry="4" fill="#B884A8" opacity=".7"/>
+              <path d="M54 84 q9 9 18 0" fill="none" stroke="#2E3F3B" stroke-width="3.4" stroke-linecap="round"/>
+            </svg>
+            <div class="meta">
+              <div class="name">Léa Marchand</div>
+              <div class="role">Recruteuse <b>· Doctolib</b></div>
+            </div>
+            <div class="badges">
+              <span class="chip"><span class="dot"></span>Relance · 5 j</span>
+              <span class="coldtag"><span class="sw"></span>Tiède</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="sheet-head">
+            <span class="t">Écrire à Léa<svg class="plume-tick" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5 C11 7 7 14 7 21 C12 19 15 20 19 16 C17 16 15 17 13 18 C16 14 18 10 18 5 Z" fill="#B391AC" stroke="#2E3F3B" stroke-width="1.4" stroke-linejoin="round"/></svg></span>
+          </div>
+
+          <div class="channels">
+            <div class="ch on">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="#fff" stroke-width="2"/><circle cx="7.5" cy="8" r="1.4" fill="#fff"/><path d="M7.5 11 L7.5 17 M12 17 L12 13.5 C12 11.8 15 11.6 15 13.8 L15 17" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              LinkedIn
+            </div>
+            <div class="ch">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="3" fill="none" stroke="#5F726D" stroke-width="2"/><path d="M4 8 L12 13 L20 8" fill="none" stroke="#5F726D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Email
+            </div>
+            <div class="ch">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 C7 4 3.5 7.4 3.5 11.5 C3.5 13.2 4.2 14.7 5.3 15.9 L4.4 19 L7.7 18.1 C9 18.8 10.4 19 12 19 C17 19 20.5 15.6 20.5 11.5 C20.5 7.4 17 4 12 4 Z" fill="none" stroke="#5F726D" stroke-width="2" stroke-linejoin="round"/></svg>
+              WhatsApp
+            </div>
+            <div class="ch">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5 C4 4 4.6 4 5 4 L19 4 C19.4 4 20 4 20 5 L20 15 C20 16 19.4 16 19 16 L9 16 L5 19.5 L5 16 C4.4 16 4 16 4 15 Z" fill="none" stroke="#5F726D" stroke-width="2" stroke-linejoin="round"/></svg>
+              SMS
+            </div>
+          </div>
+
+          <!-- champ rempli : vrai message à la voix de Camille -->
+          <div class="field">
+            <span class="gentag">
+              <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 l1.6 5 l5 1.6 l-5 1.6 l-1.6 5 l-1.6 -5 l-5 -1.6 l5 -1.6 z" fill="#876585"/></svg>
+              Premier jet
+            </span>
+            <span class="msg">Bonjour Léa,<br><br>je reviens vers vous après notre échange de la semaine dernière. Le poste chez Doctolib me tient vraiment à cœur et j'aimerais beaucoup avancer si c'est toujours d'actualité.<br><br>Avez-vous pu en reparler en interne ?<br><br><span class="sig">Très belle journée,<br>Camille</span></span>
+            <div class="voicebadge">
+              <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5 C11 7 7 14 7 21 C12 19 15 20 19 16 C17 16 15 17 13 18 C16 14 18 10 18 5 Z" fill="none" stroke="#4E8978" stroke-width="1.8" stroke-linejoin="round"/></svg>
+              À ta voix <span class="sub">d'après tes messages passés</span>
+            </div>
+          </div>
+
+          <div class="controls">
+            <span class="model">
+              <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 L5 14 L11 14 L9 21 L19 9 L13 9 Z" fill="none" stroke="#4E8978" stroke-width="2" stroke-linejoin="round"/></svg>
+              Plume <span class="v">Rapide</span>
+              <svg class="chev" width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10 L12 15 L17 10" fill="none" stroke="#5F726D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+            <span class="toggle">
+              Mode sans IA
+              <span class="sw"><span class="knob"></span></span>
+            </span>
+          </div>
+
+          <!-- actions après génération : Copier (principal mauve) · Améliorer · régénérer discret -->
+          <div class="cta">
+            <div class="btn btn-primary">
+              <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="12" rx="2.5" fill="none" stroke="#fff" stroke-width="2"/><path d="M5 16 L5 5 C5 4 5 4 6 4 L15 4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="lbl">Copier</span>
+            </div>
+            <div class="btn btn-ghost">
+              <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4 l1.4 3.6 l3.6 1.4 l-3.6 1.4 l-1.4 3.6 l-1.4 -3.6 l-3.6 -1.4 l3.6 -1.4 z" fill="none" stroke="#4E8978" stroke-width="1.8" stroke-linejoin="round"/><path d="M6 15 l.8 2 l2 .8 l-2 .8 l-.8 2 l-.8 -2 l-2 -.8 l2 -.8 z" fill="#4E8978"/></svg>
+              Améliorer
+            </div>
+            <div class="btn btn-mini" title="Régénérer">
+              <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 8 A8 8 0 1 0 20 13" fill="none" stroke="#5F726D" stroke-width="2.2" stroke-linecap="round"/><path d="M19 3 L19.5 8 L14.5 8" fill="none" stroke="#5F726D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       ÉTAT 3 — MODE SANS IA ACTIVÉ
+  ========================================================== -->
+  <div class="phone-wrap">
+    <span class="phone-label">3 · Mode sans IA <span class="acc">— entre toi et Léa</span></span>
+    <div class="phone">
+      <div class="screen">
+        <div class="notch"></div>
+
+        <div class="context-top">
+          <div class="scrim"></div>
+          <div class="ctx-bar">
+            <span class="ctx-back">
+              <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6 L8 12 L14 18" fill="none" stroke="#4E8978" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Léa, en bref
+            </span>
+            <span class="ctx-step">Relance</span>
+          </div>
+          <div class="contact">
+            <svg class="av" viewBox="0 0 124 124" aria-hidden="true">
+              <path d="M62 10 C88 10 108 26 110 52 C112 78 96 104 66 110 C40 115 16 98 12 70 C8 44 24 18 50 12 C54 11 58 10 62 10 Z"
+                    fill="#CBA7C0" stroke="#2E3F3B" stroke-width="3.5" stroke-linejoin="round"/>
+              <path d="M30 78 C26 64 30 50 42 44 C36 58 36 70 44 82 C40 84 34 83 30 78 Z" fill="#B289A6"/>
+              <path d="M28 44 C36 24 60 18 80 28 C92 34 96 46 94 56 C88 44 78 38 66 40 C70 34 66 30 60 31 C56 38 48 40 42 38 C44 46 38 50 32 52 C30 49 28 47 28 44 Z"
+                    fill="#5A3D2A" stroke="#2E3F3B" stroke-width="2.8" stroke-linejoin="round"/>
+              <path d="M44 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3.4" stroke-linecap="round"/>
+              <path d="M70 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3.4" stroke-linecap="round"/>
+              <ellipse cx="42" cy="80" rx="6" ry="4" fill="#B884A8" opacity=".7"/>
+              <ellipse cx="84" cy="80" rx="6" ry="4" fill="#B884A8" opacity=".7"/>
+              <path d="M54 84 q9 9 18 0" fill="none" stroke="#2E3F3B" stroke-width="3.4" stroke-linecap="round"/>
+            </svg>
+            <div class="meta">
+              <div class="name">Léa Marchand</div>
+              <div class="role">Recruteuse <b>· Doctolib</b></div>
+            </div>
+            <div class="badges">
+              <span class="chip"><span class="dot"></span>Relance · 5 j</span>
+              <span class="coldtag"><span class="sw"></span>Tiède</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="sheet-head">
+            <span class="t">Écrire à Léa</span>
+          </div>
+
+          <!-- sélecteur de canal replié dans la feuille (l'inset montre le déplié) -->
+          <div class="channels">
+            <div class="ch on">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="#fff" stroke-width="2"/><circle cx="7.5" cy="8" r="1.4" fill="#fff"/><path d="M7.5 11 L7.5 17 M12 17 L12 13.5 C12 11.8 15 11.6 15 13.8 L15 17" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              LinkedIn
+            </div>
+            <div class="ch">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="3" fill="none" stroke="#5F726D" stroke-width="2"/><path d="M4 8 L12 13 L20 8" fill="none" stroke="#5F726D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Email
+            </div>
+            <div class="ch">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 C7 4 3.5 7.4 3.5 11.5 C3.5 13.2 4.2 14.7 5.3 15.9 L4.4 19 L7.7 18.1 C9 18.8 10.4 19 12 19 C17 19 20.5 15.6 20.5 11.5 C20.5 7.4 17 4 12 4 Z" fill="none" stroke="#5F726D" stroke-width="2" stroke-linejoin="round"/></svg>
+              WhatsApp
+            </div>
+            <div class="ch">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5 C4 4 4.6 4 5 4 L19 4 C19.4 4 20 4 20 5 L20 15 C20 16 19.4 16 19 16 L9 16 L5 19.5 L5 16 C4.4 16 4 16 4 15 Z" fill="none" stroke="#5F726D" stroke-width="2" stroke-linejoin="round"/></svg>
+              SMS
+            </div>
+          </div>
+
+          <!-- champ tapé à la main, pas de badge « ta voix » (Plume n'apprend pas ici) -->
+          <div class="field">
+            <span class="msg">Bonjour Léa, merci encore pour l'échange de mardi. Je reste très motivée pour le poste back-end, dites-moi si je peux vous envoyer quoi que ce soit d'utile de mon côté. À bientôt, Camille<span class="caret"></span></span>
+          </div>
+
+          <!-- réglages : modèle replié MASQUÉ (IA off), toggle ON -->
+          <div class="controls">
+            <span style="font-size:12px;font-weight:600;color:var(--pal-hint);display:inline-flex;align-items:center;gap:7px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11 L7 8 A5 5 0 0 1 17 8 L17 11" fill="none" stroke="#9DB5AD" stroke-width="2" stroke-linecap="round"/><rect x="5" y="11" width="14" height="9" rx="2.5" fill="none" stroke="#9DB5AD" stroke-width="2"/></svg>
+              Plume reste en retrait
+            </span>
+            <span class="toggle on">
+              Mode sans IA
+              <span class="sw"><span class="knob"></span></span>
+            </span>
+          </div>
+
+          <!-- note de confidentialité -->
+          <div class="privacy">
+            <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 L19 6 L19 11 C19 16 16 19 12 21 C8 19 5 16 5 11 L5 6 Z" fill="none" stroke="#4E8978" stroke-width="2" stroke-linejoin="round"/><path d="M9 12 L11 14 L15 9.5" fill="none" stroke="#4E8978" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span>Ce message reste <b>entre toi et ton contact</b>. Plume ne le lit pas et n'apprend pas ta voix dessus.</span>
+          </div>
+
+          <!-- seule action : Copier (mauve) — pas de Générer / Améliorer / régénérer -->
+          <div class="cta">
+            <div class="btn btn-primary" style="flex:1;">
+              <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="12" rx="2.5" fill="none" stroke="#fff" stroke-width="2"/><path d="M5 16 L5 5 C5 4 5 4 6 4 L15 4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="lbl">Copier</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- INSET : sélecteur de canal déplié (les 4 canaux) -->
+        <div class="inset">
+          <div class="cap">Sur quel canal ?</div>
+          <div class="opt on">
+            <span class="ico"><svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="#876585" stroke-width="2"/><circle cx="7.5" cy="8" r="1.4" fill="#876585"/><path d="M7.5 11 L7.5 17 M12 17 L12 13.5 C12 11.8 15 11.6 15 13.8 L15 17" fill="none" stroke="#876585" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            LinkedIn
+            <span class="pref">préféré</span>
+          </div>
+          <div class="opt">
+            <span class="ico"><svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="3" fill="none" stroke="#5F726D" stroke-width="2"/><path d="M4 8 L12 13 L20 8" fill="none" stroke="#5F726D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            Email
+          </div>
+          <div class="opt">
+            <span class="ico"><svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 C7 4 3.5 7.4 3.5 11.5 C3.5 13.2 4.2 14.7 5.3 15.9 L4.4 19 L7.7 18.1 C9 18.8 10.4 19 12 19 C17 19 20.5 15.6 20.5 11.5 C20.5 7.4 17 4 12 4 Z" fill="none" stroke="#5F726D" stroke-width="2" stroke-linejoin="round"/></svg></span>
+            WhatsApp
+          </div>
+          <div class="opt">
+            <span class="ico"><svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5 C4 4 4.6 4 5 4 L19 4 C19.4 4 20 4 20 5 L20 15 C20 16 19.4 16 19 16 L9 16 L5 19.5 L5 16 C4.4 16 4 16 4 15 Z" fill="none" stroke="#5F726D" stroke-width="2" stroke-linejoin="round"/></svg></span>
+            SMS
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<p class="foot">Plume · le composeur, DA figée intacte — illustration maison SVG, aplat plein + hard offset net teinté, zéro ombre molle. Base <b style="color:#4E8978">menthe d'eau</b>, fil rouge <span class="acc">mauve poussiéreux</span> sur l'action principale et les états actifs. Le champ unique est la source de vérité ; le canal pré-réglé suit le contact.</p>
+
+</body>
+</html>

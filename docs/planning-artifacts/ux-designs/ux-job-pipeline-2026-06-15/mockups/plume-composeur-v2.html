@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plume · Le composeur dépouillé · v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!--
+  Plume — LE COMPOSEUR DÉPOUILLÉ (atelier UX) · v2.
+  DA figée reprise à la lettre de plume-hero-v2.html / plume-composeur-v1.html :
+    · palette Menthe d'eau × Mauve poussiéreux (mêmes hex, mêmes tokens)
+    · typo Fraunces (titres/noms) + Quicksand (corps/boutons)
+    · illustration maison SVG inline (blob de Léa, trait encre)
+    · boutons chunky, ZÉRO ombre molle (profondeur = contour plein + hard offset net teinté)
+    · aucun emoji, aucune lib d'icônes (SVG inline tracé main), microcopy FR warm sans tiret cadratin
+
+  CE QUI CHANGE par rapport à v1 — on DÉPOUILLE à l'os, le message est le seul héros :
+    1. SUPPRIMÉ : le toggle « Mode sans IA » et toute sa note de confidentialité. N'existe plus.
+       (Tous les messages servent à l'apprentissage, consenti aux CGU — donc aucun mode, aucune note.)
+    2. DÉGAGÉ tout le bloat : plus de badge « Plume écrit comme toi », plus de « Premier jet »,
+       plus de lignes de réassurance voix, plus de texte explicatif. Le composeur ne contient QUE :
+       contexte minimal du contact, canal, champ, bouton intelligent, Copier, choix de modèle compact, compteur de tokens.
+    3. GARDÉ le choix de modèle DANS le composeur, COMPACT : mini segmented control « Rapide » / « Soigné »
+       (alias discrets Haiku/Opus), pas bavard.
+    4. AJOUTÉ un compteur de tokens : après génération, pill discret menthe « 1 180 tokens · Soigné »
+       avec mini-picto SVG, près de Copier ; curseur pointer (suggère un détail au tap). Soigné > Rapide.
+    5. PAS de micro / dictée (réservé v2 produit) : aucun picto micro.
+
+  2 ÉTATS seulement, EN GRAND, côte à côte :
+   1. Champ vide   → contexte Léa minimal (blob + nom + canal), canal LinkedIn pré-réglé,
+                     champ vide + placeholder court warm, segmented Rapide/Soigné, gros bouton « Générer » mauve.
+                     PAS de compteur de tokens (rien généré).
+   2. Texte généré → vrai message à la voix de Camille (aucun tell d'IA, aucun tiret cadratin),
+                     « Copier » principal mauve + « Améliorer » + compteur de tokens discret + petit régénérer.
+-->
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500;1,9..144,600&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ---------- Tokens d'atelier (neutres, hors palette app) ---------- */
+  :root{
+    --atelier:#E4EEEA;
+    --atelier-2:#EDF4F1;
+    --trait:#2E3F3B;
+
+    /* Froideur — Léa = tiède mauve-rosé doux */
+    --c-tiede:#CBA7C0;
+    --c-tiede-sh:#B289A6;
+
+    /* PALETTE — base menthe */
+    --pal-bg:#E9F3EF;
+    --pal-card:#FBFEFD;
+    --pal-ink:#2E3F3B;
+    --pal-soft:#5F726D;
+    --pal-brand:#7FBEAF;
+    --pal-brand-deep:#4E8978;
+    --pal-chip:#DCEFE9;
+    --pal-back2:#DCEBE5;
+    --pal-back1:#EAF4F0;
+    --pal-note:#EDF6F2;
+    --pal-line:#CFE3DB;
+    --pal-hint:#9DB5AD;
+    --pal-pager:#C7DDD5;
+
+    /* ACCENT — mauve poussiéreux (fil rouge) */
+    --acc:#B391AC;
+    --acc-deep:#876585;
+    --acc-on:#FFFFFF;
+    --acc-chip:#ECE2EA;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased;}
+  body{
+    background:
+      radial-gradient(1200px 520px at 18% -8%, var(--atelier-2), transparent 60%),
+      radial-gradient(1000px 520px at 92% 4%, var(--atelier-2), transparent 60%),
+      var(--atelier);
+    font-family:"Quicksand",system-ui,sans-serif;
+    color:var(--pal-ink);
+    padding:44px 24px 72px;
+    line-height:1.5;
+  }
+  .display{font-family:"Fraunces",serif;}
+
+  /* ---------- En-tête / encart court ---------- */
+  .head{max-width:980px;margin:0 auto 18px;}
+  .brandline{display:flex;align-items:center;gap:15px;margin-bottom:18px;flex-wrap:wrap;}
+  .brandline h1{
+    font-family:"Fraunces",serif;font-weight:600;font-size:38px;
+    letter-spacing:-.01em;color:var(--pal-ink);line-height:1;
+  }
+  .brandline .tag{
+    font-size:12px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--pal-brand-deep);background:var(--pal-chip);border:2px solid var(--pal-brand);
+    padding:5px 12px 4px;border-radius:999px;
+  }
+  .brandline .tag.spice{color:#fff;background:var(--acc);border-color:var(--acc-deep);}
+  .choose{
+    background:var(--pal-card);border:2.5px solid var(--trait);border-radius:20px;
+    padding:16px 22px;max-width:980px;
+    box-shadow:8px 8px 0 0 var(--pal-brand);
+  }
+  .choose p{font-size:15.5px;color:var(--pal-soft);}
+  .choose p b{color:var(--pal-ink);font-weight:700;}
+  .choose p .em{color:var(--acc-deep);font-weight:700;}
+
+  /* ---------- Scène : deux téléphones EN GRAND ---------- */
+  .scene{
+    display:flex;flex-wrap:wrap;gap:58px;justify-content:center;
+    margin:54px auto 40px;max-width:980px;align-items:flex-start;
+  }
+  .phone-wrap{display:flex;flex-direction:column;align-items:center;gap:15px;}
+  .phone-label{
+    font-family:"Fraunces",serif;font-style:italic;font-weight:500;
+    font-size:19px;color:var(--pal-brand-deep);text-align:center;
+  }
+  .phone-label .acc{color:var(--acc-deep);font-style:normal;font-weight:600;}
+
+  /* ---------- Châssis téléphone (~400px) ---------- */
+  .phone{
+    width:400px;max-width:94vw;border-radius:50px;
+    background:var(--trait);padding:12px;
+    box-shadow:13px 14px 0 0 #CADFD8;
+  }
+  .screen{
+    position:relative;width:100%;height:818px;border-radius:40px;overflow:hidden;
+    background:var(--pal-bg);
+  }
+  .notch{
+    position:absolute;top:12px;left:50%;transform:translateX(-50%);
+    width:128px;height:28px;border-radius:999px;background:var(--trait);z-index:40;
+  }
+
+  /* ---------- Contexte MINIMAL de Léa en haut (blob + nom + canal) ---------- */
+  .context-top{
+    position:absolute;top:0;left:0;right:0;height:196px;z-index:5;
+    padding:54px 22px 0;
+  }
+  .scrim{position:absolute;inset:0;background:var(--pal-bg);}
+  .ctx-bar{position:relative;z-index:2;display:flex;align-items:center;margin-bottom:14px;}
+  .ctx-back{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;color:var(--pal-brand-deep);}
+
+  /* carte contact compacte : juste le blob, le nom, et la mini-indication de canal */
+  .contact{
+    position:relative;z-index:2;display:flex;align-items:center;gap:14px;
+    background:var(--pal-card);border:2.5px solid var(--trait);border-radius:24px;
+    padding:13px 17px;
+  }
+  .contact .av{flex:0 0 auto;width:56px;height:56px;}
+  .contact .meta{flex:1;min-width:0;}
+  .contact .meta .name{font-family:"Fraunces",serif;font-weight:600;font-size:21px;color:var(--pal-ink);line-height:1.05;}
+  /* mini-indication de canal sous le nom : discrète, mauve doux */
+  .contact .meta .via{
+    margin-top:3px;display:inline-flex;align-items:center;gap:6px;
+    font-size:12.5px;font-weight:600;color:var(--acc-deep);
+  }
+  .contact .meta .via svg{display:block;}
+
+  /* ---------- Le bottom-sheet du composeur (monte du bas) ---------- */
+  .sheet{
+    position:absolute;left:0;right:0;bottom:0;height:642px;z-index:10;
+    background:var(--pal-card);
+    border:2.5px solid var(--trait);border-bottom:none;
+    border-radius:34px 34px 0 0;
+    /* hard offset net teinté vers le haut, JAMAIS flou */
+    box-shadow:0 -7px 0 0 var(--acc);
+    display:flex;flex-direction:column;
+    padding:0 22px 24px;
+  }
+  .grab{width:46px;height:5px;border-radius:999px;background:var(--pal-line);margin:11px auto 16px;flex:0 0 auto;}
+
+  /* ---------- Sélecteur de canal compact : LinkedIn pré-réglé actif (mauve) ---------- */
+  .channels{display:flex;gap:8px;margin-bottom:15px;flex:0 0 auto;}
+  .ch{
+    flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+    padding:9px 0 8px;border-radius:14px;
+    border:2px solid var(--pal-line);background:var(--pal-card);
+    font-size:12.5px;font-weight:600;color:var(--pal-soft);
+  }
+  .ch svg{display:block;flex:0 0 auto;}
+  /* canal actif = mauve plein, fil rouge */
+  .ch.on{
+    background:var(--acc);border-color:var(--acc-deep);color:#fff;
+    box-shadow:0 4px 0 0 var(--acc-deep);
+  }
+
+  /* ---------- Champ unique = le héros, grand, qui respire ---------- */
+  .field{
+    flex:1;min-height:0;position:relative;
+    border:2.5px solid var(--trait);border-radius:22px;
+    background:var(--pal-note);
+    padding:19px 19px;overflow:hidden;display:flex;flex-direction:column;
+  }
+  .field .ph{color:var(--pal-hint);font-size:16.5px;line-height:1.55;font-weight:500;}
+  .field .msg{color:var(--pal-ink);font-size:16px;line-height:1.66;font-weight:500;}
+  .field .msg .sig{color:var(--pal-ink);}
+  .field .caret{display:inline-block;width:2px;height:20px;background:var(--acc);vertical-align:-4px;animation:blink 1.1s step-end infinite;}
+  @keyframes blink{50%{opacity:0;}}
+
+  /* ---------- Choix de modèle COMPACT : mini segmented control Rapide / Soigné ---------- */
+  .modelrow{flex:0 0 auto;display:flex;align-items:center;margin:15px 0;}
+  .segmented{
+    display:inline-flex;align-items:stretch;
+    border:2px solid var(--pal-line);border-radius:999px;background:var(--pal-chip);
+    padding:3px;gap:3px;
+  }
+  .seg{
+    display:inline-flex;align-items:center;gap:6px;
+    font-size:12.5px;font-weight:700;color:var(--pal-soft);
+    padding:5px 13px 4px;border-radius:999px;white-space:nowrap;
+  }
+  .seg .alias{font-weight:600;font-size:10.5px;color:var(--pal-hint);}
+  /* état actif du segment : aplat mauve plein, hard offset net */
+  .seg.on{
+    background:var(--acc);color:#fff;
+    box-shadow:0 3px 0 0 var(--acc-deep);
+  }
+  .seg.on .alias{color:rgba(255,255,255,.8);}
+
+  /* ---------- Compteur de tokens : pill discret menthe (état généré) ---------- */
+  .tokens{
+    margin-left:auto;
+    display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+    font-size:12px;font-weight:700;color:var(--pal-brand-deep);
+    background:var(--pal-chip);border:1.5px solid var(--pal-line);border-radius:999px;
+    padding:5px 11px 4px;
+  }
+  .tokens svg{display:block;flex:0 0 auto;}
+  .tokens .qual{color:var(--acc-deep);}
+
+  /* ---------- Boutons chunky du composeur ---------- */
+  .cta{flex:0 0 auto;display:flex;gap:11px;align-items:stretch;}
+  .btn{
+    border:2.5px solid var(--trait);border-radius:20px;
+    font-family:"Quicksand",sans-serif;font-weight:700;cursor:default;
+    display:flex;align-items:center;justify-content:center;gap:9px;
+  }
+  /* PRINCIPAL mauve plein, hard offset profond mauve */
+  .btn-primary{
+    flex:2;background:var(--acc);color:var(--acc-on);font-size:18px;padding:17px 0;
+    box-shadow:0 6px 0 0 var(--acc-deep);
+  }
+  .btn-primary .lbl{text-shadow:0 1px 0 rgba(0,0,0,.12);}
+  /* SECONDAIRE ghost menthe */
+  .btn-ghost{
+    flex:1.15;background:transparent;color:var(--pal-brand-deep);font-size:15px;padding:17px 0;
+    border-color:var(--pal-brand);box-shadow:0 6px 0 0 #BFD9D0;
+  }
+  /* petit régénérer très discret (carré, ghost) */
+  .btn-mini{
+    flex:0 0 auto;width:56px;background:transparent;color:var(--pal-soft);padding:17px 0;
+    border-color:var(--pal-line);box-shadow:0 6px 0 0 var(--pal-back2);
+  }
+
+  .foot{max-width:980px;margin:30px auto 0;font-size:13px;color:#7D938C;text-align:center;}
+  .foot .acc{color:var(--acc-deep);font-weight:600;}
+
+  @media (max-width:1000px){.scene{gap:44px;}}
+</style>
+</head>
+<body>
+
+<!-- ================= EN-TÊTE + ENCART COURT ================= -->
+<header class="head">
+  <div class="brandline">
+    <svg width="42" height="42" viewBox="0 0 48 48" aria-hidden="true">
+      <g transform="rotate(-16 24 24)">
+        <path d="M30 7 C18 11 11 24 11 36 C20 33 26 36 32 30 C29 30 26 31 23 32 C28 27 33 21 34 12 C32 16 29 19 26 22 C30 17 31 12 30 7 Z"
+              fill="#7FBEAF" stroke="#2E3F3B" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M27 12 C23 18 19 27 16 34" fill="none" stroke="#2E3F3B" stroke-width="1.6" stroke-linecap="round"/>
+        <line x1="11" y1="36" x2="6" y2="43" stroke="#2E3F3B" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M37 9 l1.1 3 l3 1.1 l-3 1.1 l-1.1 3 l-1.1 -3 l-3 -1.1 l3 -1.1 z" fill="#B391AC"/>
+      </g>
+    </svg>
+    <h1>Plume</h1>
+    <span class="tag">Le composeur</span>
+    <span class="tag spice">Dépouillé</span>
+  </div>
+  <div class="choose">
+    <p><b>Plume — composeur dépouillé (sans Mode IA, + tokens, sans micro).</b> Le message est le seul héros. Plus de toggle, plus de note, plus de badges : juste le contexte de <span class="em">Léa</span>, le canal, le champ, le choix de modèle compact, et le bouton. Le compteur de tokens apparaît une fois le texte généré.</p>
+  </div>
+</header>
+
+<!-- ================= LES DEUX ÉTATS ================= -->
+<section class="scene">
+
+  <!-- =========================================================
+       ÉTAT 1 — CHAMP VIDE / GÉNÉRER
+  ========================================================== -->
+  <div class="phone-wrap">
+    <span class="phone-label">1 · Champ vide <span class="acc">— Générer</span></span>
+    <div class="phone">
+      <div class="screen">
+        <div class="notch"></div>
+
+        <!-- contexte MINIMAL : blob + « Léa Marchand » + mini-indication de canal -->
+        <div class="context-top">
+          <div class="scrim"></div>
+          <div class="ctx-bar">
+            <span class="ctx-back">
+              <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6 L8 12 L14 18" fill="none" stroke="#4E8978" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Léa, en bref
+            </span>
+          </div>
+          <div class="contact">
+            <svg class="av" viewBox="0 0 124 124" aria-hidden="true">
+              <path d="M62 10 C88 10 108 26 110 52 C112 78 96 104 66 110 C40 115 16 98 12 70 C8 44 24 18 50 12 C54 11 58 10 62 10 Z"
+                    fill="#CBA7C0" stroke="#2E3F3B" stroke-width="3.5" stroke-linejoin="round"/>
+              <path d="M30 78 C26 64 30 50 42 44 C36 58 36 70 44 82 C40 84 34 83 30 78 Z" fill="#B289A6"/>
+              <path d="M28 44 C36 24 60 18 80 28 C92 34 96 46 94 56 C88 44 78 38 66 40 C70 34 66 30 60 31 C56 38 48 40 42 38 C44 46 38 50 32 52 C30 49 28 47 28 44 Z"
+                    fill="#5A3D2A" stroke="#2E3F3B" stroke-width="2.8" stroke-linejoin="round"/>
+              <path d="M44 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3.4" stroke-linecap="round"/>
+              <path d="M70 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3.4" stroke-linecap="round"/>
+              <ellipse cx="42" cy="80" rx="6" ry="4" fill="#B884A8" opacity=".7"/>
+              <ellipse cx="84" cy="80" rx="6" ry="4" fill="#B884A8" opacity=".7"/>
+              <path d="M54 84 q9 9 18 0" fill="none" stroke="#2E3F3B" stroke-width="3.4" stroke-linecap="round"/>
+            </svg>
+            <div class="meta">
+              <div class="name">Léa Marchand</div>
+              <div class="via">
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="#876585" stroke-width="2"/><circle cx="7.5" cy="8" r="1.4" fill="#876585"/><path d="M7.5 11 L7.5 17 M12 17 L12 13.5 C12 11.8 15 11.6 15 13.8 L15 17" fill="none" stroke="#876585" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                LinkedIn
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- bottom-sheet : composeur dépouillé -->
+        <div class="sheet">
+          <div class="grab"></div>
+
+          <!-- sélecteur de canal compact : LinkedIn pré-réglé actif (mauve), changeable en 1 tap -->
+          <div class="channels">
+            <div class="ch on">
+              <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="#fff" stroke-width="2"/><circle cx="7.5" cy="8" r="1.4" fill="#fff"/><path d="M7.5 11 L7.5 17 M12 17 L12 13.5 C12 11.8 15 11.6 15 13.8 L15 17" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              LinkedIn
+            </div>
+            <div class="ch">
+              <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="3" fill="none" stroke="#5F726D" stroke-width="2"/><path d="M4 8 L12 13 L20 8" fill="none" stroke="#5F726D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Email
+            </div>
+            <div class="ch">
+              <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 C7 4 3.5 7.4 3.5 11.5 C3.5 13.2 4.2 14.7 5.3 15.9 L4.4 19 L7.7 18.1 C9 18.8 10.4 19 12 19 C17 19 20.5 15.6 20.5 11.5 C20.5 7.4 17 4 12 4 Z" fill="none" stroke="#5F726D" stroke-width="2" stroke-linejoin="round"/></svg>
+              WhatsApp
+            </div>
+            <div class="ch">
+              <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5 C4 4 4.6 4 5 4 L19 4 C19.4 4 20 4 20 5 L20 15 C20 16 19.4 16 19 16 L9 16 L5 19.5 L5 16 C4.4 16 4 16 4 15 Z" fill="none" stroke="#5F726D" stroke-width="2" stroke-linejoin="round"/></svg>
+              SMS
+            </div>
+          </div>
+
+          <!-- champ unique vide : placeholder court et warm. Rien d'autre. -->
+          <div class="field">
+            <span class="ph">Un mot à Léa, ou laisse Plume proposer.<span class="caret"></span></span>
+          </div>
+
+          <!-- choix de modèle COMPACT : Rapide actif (pas de tokens, rien généré) -->
+          <div class="modelrow">
+            <span class="segmented">
+              <span class="seg on">Rapide <span class="alias">Haiku</span></span>
+              <span class="seg">Soigné <span class="alias">Opus</span></span>
+            </span>
+          </div>
+
+          <!-- bouton intelligent : champ vide -> Générer (mauve, chunky) -->
+          <div class="cta">
+            <div class="btn btn-primary">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 l1.8 5 l5 1.8 l-5 1.8 l-1.8 5 l-1.8 -5 l-5 -1.8 l5 -1.8 z" fill="#fff"/><circle cx="19" cy="5" r="1.6" fill="#fff"/></svg>
+              <span class="lbl">Générer</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       ÉTAT 2 — TEXTE GÉNÉRÉ / COPIER + AMÉLIORER + TOKENS
+  ========================================================== -->
+  <div class="phone-wrap">
+    <span class="phone-label">2 · Texte généré <span class="acc">— Copier + tokens</span></span>
+    <div class="phone">
+      <div class="screen">
+        <div class="notch"></div>
+
+        <div class="context-top">
+          <div class="scrim"></div>
+          <div class="ctx-bar">
+            <span class="ctx-back">
+              <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6 L8 12 L14 18" fill="none" stroke="#4E8978" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Léa, en bref
+            </span>
+          </div>
+          <div class="contact">
+            <svg class="av" viewBox="0 0 124 124" aria-hidden="true">
+              <path d="M62 10 C88 10 108 26 110 52 C112 78 96 104 66 110 C40 115 16 98 12 70 C8 44 24 18 50 12 C54 11 58 10 62 10 Z"
+                    fill="#CBA7C0" stroke="#2E3F3B" stroke-width="3.5" stroke-linejoin="round"/>
+              <path d="M30 78 C26 64 30 50 42 44 C36 58 36 70 44 82 C40 84 34 83 30 78 Z" fill="#B289A6"/>
+              <path d="M28 44 C36 24 60 18 80 28 C92 34 96 46 94 56 C88 44 78 38 66 40 C70 34 66 30 60 31 C56 38 48 40 42 38 C44 46 38 50 32 52 C30 49 28 47 28 44 Z"
+                    fill="#5A3D2A" stroke="#2E3F3B" stroke-width="2.8" stroke-linejoin="round"/>
+              <path d="M44 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3.4" stroke-linecap="round"/>
+              <path d="M70 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3.4" stroke-linecap="round"/>
+              <ellipse cx="42" cy="80" rx="6" ry="4" fill="#B884A8" opacity=".7"/>
+              <ellipse cx="84" cy="80" rx="6" ry="4" fill="#B884A8" opacity=".7"/>
+              <path d="M54 84 q9 9 18 0" fill="none" stroke="#2E3F3B" stroke-width="3.4" stroke-linecap="round"/>
+            </svg>
+            <div class="meta">
+              <div class="name">Léa Marchand</div>
+              <div class="via">
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="#876585" stroke-width="2"/><circle cx="7.5" cy="8" r="1.4" fill="#876585"/><path d="M7.5 11 L7.5 17 M12 17 L12 13.5 C12 11.8 15 11.6 15 13.8 L15 17" fill="none" stroke="#876585" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                LinkedIn
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <div class="grab"></div>
+
+          <div class="channels">
+            <div class="ch on">
+              <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="#fff" stroke-width="2"/><circle cx="7.5" cy="8" r="1.4" fill="#fff"/><path d="M7.5 11 L7.5 17 M12 17 L12 13.5 C12 11.8 15 11.6 15 13.8 L15 17" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              LinkedIn
+            </div>
+            <div class="ch">
+              <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="3" fill="none" stroke="#5F726D" stroke-width="2"/><path d="M4 8 L12 13 L20 8" fill="none" stroke="#5F726D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Email
+            </div>
+            <div class="ch">
+              <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 C7 4 3.5 7.4 3.5 11.5 C3.5 13.2 4.2 14.7 5.3 15.9 L4.4 19 L7.7 18.1 C9 18.8 10.4 19 12 19 C17 19 20.5 15.6 20.5 11.5 C20.5 7.4 17 4 12 4 Z" fill="none" stroke="#5F726D" stroke-width="2" stroke-linejoin="round"/></svg>
+              WhatsApp
+            </div>
+            <div class="ch">
+              <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5 C4 4 4.6 4 5 4 L19 4 C19.4 4 20 4 20 5 L20 15 C20 16 19.4 16 19 16 L9 16 L5 19.5 L5 16 C4.4 16 4 16 4 15 Z" fill="none" stroke="#5F726D" stroke-width="2" stroke-linejoin="round"/></svg>
+              SMS
+            </div>
+          </div>
+
+          <!-- champ rempli : vrai message à la voix de Camille. Aucun badge, aucun tell d'IA. -->
+          <div class="field">
+            <span class="msg">Bonjour Léa,<br><br>je reviens vers vous après notre échange de la semaine dernière. Le poste chez Doctolib me tient vraiment à cœur et j'aimerais beaucoup avancer si c'est toujours d'actualité.<br><br>Avez-vous pu en reparler en interne ?<br><br><span class="sig">Très belle journée,<br>Camille</span></span>
+          </div>
+
+          <!-- choix de modèle compact (Soigné actif) + compteur de tokens discret -->
+          <div class="modelrow">
+            <span class="segmented">
+              <span class="seg">Rapide <span class="alias">Haiku</span></span>
+              <span class="seg on">Soigné <span class="alias">Opus</span></span>
+            </span>
+            <span class="tokens" title="Détail de la consommation">
+              <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="#4E8978" stroke-width="2"/><path d="M9.2 9.4 C9.2 7.6 14.8 7.6 14.8 9.8 C14.8 11.6 12 11.4 12 13.4 M12 16.4 L12 16.6" fill="none" stroke="#4E8978" stroke-width="2" stroke-linecap="round"/></svg>
+              1 180 tokens
+            </span>
+          </div>
+
+          <!-- actions après génération : Copier (principal mauve) · Améliorer · régénérer discret -->
+          <div class="cta">
+            <div class="btn btn-primary">
+              <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="12" rx="2.5" fill="none" stroke="#fff" stroke-width="2"/><path d="M5 16 L5 5 C5 4 5 4 6 4 L15 4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="lbl">Copier</span>
+            </div>
+            <div class="btn btn-ghost">
+              <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4 l1.4 3.6 l3.6 1.4 l-3.6 1.4 l-1.4 3.6 l-1.4 -3.6 l-3.6 -1.4 l3.6 -1.4 z" fill="none" stroke="#4E8978" stroke-width="1.8" stroke-linejoin="round"/><path d="M6 15 l.8 2 l2 .8 l-2 .8 l-.8 2 l-.8 -2 l-2 -.8 l2 -.8 z" fill="#4E8978"/></svg>
+              Améliorer
+            </div>
+            <div class="btn btn-mini" title="Régénérer">
+              <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 8 A8 8 0 1 0 20 13" fill="none" stroke="#5F726D" stroke-width="2.2" stroke-linecap="round"/><path d="M19 3 L19.5 8 L14.5 8" fill="none" stroke="#5F726D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<p class="foot">Plume · le composeur dépouillé — le message est le seul héros. DA figée intacte : illustration maison SVG, aplat plein + hard offset net teinté, zéro ombre molle. Base <b style="color:#4E8978">menthe d'eau</b>, fil rouge <span class="acc">mauve poussiéreux</span> sur l'action principale et les états actifs. Plus de Mode IA, plus de bloat, choix de modèle compact gardé, compteur de tokens à la génération, pas de micro.</p>
+
+</body>
+</html>

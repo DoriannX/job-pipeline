@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plume · Réglages v1 · atelier UX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!--
+  Plume — ÉCRAN RÉGLAGES v1 (atelier UX, skill bmad-ux).
+  DA figée reprise à l'identique de plume-hero-v2.html :
+  Palette Menthe d'eau × Mauve poussiéreux, typo Fraunces + Quicksand,
+  contour plein + hard offset net teinté (ZÉRO ombre molle),
+  SVG inline tracé main, aucun emoji, aucune lib d'icônes.
+
+  Règle d'or : ZÉRO BLOAT. Liste groupée, aérée, minimale.
+  Une ligne = une intention. Pas de descriptions longues, pas de badges décoratifs.
+
+  7 sections : Compte · Ta voix · Relances & rappels · Modèle par défaut ·
+  Consommation · Confidentialité · À propos.
+  Toggles mauves quand actifs (dessinés main). Destructif SOFT (teinte mesurée, pas de rouge criard).
+  Onglet actif = Réglages (soulignement mauve).
+
+  Plume animée du pied : le translate() de position est sur un <g> PARENT,
+  l'animation (transform CSS) est sur un <g> ENFANT — jamais sur le même nœud,
+  sinon la plume saute à l'origine.
+-->
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500;1,9..144,600&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --atelier:#E4EEEA;
+    --atelier-2:#EDF4F1;
+    --trait:#2E3F3B;
+
+    --pal-bg:#E9F3EF;
+    --pal-card:#FBFEFD;
+    --pal-ink:#2E3F3B;
+    --pal-soft:#5F726D;
+    --pal-brand:#7FBEAF;
+    --pal-brand-deep:#4E8978;
+    --pal-chip:#DCEFE9;
+    --pal-note:#EDF6F2;
+    --pal-line:#CFE3DB;
+    --pal-hint:#9DB5AD;
+    --pal-tab-off:#9DB5AD;
+
+    --acc:#B391AC;
+    --acc-deep:#876585;
+    --acc-on:#FFFFFF;
+    --acc-chip:#ECE2EA;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased;}
+  body{
+    background:
+      radial-gradient(1200px 520px at 18% -8%, var(--atelier-2), transparent 60%),
+      radial-gradient(1000px 520px at 92% 4%, var(--atelier-2), transparent 60%),
+      var(--atelier);
+    font-family:"Quicksand",system-ui,sans-serif;
+    color:var(--pal-ink);
+    padding:44px 24px 72px;
+    line-height:1.5;
+    min-height:100vh;
+  }
+  .display{font-family:"Fraunces",serif;}
+
+  /* ---------- Encart d'atelier ---------- */
+  .head{max-width:520px;margin:0 auto 28px;}
+  .brandline{display:flex;align-items:center;gap:14px;}
+  .brandline svg{flex:none;}
+  .brandline h1{
+    font-family:"Fraunces",serif;font-weight:600;font-size:30px;
+    letter-spacing:-.01em;color:var(--pal-ink);line-height:1;
+  }
+  .brandline .tag{
+    font-size:11.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+    color:#fff;background:var(--acc);border:2px solid var(--acc-deep);
+    padding:5px 12px 4px;border-radius:999px;
+  }
+
+  /* ---------- Châssis téléphone ---------- */
+  .phone-wrap{display:flex;flex-direction:column;align-items:center;gap:15px;}
+  .phone{
+    width:404px;max-width:94vw;border-radius:50px;
+    background:var(--trait);padding:12px;
+    box-shadow:13px 14px 0 0 #CADFD8;   /* hard offset net teinté, jamais flou */
+  }
+  .screen{
+    position:relative;width:100%;border-radius:40px;overflow:hidden;
+    background:var(--pal-bg);
+    display:flex;flex-direction:column;
+    min-height:872px;
+  }
+  .notch{
+    position:absolute;top:12px;left:50%;transform:translateX(-50%);
+    width:128px;height:28px;border-radius:999px;background:var(--trait);z-index:40;
+  }
+
+  /* ---------- En-tête écran ---------- */
+  .topbar{
+    padding:54px 26px 14px;
+  }
+  .topbar .kicker{
+    font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--acc-deep);
+  }
+  .topbar h2{
+    font-family:"Fraunces",serif;font-weight:600;font-size:30px;color:var(--pal-ink);
+    line-height:1.04;margin-top:2px;
+  }
+
+  /* ---------- Corps scrollable conceptuel ---------- */
+  .body{
+    flex:1;overflow:hidden;padding:4px 22px 22px;
+    display:flex;flex-direction:column;gap:22px;
+  }
+
+  /* ---------- Section ---------- */
+  .sec-title{
+    font-size:11.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--pal-brand-deep);padding:0 6px 9px;
+  }
+  .group{
+    background:var(--pal-card);border:2.5px solid var(--trait);border-radius:22px;
+    box-shadow:5px 5px 0 0 var(--pal-brand);   /* hard offset menthe */
+    overflow:hidden;
+  }
+  /* le destructif et la voix portent l'accent mauve en offset */
+  .group.accent{box-shadow:5px 5px 0 0 var(--acc);}
+
+  .row{
+    display:flex;align-items:center;gap:14px;
+    padding:15px 17px;
+    border-top:2px solid var(--pal-line);
+  }
+  .row:first-child{border-top:0;}
+  .row .grow{flex:1;min-width:0;}
+  .row .lbl{font-size:15.5px;font-weight:600;color:var(--pal-ink);line-height:1.2;}
+  .row .sub{font-size:13px;font-weight:500;color:var(--pal-soft);margin-top:2px;line-height:1.35;}
+  .row.tap{cursor:default;}
+  .row .chev{flex:none;color:var(--pal-hint);}
+  .row .val{
+    font-size:14.5px;font-weight:700;color:var(--acc-deep);
+    display:inline-flex;align-items:center;gap:8px;flex:none;
+  }
+
+  /* ---------- Compte : identité ---------- */
+  .acct{display:flex;align-items:center;gap:14px;padding:16px 17px;}
+  .avatar{
+    width:48px;height:48px;border-radius:16px;flex:none;
+    border:2.5px solid var(--trait);background:var(--pal-chip);
+    display:flex;align-items:center;justify-content:center;
+    font-family:"Fraunces",serif;font-weight:600;font-size:21px;color:var(--pal-brand-deep);
+    box-shadow:3px 3px 0 0 var(--acc);
+  }
+  .acct .name{font-family:"Fraunces",serif;font-weight:600;font-size:19px;color:var(--pal-ink);line-height:1.05;}
+  .acct .mail{font-size:13px;font-weight:500;color:var(--pal-soft);margin-top:2px;}
+  .row.signout .lbl{color:var(--pal-brand-deep);font-weight:700;}
+
+  /* ---------- Stepper « Relancer après » ---------- */
+  .stepper{display:inline-flex;align-items:center;gap:0;flex:none;}
+  .stepper button{
+    width:30px;height:30px;border:2px solid var(--trait);background:var(--pal-card);
+    color:var(--acc-deep);font-family:"Quicksand",sans-serif;font-weight:700;font-size:18px;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;line-height:1;
+  }
+  .stepper button:first-child{border-radius:11px 0 0 11px;border-right-width:0;}
+  .stepper button:last-child{border-radius:0 11px 11px 0;border-left-width:0;}
+  .stepper .num{
+    min-width:64px;text-align:center;font-size:14px;font-weight:700;color:var(--pal-ink);
+    border-top:2px solid var(--trait);border-bottom:2px solid var(--trait);
+    padding:5px 8px;background:var(--acc-chip);
+  }
+
+  /* ---------- Toggle dessiné main ---------- */
+  .toggle{
+    width:50px;height:29px;border-radius:999px;flex:none;cursor:pointer;position:relative;
+    border:2.5px solid var(--trait);background:var(--pal-chip);transition:background .15s;
+  }
+  .toggle .knob{
+    position:absolute;top:2px;left:2px;width:21px;height:21px;border-radius:50%;
+    background:var(--pal-card);border:2px solid var(--trait);transition:left .15s;
+  }
+  .toggle.on{background:var(--acc);}
+  .toggle.on .knob{left:23px;}
+
+  /* ---------- Segmented « Modèle par défaut » ---------- */
+  .seg{
+    display:flex;flex:none;border:2.5px solid var(--trait);border-radius:13px;overflow:hidden;
+  }
+  .seg button{
+    font-family:"Quicksand",sans-serif;font-weight:700;font-size:13.5px;cursor:pointer;
+    padding:8px 15px;border:0;background:var(--pal-card);color:var(--pal-soft);line-height:1.1;
+    display:flex;flex-direction:column;align-items:center;gap:1px;
+  }
+  .seg button+button{border-left:2.5px solid var(--trait);}
+  .seg button.on{background:var(--acc);color:#fff;}
+  .seg button .alias{font-size:10px;font-weight:600;letter-spacing:.04em;opacity:.7;}
+  .seg button.on .alias{opacity:.85;}
+
+  /* ---------- Consommation ---------- */
+  .conso{padding:16px 17px 18px;}
+  .conso .when{font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--pal-soft);}
+  .conso .stats{display:flex;gap:14px;margin-top:10px;}
+  .stat{
+    flex:1;border:2px solid var(--pal-line);border-radius:15px;background:var(--pal-note);
+    padding:12px 14px;
+  }
+  .stat .big{font-family:"Fraunces",serif;font-weight:600;font-size:25px;color:var(--pal-ink);line-height:1;}
+  .stat .cap{font-size:12px;font-weight:600;color:var(--pal-soft);margin-top:5px;}
+  .stat.acc .big{color:var(--acc-deep);}
+  .bar{
+    margin-top:14px;height:9px;border-radius:999px;background:var(--pal-chip);
+    border:2px solid var(--pal-line);overflow:hidden;
+  }
+  .bar i{display:block;height:100%;width:62%;background:var(--acc);border-radius:999px;}
+  .conso .barcap{font-size:12px;font-weight:500;color:var(--pal-soft);margin-top:7px;}
+
+  /* ---------- À propos ---------- */
+  .about{display:flex;align-items:center;justify-content:space-between;padding:15px 17px;}
+  .about .ver{font-size:14px;font-weight:600;color:var(--pal-ink);}
+  .about .link{font-size:13px;font-weight:600;color:var(--pal-brand-deep);}
+  .footplume{display:flex;justify-content:center;padding:2px 0 4px;opacity:.85;}
+
+  /* ---------- Tab bar ---------- */
+  .tabs{
+    background:var(--pal-card);border-top:2.5px solid var(--trait);
+    display:flex;align-items:center;justify-content:space-around;
+    padding:9px 0 12px;flex:none;
+  }
+  .tab{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11.5px;font-weight:600;color:var(--pal-tab-off);padding-top:6px;}
+  .tab.on{color:var(--acc-deep);}
+  .tab .pill{padding:5px 15px;border-radius:999px;}
+  .tab.on .pill{background:var(--acc-chip);}
+  .tab.on::after{
+    content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);
+    width:26px;height:4px;border-radius:999px;background:var(--acc);
+  }
+
+  /* ---------- plume animée du pied (translate sur parent, anim sur enfant) ---------- */
+  .float{animation:float 5.5s ease-in-out infinite;}
+  @keyframes float{0%,100%{transform:translateY(0) rotate(-3deg);}50%{transform:translateY(-7px) rotate(2deg);}}
+
+  .note-foot{max-width:520px;margin:26px auto 0;font-size:12.5px;color:#7D938C;text-align:center;line-height:1.5;}
+  .note-foot .acc{color:var(--acc-deep);font-weight:600;}
+</style>
+</head>
+<body>
+
+<!-- ================= ENCART ATELIER ================= -->
+<header class="head">
+  <div class="brandline">
+    <svg width="38" height="38" viewBox="0 0 48 48" aria-hidden="true">
+      <g transform="rotate(-16 24 24)">
+        <path d="M30 7 C18 11 11 24 11 36 C20 33 26 36 32 30 C29 30 26 31 23 32 C28 27 33 21 34 12 C32 16 29 19 26 22 C30 17 31 12 30 7 Z"
+              fill="#7FBEAF" stroke="#2E3F3B" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M27 12 C23 18 19 27 16 34" fill="none" stroke="#2E3F3B" stroke-width="1.6" stroke-linecap="round"/>
+        <line x1="11" y1="36" x2="6" y2="43" stroke="#2E3F3B" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M37 9 l1.1 3 l3 1.1 l-3 1.1 l-1.1 3 l-1.1 -3 l-3 -1.1 l3 -1.1 z" fill="#B391AC"/>
+      </g>
+    </svg>
+    <h1>Plume</h1>
+    <span class="tag">Réglages</span>
+  </div>
+</header>
+
+<!-- ================= TÉLÉPHONE : ÉCRAN RÉGLAGES ================= -->
+<div class="phone-wrap">
+  <div class="phone">
+    <div class="screen">
+      <div class="notch"></div>
+
+      <!-- en-tête écran -->
+      <div class="topbar">
+        <div class="kicker">Plume</div>
+        <h2>Réglages</h2>
+      </div>
+
+      <!-- corps -->
+      <div class="body">
+
+        <!-- ===== 1 · COMPTE ===== -->
+        <section>
+          <div class="sec-title">Compte</div>
+          <div class="group">
+            <div class="acct">
+              <div class="avatar">C</div>
+              <div class="grow">
+                <div class="name">Camille Laurent</div>
+                <div class="mail">camille.laurent@gmail.com</div>
+              </div>
+            </div>
+            <div class="row tap signout">
+              <span class="grow lbl">Se déconnecter</span>
+              <svg class="chev" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6 L15 12 L9 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== 2 · TA VOIX ===== -->
+        <section>
+          <div class="sec-title">Ta voix</div>
+          <div class="group accent">
+            <div class="row">
+              <span class="grow sub" style="font-size:13.5px;color:var(--pal-soft);">Plume apprend de tous tes messages envoyés.</span>
+            </div>
+            <div class="row tap">
+              <span class="grow lbl">Gérer mes exemples de voix</span>
+              <svg class="chev" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6 L15 12 L9 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== 3 · RELANCES & RAPPELS ===== -->
+        <section>
+          <div class="sec-title">Relances &amp; rappels</div>
+          <div class="group">
+            <div class="row">
+              <span class="grow lbl">Relancer après</span>
+              <span class="stepper">
+                <button type="button" aria-label="Moins">&#8722;</button>
+                <span class="num">5 jours</span>
+                <button type="button" aria-label="Plus">+</button>
+              </span>
+            </div>
+            <div class="row">
+              <span class="grow lbl">Rappels push</span>
+              <span class="toggle on" role="switch" aria-checked="true" aria-label="Rappels push"><span class="knob"></span></span>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== 4 · MODÈLE PAR DÉFAUT ===== -->
+        <section>
+          <div class="sec-title">Modèle par défaut</div>
+          <div class="group">
+            <div class="row">
+              <span class="grow lbl">Style d'écriture</span>
+              <span class="seg">
+                <button type="button">Rapide<span class="alias">Haiku</span></button>
+                <button type="button" class="on">Soigné<span class="alias">Opus</span></button>
+              </span>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== 5 · CONSOMMATION ===== -->
+        <section>
+          <div class="sec-title">Consommation</div>
+          <div class="group">
+            <div class="conso">
+              <div class="when">Ce mois-ci</div>
+              <div class="stats">
+                <div class="stat">
+                  <div class="big">47</div>
+                  <div class="cap">messages</div>
+                </div>
+                <div class="stat acc">
+                  <div class="big">21 400</div>
+                  <div class="cap">tokens</div>
+                </div>
+              </div>
+              <div class="bar"><i></i></div>
+              <div class="barcap">Encore de la marge ce mois-ci.</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== 6 · CONFIDENTIALITÉ ===== -->
+        <section>
+          <div class="sec-title">Confidentialité</div>
+          <div class="group accent">
+            <div class="row tap">
+              <span class="grow lbl">Exporter mes données</span>
+              <svg class="chev" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 L12 15 M8 11 L12 15 L16 11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 19 L19 19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+            </div>
+            <!-- destructif SOFT : teinte mauve mesurée, pas de rouge alarme -->
+            <div class="row tap">
+              <span class="grow lbl" style="color:var(--acc-deep);">Supprimer mon compte</span>
+              <svg class="chev" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--acc);"><path d="M6 8 L18 8 M9 8 L9 6 L15 6 L15 8 M8 8 L9 19 L15 19 L16 8" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== 7 · À PROPOS ===== -->
+        <section>
+          <div class="sec-title">À propos</div>
+          <div class="group">
+            <div class="about">
+              <span class="ver">Version 1.0</span>
+              <span class="link">Conditions et confidentialité</span>
+            </div>
+            <div class="footplume">
+              <!-- plume infime : translate() sur le <g> parent, anim .float sur le <g> enfant -->
+              <svg width="42" height="34" viewBox="0 0 60 48" aria-hidden="true">
+                <g transform="translate(30 26)">
+                  <g class="float">
+                    <g transform="rotate(-14)">
+                      <path d="M16 -22 C2 -18 -6 -6 -6 6 C6 2 14 6 22 -2
+                               C17 -2 12 -1 8 0
+                               C18 -7 26 -16 28 -28
+                               C24 -22 19 -18 14 -13
+                               C21 -21 22 -26 16 -22 Z"
+                            fill="#7FBEAF" stroke="#2E3F3B" stroke-width="2" stroke-linejoin="round"/>
+                      <line x1="-6" y1="6" x2="-12" y2="13" stroke="#2E3F3B" stroke-width="2" stroke-linecap="round"/>
+                      <path d="M11 -16 q2 -2 4 0" fill="none" stroke="#2E3F3B" stroke-width="1.6" stroke-linecap="round"/>
+                      <ellipse cx="9" cy="-12" rx="2.4" ry="1.6" fill="#B391AC" opacity=".7"/>
+                    </g>
+                  </g>
+                </g>
+              </svg>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- ===== TAB BAR : Réglages actif (soulignement mauve) ===== -->
+      <div class="tabs">
+        <div class="tab">
+          <span class="pill">
+            <svg width="25" height="25" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3" fill="none" stroke="#9DB5AD" stroke-width="2.1"/><path d="M4 9 L20 9" stroke="#9DB5AD" stroke-width="2.1"/><path d="M8 3 L8 7 M16 3 L16 7" stroke="#9DB5AD" stroke-width="2.1" stroke-linecap="round"/></svg>
+          </span>
+          Aujourd'hui
+        </div>
+        <div class="tab">
+          <span class="pill">
+            <svg width="25" height="25" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="none" stroke="#9DB5AD" stroke-width="2.1"/><circle cx="17" cy="10" r="2.4" fill="none" stroke="#9DB5AD" stroke-width="2.1"/><path d="M3 19 C3 14 13 14 13 19" fill="none" stroke="#9DB5AD" stroke-width="2.1" stroke-linecap="round"/><path d="M14 18 C14 15 21 15 21 18" fill="none" stroke="#9DB5AD" stroke-width="2.1" stroke-linecap="round"/></svg>
+          </span>
+          Réseau
+        </div>
+        <div class="tab on">
+          <span class="pill">
+            <svg width="25" height="25" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="none" stroke="#876585" stroke-width="2.1"/><path d="M12 3 L12 6 M12 18 L12 21 M3 12 L6 12 M18 12 L21 12 M5.6 5.6 L7.7 7.7 M16.3 16.3 L18.4 18.4 M18.4 5.6 L16.3 7.7 M7.7 16.3 L5.6 18.4" stroke="#876585" stroke-width="2.1" stroke-linecap="round"/></svg>
+          </span>
+          Réglages
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<p class="note-foot">Plume · écran Réglages — liste groupée, aérée, zéro bloat. Contour plein + hard offset net teinté, aucune ombre molle. Base <b style="color:#4E8978">menthe d'eau</b>, fil rouge <span class="acc">mauve poussiéreux</span> (toggle actif, valeurs, destructif soft). La froideur vient des gens, pas des réglages.</p>
+
+</body>
+</html>

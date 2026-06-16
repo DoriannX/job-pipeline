@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plume · Direction craftée v1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!--
+  Plume — direction "carnet vivant illustré".
+  Palette finale (tous les hex assumés, couleur PLATE, zéro ombre molle) :
+    Fond app          #F7EFF4   (pastel lavande-crème V3)
+    Fond atelier      #EFE6EE   (un cran plus profond, derrière les téléphones)
+    Marque prune      #8C6BB0   (logo plume, accents de marque)
+    Prune profond     #6E4F94   (contours plume, détails)
+    CTA corail        #F4845F   (gros bouton "Écrire", chaud Headspace)
+    CTA corail foncé  #C85C3C   (hard offset / contour du bouton corail)
+    Joie apricot      #FFC857   (étincelle, détails de célébration)
+    Texte indigo      #3A2E54   (titres, jamais noir pur)
+    Texte indigo doux #5A4E70   (secondaire)
+    Trait carnet      #2E2A40   (contours d'illustration, fins et assumés)
+  Froideur — 4 états, warm→cool, jamais alarmiste :
+    jamais contacté   #C9C2D6   (lavande grisé)
+    frais             #8FB9A8   (vert doux)
+    tiède             #F4B266   (apricot)
+    froid             #E08A8A   (rose poussiéreux, JAMAIS rouge alarme)
+  Typo : Fraunces (display chaleureux, opsz haute, italique) pour noms/titres +
+         Quicksand (texte rond et chaud) pour le corps et les boutons.
+  Profondeur : uniquement aplats francs + hard offset net (décalage plein) façon Gumroad.
+  Aucune ombre floue, aucun dégradé mesh, aucun glassmorphism, aucun emoji, aucune lib d'icônes.
+-->
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500;1,9..144,600&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-atelier:#EFE6EE;
+    --bg-app:#F7EFF4;
+    --prune:#8C6BB0;
+    --prune-deep:#6E4F94;
+    --corail:#F4845F;
+    --corail-deep:#C85C3C;
+    --apricot:#FFC857;
+    --ink:#3A2E54;
+    --ink-soft:#5A4E70;
+    --trait:#2E2A40;
+    --c-jamais:#C9C2D6;
+    --c-frais:#8FB9A8;
+    --c-tiede:#F4B266;
+    --c-froid:#E08A8A;
+    --card:#FFFDFB;
+    --line:#E4D9E3;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased;}
+  body{
+    background:var(--bg-atelier);
+    font-family:"Quicksand",system-ui,sans-serif;
+    color:var(--ink);
+    padding:38px 20px 64px;
+    line-height:1.5;
+  }
+  .display{font-family:"Fraunces",serif;}
+
+  /* ---------- En-tête / rationale ---------- */
+  .head{max-width:880px;margin:0 auto 40px;}
+  .brandline{display:flex;align-items:center;gap:14px;margin-bottom:18px;}
+  .brandline h1{
+    font-family:"Fraunces",serif;font-weight:600;font-size:34px;
+    letter-spacing:-.01em;color:var(--ink);line-height:1;
+  }
+  .brandline .tag{
+    font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--prune-deep);background:#F2EAF3;border:2px solid var(--prune);
+    padding:5px 11px 4px;border-radius:999px;
+  }
+  .rationale{
+    background:var(--card);border:2px solid var(--trait);border-radius:18px;
+    padding:20px 24px;max-width:880px;
+    /* hard offset net façon Gumroad — décalage plein, pas d'ombre floue */
+    box-shadow:7px 7px 0 0 var(--prune);
+  }
+  .rationale p{font-size:15px;color:var(--ink-soft);margin-bottom:9px;}
+  .rationale p:last-child{margin-bottom:0;}
+  .rationale b{color:var(--ink);font-weight:700;}
+  .rationale .refs{
+    display:flex;flex-wrap:wrap;gap:7px;margin-top:14px;
+  }
+  .rationale .refs span{
+    font-size:12px;font-weight:600;color:var(--prune-deep);
+    background:#F4ECF4;border:1.5px solid var(--line);border-radius:999px;
+    padding:4px 10px;
+  }
+
+  /* ---------- Scène : deux téléphones ---------- */
+  .scene{
+    display:flex;flex-wrap:wrap;gap:46px;justify-content:center;
+    margin:54px auto 60px;max-width:920px;
+  }
+  .phone-wrap{display:flex;flex-direction:column;align-items:center;gap:14px;}
+  .phone-label{
+    font-family:"Fraunces",serif;font-style:italic;font-weight:500;
+    font-size:17px;color:var(--prune-deep);
+  }
+  .phone{
+    width:390px;max-width:92vw;border-radius:46px;
+    background:var(--trait);padding:11px;
+    /* hard offset net, jamais flou */
+    box-shadow:11px 12px 0 0 #D9CCDA;
+  }
+  .screen{
+    position:relative;width:100%;height:760px;border-radius:36px;overflow:hidden;
+    background:var(--bg-app);
+  }
+  .notch{
+    position:absolute;top:11px;left:50%;transform:translateX(-50%);
+    width:118px;height:26px;border-radius:999px;background:var(--trait);z-index:40;
+  }
+
+  /* ---------- Topbar app ---------- */
+  .topbar{
+    position:absolute;top:0;left:0;right:0;height:74px;z-index:20;
+    display:flex;align-items:flex-end;justify-content:space-between;
+    padding:0 22px 12px;
+  }
+  .topbar .greet{display:flex;flex-direction:column;}
+  .topbar .greet .day{font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--prune);}
+  .topbar .greet .who{font-family:"Fraunces",serif;font-weight:600;font-size:20px;color:var(--ink);line-height:1.05;}
+  .topbar .mark{width:34px;height:34px;}
+
+  /* ---------- Deck Tinder ---------- */
+  .deck{position:absolute;top:92px;left:0;right:0;display:flex;justify-content:center;}
+  .deck-stage{position:relative;width:312px;height:466px;}
+  .card{
+    position:absolute;left:0;right:0;border-radius:30px;background:var(--card);
+    border:2.5px solid var(--trait);
+  }
+  /* deux cartes qui dépassent derrière */
+  .card.back2{top:24px;left:20px;right:20px;height:430px;background:#F1E7F1;transform:rotate(3.2deg);}
+  .card.back1{top:14px;left:11px;right:11px;height:444px;background:#F7EEF6;transform:rotate(-2deg);}
+  .card.front{top:0;height:466px;z-index:5;display:flex;flex-direction:column;overflow:hidden;}
+
+  .card .chip-row{display:flex;justify-content:space-between;align-items:center;padding:18px 20px 0;}
+  .chip{
+    display:inline-flex;align-items:center;gap:7px;
+    font-size:13px;font-weight:700;color:var(--corail-deep);
+    background:#FCEDE6;border:2px solid var(--corail);border-radius:999px;
+    padding:6px 13px 5px;
+  }
+  .chip .dot{width:9px;height:9px;border-radius:50%;background:var(--c-tiede);border:1.5px solid #C98A2E;}
+  .coldtag{
+    font-size:12px;font-weight:600;color:var(--ink-soft);
+    display:inline-flex;align-items:center;gap:6px;
+  }
+  .coldtag .sw{width:11px;height:11px;border-radius:3px;border:1.5px solid var(--trait);background:var(--c-tiede);}
+
+  .card .avatar{display:flex;justify-content:center;margin:14px 0 6px;}
+  .card .id{padding:2px 24px 0;text-align:center;}
+  .card .id .name{font-family:"Fraunces",serif;font-weight:600;font-size:30px;color:var(--ink);line-height:1.04;}
+  .card .id .role{font-size:15px;font-weight:600;color:var(--prune-deep);margin-top:4px;}
+  .card .id .org{font-size:14px;font-weight:500;color:var(--ink-soft);margin-top:1px;}
+  .card .note{
+    margin:16px 22px 0;padding:13px 15px;border-radius:16px;
+    background:#F6EFF6;border:2px dashed var(--line);
+    font-size:14px;color:var(--ink-soft);line-height:1.45;
+  }
+  .card .note .q{font-family:"Fraunces",serif;font-style:italic;color:var(--ink);}
+
+  /* hints de gestes discrets */
+  .hints{margin-top:auto;padding:0 20px 16px;display:flex;justify-content:space-between;align-items:center;}
+  .hint{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#9A8DA8;}
+  .hint svg{display:block;}
+
+  /* pager */
+  .pager{
+    position:absolute;top:566px;left:0;right:0;display:flex;justify-content:center;
+    align-items:center;gap:8px;z-index:8;
+  }
+  .pager .p{width:7px;height:7px;border-radius:50%;background:#D4C7D6;}
+  .pager .p.on{width:22px;border-radius:999px;background:var(--prune);}
+
+  /* ---------- Boutons chunky ---------- */
+  .actions{
+    position:absolute;left:0;right:0;bottom:96px;padding:0 22px;z-index:15;
+    display:flex;gap:13px;align-items:stretch;
+  }
+  .btn{
+    border:2.5px solid var(--trait);border-radius:20px;
+    font-family:"Quicksand",sans-serif;font-weight:700;cursor:default;
+    display:flex;align-items:center;justify-content:center;gap:9px;
+  }
+  .btn-write{
+    flex:1.7;background:var(--corail);color:#fff;font-size:19px;padding:17px 0;
+    /* hard offset plein = profondeur sans ombre molle */
+    box-shadow:0 6px 0 0 var(--corail-deep);
+  }
+  .btn-write .lbl{text-shadow:0 1px 0 rgba(0,0,0,.12);}
+  .btn-later{
+    flex:1;background:#F0E7F0;color:var(--prune-deep);font-size:15px;padding:17px 0;
+    box-shadow:0 6px 0 0 #C9B7CC;
+  }
+
+  /* ---------- Tab bar ---------- */
+  .tabs{
+    position:absolute;left:0;right:0;bottom:0;height:80px;z-index:18;
+    background:var(--card);border-top:2.5px solid var(--trait);
+    display:flex;align-items:center;justify-content:space-around;padding-bottom:8px;
+  }
+  .tab{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;font-weight:600;color:#A99CB4;}
+  .tab.on{color:var(--prune-deep);}
+  .tab .pill{padding:5px 14px;border-radius:999px;}
+  .tab.on .pill{background:#EFE2F0;}
+
+  /* ---------- État vide ---------- */
+  .empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;}
+  .empty .sky{flex:1;display:flex;align-items:center;justify-content:center;width:100%;}
+  .empty .copy{text-align:center;padding:0 40px 8px;}
+  .empty .copy h2{font-family:"Fraunces",serif;font-weight:600;font-size:27px;color:var(--ink);line-height:1.12;}
+  .empty .copy p{font-size:15px;color:var(--ink-soft);margin-top:12px;line-height:1.5;}
+  .empty .copy .meta{font-size:13px;font-weight:600;color:var(--prune);margin-top:18px;display:inline-flex;align-items:center;gap:7px;}
+
+  .float{animation:float 5.5s ease-in-out infinite;}
+  @keyframes float{0%,100%{transform:translateY(0) rotate(-3deg);}50%{transform:translateY(-13px) rotate(2deg);}}
+  .drift1{animation:drift 7s ease-in-out infinite;}
+  .drift2{animation:drift 9s ease-in-out infinite reverse;}
+  @keyframes drift{0%,100%{transform:translateY(0);}50%{transform:translateY(-9px);}}
+
+  /* ---------- Bande système ---------- */
+  .system{
+    max-width:880px;margin:8px auto 0;background:var(--card);
+    border:2px solid var(--trait);border-radius:20px;padding:26px 28px 28px;
+    box-shadow:7px 7px 0 0 var(--apricot);
+  }
+  .system h3{font-family:"Fraunces",serif;font-weight:600;font-size:21px;color:var(--ink);}
+  .system .sub{font-size:14px;color:var(--ink-soft);margin-top:4px;margin-bottom:22px;}
+  .sys-grid{display:flex;flex-wrap:wrap;gap:34px;}
+  .sys-block{flex:1;min-width:300px;}
+  .sys-block .blab{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--prune);margin-bottom:14px;}
+  .cold-row{display:flex;gap:16px;}
+  .cold-item{display:flex;flex-direction:column;align-items:center;gap:9px;flex:1;}
+  .cold-item .nm{font-size:12.5px;font-weight:600;color:var(--ink);text-align:center;line-height:1.2;}
+  .cold-item .hue{font-size:11px;font-weight:600;color:var(--ink-soft);}
+
+  .btnset{display:flex;flex-direction:column;gap:14px;}
+  .demo-write,.demo-later{
+    border:2.5px solid var(--trait);border-radius:18px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;gap:9px;padding:14px 0;
+  }
+  .demo-write{background:var(--corail);color:#fff;font-size:17px;box-shadow:0 5px 0 0 var(--corail-deep);}
+  .demo-later{background:#F0E7F0;color:var(--prune-deep);font-size:15px;box-shadow:0 5px 0 0 #C9B7CC;}
+  .btn-cap{font-size:12px;color:var(--ink-soft);margin-top:-6px;}
+
+  .foot{max-width:880px;margin:34px auto 0;font-size:12.5px;color:#9A8DA8;text-align:center;}
+</style>
+</head>
+<body>
+
+<!-- ================= EN-TÊTE + RATIONALE ================= -->
+<header class="head">
+  <div class="brandline">
+    <!-- plume-personnage = logo/mascotte -->
+    <svg width="40" height="40" viewBox="0 0 48 48" aria-hidden="true">
+      <g transform="rotate(-16 24 24)">
+        <path d="M30 7 C18 11 11 24 11 36 C20 33 26 36 32 30 C29 30 26 31 23 32 C28 27 33 21 34 12 C32 16 29 19 26 22 C30 17 31 12 30 7 Z"
+              fill="#8C6BB0" stroke="#2E2A40" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M27 12 C23 18 19 27 16 34" fill="none" stroke="#2E2A40" stroke-width="1.6" stroke-linecap="round"/>
+        <line x1="11" y1="36" x2="6" y2="43" stroke="#2E2A40" stroke-width="2.2" stroke-linecap="round"/>
+      </g>
+    </svg>
+    <h1>Plume</h1>
+    <span class="tag">Direction craftée v1</span>
+  </div>
+  <div class="rationale">
+    <p><b>Carnet vivant illustré</b> — chaque pixel est dessiné main, pas assemblé. Voilà comment les 5 références deviennent du concret.</p>
+    <p><b>Headspace</b> donne l'illustration maison qui porte l'âme : la plume-mascotte et des avatars en blobs vivants, jamais des ronds plats à initiales. <b>Duolingo</b> donne le gros bouton « Écrire » corail, plein, satisfaisant à presser. <b>Alto's Odyssey</b> donne l'état vide aéré et poétique où la plume plane. <b>Unpacking</b> donne la chaleur intime du « carnet à soi » : trait à la main, papier crème, note manuscrite. <b>Gumroad</b> donne la couleur plate et confiante : zéro ombre molle, profondeur par contour plein + décalage net.</p>
+    <div class="refs">
+      <span>Headspace · illustration</span>
+      <span>Duolingo · bouton chunky</span>
+      <span>Alto's · vide serein</span>
+      <span>Unpacking · cozy</span>
+      <span>Gumroad · aplat + hard offset</span>
+    </div>
+  </div>
+</header>
+
+<!-- ================= LES DEUX TÉLÉPHONES ================= -->
+<section class="scene">
+
+  <!-- ---------- TÉLÉPHONE 1 : AUJOURD'HUI ---------- -->
+  <div class="phone-wrap">
+    <span class="phone-label">Aujourd'hui</span>
+    <div class="phone">
+      <div class="screen">
+        <div class="notch"></div>
+
+        <!-- topbar -->
+        <div class="topbar">
+          <div class="greet">
+            <span class="day">Lundi · 15 juin</span>
+            <span class="who">Salut Camille</span>
+          </div>
+          <!-- mark = plume mini -->
+          <svg class="mark" viewBox="0 0 48 48" aria-hidden="true">
+            <g transform="rotate(-16 24 24)">
+              <path d="M30 7 C18 11 11 24 11 36 C20 33 26 36 32 30 C29 30 26 31 23 32 C28 27 33 21 34 12 C32 16 29 19 26 22 C30 17 31 12 30 7 Z"
+                    fill="#8C6BB0" stroke="#2E2A40" stroke-width="2" stroke-linejoin="round"/>
+              <line x1="11" y1="36" x2="6" y2="43" stroke="#2E2A40" stroke-width="2.2" stroke-linecap="round"/>
+            </g>
+          </svg>
+        </div>
+
+        <!-- deck -->
+        <div class="deck">
+          <div class="deck-stage">
+            <div class="card back2"></div>
+            <div class="card back1"></div>
+
+            <div class="card front">
+              <div class="chip-row">
+                <span class="chip"><span class="dot"></span>Relance · 5 j</span>
+                <span class="coldtag"><span class="sw"></span>Tiède</span>
+              </div>
+
+              <!-- avatar illustré : blob vivant, froideur tiède (apricot) -->
+              <div class="avatar">
+                <svg width="124" height="124" viewBox="0 0 124 124" aria-hidden="true">
+                  <!-- blob organique, contour plein assumé -->
+                  <path d="M62 10
+                           C88 10 108 26 110 52
+                           C112 78 96 104 66 110
+                           C40 115 16 98 12 70
+                           C8 44 24 18 50 12
+                           C54 11 58 10 62 10 Z"
+                        fill="#F4B266" stroke="#2E2A40" stroke-width="3" stroke-linejoin="round"/>
+                  <!-- joue / volume par aplat plus chaud -->
+                  <path d="M30 78 C26 64 30 50 42 44 C36 58 36 70 44 82 C40 84 34 83 30 78 Z" fill="#E89A45"/>
+                  <!-- frange / cheveux dessinés -->
+                  <path d="M28 44 C36 24 60 18 80 28 C92 34 96 46 94 56
+                           C88 44 78 38 66 40 C70 34 66 30 60 31
+                           C56 38 48 40 42 38 C44 46 38 50 32 52
+                           C30 49 28 47 28 44 Z"
+                        fill="#5A3D2A" stroke="#2E2A40" stroke-width="2.4" stroke-linejoin="round"/>
+                  <!-- yeux : deux petits arcs amicaux -->
+                  <path d="M44 66 q5 -6 10 0" fill="none" stroke="#2E2A40" stroke-width="3" stroke-linecap="round"/>
+                  <path d="M70 66 q5 -6 10 0" fill="none" stroke="#2E2A40" stroke-width="3" stroke-linecap="round"/>
+                  <!-- rougeur joues -->
+                  <ellipse cx="42" cy="80" rx="6" ry="4" fill="#E8896F" opacity=".7"/>
+                  <ellipse cx="84" cy="80" rx="6" ry="4" fill="#E8896F" opacity=".7"/>
+                  <!-- sourire -->
+                  <path d="M54 84 q9 9 18 0" fill="none" stroke="#2E2A40" stroke-width="3" stroke-linecap="round"/>
+                  <!-- initiale discrète dans le blob -->
+                  <text x="100" y="30" font-family="Fraunces,serif" font-size="17" font-weight="600" fill="#7A4E1E">L</text>
+                </svg>
+              </div>
+
+              <div class="id">
+                <div class="name">Léa Marchand</div>
+                <div class="role">Recruteuse</div>
+                <div class="org">Doctolib</div>
+              </div>
+
+              <div class="note">
+                Vous aviez parlé du poste back-end. <span class="q">« Un petit mot pour reprendre le fil ? »</span>
+              </div>
+
+              <!-- hints de gestes discrets -->
+              <div class="hints">
+                <span class="hint">
+                  <svg width="15" height="15" viewBox="0 0 24 24"><path d="M8 14 L12 9 L16 14" fill="none" stroke="#9A8DA8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  écrire
+                </span>
+                <span class="hint">
+                  <svg width="34" height="14" viewBox="0 0 48 24"><path d="M12 12 L6 12 M9 9 L6 12 L9 15" fill="none" stroke="#9A8DA8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M36 12 L42 12 M39 9 L42 12 L39 15" fill="none" stroke="#9A8DA8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  feuilleter
+                </span>
+                <span class="hint">
+                  <svg width="15" height="15" viewBox="0 0 24 24"><path d="M8 10 L12 15 L16 10" fill="none" stroke="#9A8DA8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  plus tard
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- pager -->
+        <div class="pager">
+          <span class="p on"></span>
+          <span class="p"></span>
+          <span class="p"></span>
+          <span class="p"></span>
+        </div>
+
+        <!-- boutons chunky -->
+        <div class="actions">
+          <div class="btn btn-write">
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20 L5 16 L16 5 L19 8 L8 19 Z" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/><path d="M14 7 L17 10" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>
+            <span class="lbl">Écrire</span>
+          </div>
+          <div class="btn btn-later">
+            <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="#6E4F94" stroke-width="2.2"/><path d="M12 8 L12 12 L15 14" fill="none" stroke="#6E4F94" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Plus tard
+          </div>
+        </div>
+
+        <!-- tab bar -->
+        <div class="tabs">
+          <div class="tab on">
+            <span class="pill">
+              <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3" fill="none" stroke="#6E4F94" stroke-width="2.1"/><path d="M4 9 L20 9" stroke="#6E4F94" stroke-width="2.1"/><path d="M8 3 L8 7 M16 3 L16 7" stroke="#6E4F94" stroke-width="2.1" stroke-linecap="round"/><circle cx="12" cy="14.5" r="2" fill="#F4845F"/></svg>
+            </span>
+            Aujourd'hui
+          </div>
+          <div class="tab">
+            <span class="pill">
+              <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="none" stroke="#A99CB4" stroke-width="2.1"/><circle cx="17" cy="10" r="2.4" fill="none" stroke="#A99CB4" stroke-width="2.1"/><path d="M3 19 C3 14 13 14 13 19" fill="none" stroke="#A99CB4" stroke-width="2.1" stroke-linecap="round"/><path d="M14 18 C14 15 21 15 21 18" fill="none" stroke="#A99CB4" stroke-width="2.1" stroke-linecap="round"/></svg>
+            </span>
+            Réseau
+          </div>
+          <div class="tab">
+            <span class="pill">
+              <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="none" stroke="#A99CB4" stroke-width="2.1"/><path d="M12 3 L12 6 M12 18 L12 21 M3 12 L6 12 M18 12 L21 12 M5.6 5.6 L7.7 7.7 M16.3 16.3 L18.4 18.4 M18.4 5.6 L16.3 7.7 M7.7 16.3 L5.6 18.4" stroke="#A99CB4" stroke-width="2.1" stroke-linecap="round"/></svg>
+            </span>
+            Réglages
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- TÉLÉPHONE 2 : ÉTAT VIDE ---------- -->
+  <div class="phone-wrap">
+    <span class="phone-label">C'est tout pour aujourd'hui</span>
+    <div class="phone">
+      <div class="screen">
+        <div class="notch"></div>
+
+        <div class="topbar">
+          <div class="greet">
+            <span class="day">Lundi · 15 juin</span>
+            <span class="who">Salut Camille</span>
+          </div>
+          <svg class="mark" viewBox="0 0 48 48" aria-hidden="true">
+            <g transform="rotate(-16 24 24)">
+              <path d="M30 7 C18 11 11 24 11 36 C20 33 26 36 32 30 C29 30 26 31 23 32 C28 27 33 21 34 12 C32 16 29 19 26 22 C30 17 31 12 30 7 Z"
+                    fill="#8C6BB0" stroke="#2E2A40" stroke-width="2" stroke-linejoin="round"/>
+              <line x1="11" y1="36" x2="6" y2="43" stroke="#2E2A40" stroke-width="2.2" stroke-linecap="round"/>
+            </g>
+          </svg>
+        </div>
+
+        <div class="empty">
+          <div class="sky">
+            <svg width="300" height="430" viewBox="0 0 300 430" aria-hidden="true">
+              <!-- petits nuages plats Alto's, qui dérivent -->
+              <g class="drift1"><path d="M40 96 C40 86 54 84 60 88 C66 80 84 82 84 94 C92 92 96 102 88 106 L48 106 C38 106 36 99 40 96 Z" fill="#FFFFFF" opacity=".75"/></g>
+              <g class="drift2"><path d="M196 150 C196 142 208 140 213 144 C218 137 233 139 233 149 C240 147 244 156 237 159 L203 159 C194 159 192 153 196 150 Z" fill="#FFFFFF" opacity=".65"/></g>
+              <!-- étoiles / poussières apricot, sobres -->
+              <path d="M70 200 l2 6 l6 2 l-6 2 l-2 6 l-2 -6 l-6 -2 l6 -2 z" fill="#FFC857"/>
+              <path d="M236 232 l1.5 4.5 l4.5 1.5 l-4.5 1.5 l-1.5 4.5 l-1.5 -4.5 l-4.5 -1.5 l4.5 -1.5 z" fill="#FFC857" opacity=".85"/>
+              <circle cx="58" cy="270" r="2.4" fill="#8C6BB0" opacity=".5"/>
+              <circle cx="244" cy="120" r="2.4" fill="#8C6BB0" opacity=".5"/>
+
+              <!-- trajectoire de vol pointillée -->
+              <path d="M210 60 C150 110 230 180 150 240" fill="none" stroke="#C9BBD0" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="1 11"/>
+
+              <!-- LA PLUME-PERSONNAGE qui plane, en grand -->
+              <g class="float" transform="translate(150 240)">
+                <g transform="rotate(-14)">
+                  <!-- corps de la plume, prune plein -->
+                  <path d="M44 -76 C8 -64 -14 -24 -14 14 C16 4 36 12 54 -8
+                           C45 -8 36 -5 27 -2
+                           C44 -19 60 -40 63 -68
+                           C57 -56 48 -47 39 -38
+                           C51 -53 54 -64 44 -76 Z"
+                        fill="#8C6BB0" stroke="#2E2A40" stroke-width="3" stroke-linejoin="round"/>
+                  <!-- rachis -->
+                  <path d="M38 -64 C24 -42 8 -12 -6 10" fill="none" stroke="#2E2A40" stroke-width="2.2" stroke-linecap="round"/>
+                  <!-- barbes -->
+                  <path d="M30 -50 l11 -7 M22 -36 l11 -7 M13 -22 l11 -7 M4 -8 l11 -7" stroke="#6E4F94" stroke-width="1.8" stroke-linecap="round"/>
+                  <!-- tige -->
+                  <line x1="-14" y1="14" x2="-26" y2="30" stroke="#2E2A40" stroke-width="3" stroke-linecap="round"/>
+                  <!-- petit visage amical -->
+                  <path d="M20 -52 q4 -5 8 0" fill="none" stroke="#2E2A40" stroke-width="2.4" stroke-linecap="round"/>
+                  <path d="M33 -56 q4 -5 8 0" fill="none" stroke="#2E2A40" stroke-width="2.4" stroke-linecap="round"/>
+                  <ellipse cx="22" cy="-42" rx="4.5" ry="3" fill="#FFC857" opacity=".7"/>
+                  <path d="M26 -46 q5 5 10 0" fill="none" stroke="#2E2A40" stroke-width="2.4" stroke-linecap="round"/>
+                </g>
+              </g>
+            </svg>
+          </div>
+          <div class="copy">
+            <h2>C'est tout pour aujourd'hui.</h2>
+            <p>Quatre liens repris, en douceur. Repose ta plume, elle t'attendra demain.</p>
+            <span class="meta">
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 13 L10 18 L19 6" fill="none" stroke="#8C6BB0" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              4 cartes feuilletées
+            </span>
+          </div>
+        </div>
+
+        <!-- tab bar identique -->
+        <div class="tabs">
+          <div class="tab on">
+            <span class="pill">
+              <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3" fill="none" stroke="#6E4F94" stroke-width="2.1"/><path d="M4 9 L20 9" stroke="#6E4F94" stroke-width="2.1"/><path d="M8 3 L8 7 M16 3 L16 7" stroke="#6E4F94" stroke-width="2.1" stroke-linecap="round"/><circle cx="12" cy="14.5" r="2" fill="#F4845F"/></svg>
+            </span>
+            Aujourd'hui
+          </div>
+          <div class="tab">
+            <span class="pill">
+              <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="none" stroke="#A99CB4" stroke-width="2.1"/><circle cx="17" cy="10" r="2.4" fill="none" stroke="#A99CB4" stroke-width="2.1"/><path d="M3 19 C3 14 13 14 13 19" fill="none" stroke="#A99CB4" stroke-width="2.1" stroke-linecap="round"/><path d="M14 18 C14 15 21 15 21 18" fill="none" stroke="#A99CB4" stroke-width="2.1" stroke-linecap="round"/></svg>
+            </span>
+            Réseau
+          </div>
+          <div class="tab">
+            <span class="pill">
+              <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="none" stroke="#A99CB4" stroke-width="2.1"/><path d="M12 3 L12 6 M12 18 L12 21 M3 12 L6 12 M18 12 L21 12 M5.6 5.6 L7.7 7.7 M16.3 16.3 L18.4 18.4 M18.4 5.6 L16.3 7.7 M7.7 16.3 L5.6 18.4" stroke="#A99CB4" stroke-width="2.1" stroke-linecap="round"/></svg>
+            </span>
+            Réglages
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<!-- ================= BANDE SYSTÈME ================= -->
+<section class="system">
+  <h3 class="display">Le système, en clair</h3>
+  <p class="sub">La froideur se lit dans le blob de l'avatar — warm vers cool, jamais alarmiste. Et deux boutons, deux poids.</p>
+
+  <div class="sys-grid">
+
+    <!-- 4 froideurs -->
+    <div class="sys-block">
+      <div class="blab">Les 4 froideurs</div>
+      <div class="cold-row">
+
+        <!-- jamais contacté -->
+        <div class="cold-item">
+          <svg width="76" height="76" viewBox="0 0 124 124" aria-hidden="true">
+            <path d="M62 10 C88 10 110 30 110 58 C110 88 88 112 60 112 C34 112 12 92 12 64 C12 36 34 12 62 10 Z" fill="#C9C2D6" stroke="#2E2A40" stroke-width="3" stroke-linejoin="round"/>
+            <path d="M44 60 q6 -5 12 0" fill="none" stroke="#2E2A40" stroke-width="3" stroke-linecap="round"/>
+            <path d="M70 60 q6 -5 12 0" fill="none" stroke="#2E2A40" stroke-width="3" stroke-linecap="round"/>
+            <!-- bouche neutre, encore endormie -->
+            <path d="M52 84 L74 84" fill="none" stroke="#2E2A40" stroke-width="3" stroke-linecap="round"/>
+            <!-- petit zzz : pas encore réveillé -->
+            <text x="86" y="34" font-family="Fraunces,serif" font-size="15" font-weight="600" fill="#7C7390">z</text>
+          </svg>
+          <span class="nm">Jamais<br>contacté</span>
+          <span class="hue">lavande grisé</span>
+        </div>
+
+        <!-- frais -->
+        <div class="cold-item">
+          <svg width="76" height="76" viewBox="0 0 124 124" aria-hidden="true">
+            <path d="M60 9 C90 9 112 32 110 62 C108 90 86 113 58 112 C32 111 12 90 13 62 C14 34 32 11 60 9 Z" fill="#8FB9A8" stroke="#2E2A40" stroke-width="3" stroke-linejoin="round"/>
+            <path d="M42 62 q6 -6 12 0" fill="none" stroke="#2E2A40" stroke-width="3" stroke-linecap="round"/>
+            <path d="M70 62 q6 -6 12 0" fill="none" stroke="#2E2A40" stroke-width="3" stroke-linecap="round"/>
+            <ellipse cx="40" cy="78" rx="6" ry="4" fill="#6FA48E" opacity=".8"/>
+            <ellipse cx="84" cy="78" rx="6" ry="4" fill="#6FA48E" opacity=".8"/>
+            <path d="M50 82 q12 12 24 0" fill="none" stroke="#2E2A40" stroke-width="3" stroke-linecap="round"/>
+          </svg>
+          <span class="nm">Frais</span>
+          <span class="hue">vert doux</span>
+        </div>
+
+        <!-- tiède -->
+        <div class="cold-item">
+          <svg width="76" height="76" viewBox="0 0 124 124" aria-hidden="true">
+            <path d="M62 10 C88 10 108 30 110 56 C112 84 94 110 64 112 C38 114 13 94 12 66 C11 38 30 12 62 10 Z" fill="#F4B266" stroke="#2E2A40" stroke-width="3" stroke-linejoin="round"/>
+            <path d="M44 64 q5 -6 10 0" fill="none" stroke="#2E2A40" stroke-width="3" stroke-linecap="round"/>
+            <path d="M70 64 q5 -6 10 0" fill="none" stroke="#2E2A40" stroke-width="3" stroke-linecap="round"/>
+            <ellipse cx="42" cy="80" rx="6" ry="4" fill="#E8896F" opacity=".7"/>
+            <ellipse cx="84" cy="80" rx="6" ry="4" fill="#E8896F" opacity=".7"/>
+            <path d="M54 84 q9 8 18 0" fill="none" stroke="#2E2A40" stroke-width="3" stroke-linecap="round"/>
+          </svg>
+          <span class="nm">Tiède</span>
+          <span class="hue">apricot</span>
+        </div>
+
+        <!-- froid -->
+        <div class="cold-item">
+          <svg width="76" height="76" viewBox="0 0 124 124" aria-hidden="true">
+            <path d="M60 10 C86 10 110 32 110 60 C110 90 86 112 60 112 C32 112 13 88 14 60 C15 34 34 12 60 10 Z" fill="#E08A8A" stroke="#2E2A40" stroke-width="3" stroke-linejoin="round"/>
+            <path d="M44 60 q6 5 12 0" fill="none" stroke="#2E2A40" stroke-width="3" stroke-linecap="round"/>
+            <path d="M70 60 q6 5 12 0" fill="none" stroke="#2E2A40" stroke-width="3" stroke-linecap="round"/>
+            <!-- bouche légèrement basse, mélancolique mais douce -->
+            <path d="M52 88 q11 -7 22 0" fill="none" stroke="#2E2A40" stroke-width="3" stroke-linecap="round"/>
+          </svg>
+          <span class="nm">Froid</span>
+          <span class="hue">rose poussiéreux</span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 2 boutons -->
+    <div class="sys-block">
+      <div class="blab">Les 2 boutons</div>
+      <div class="btnset">
+        <div class="demo-write">
+          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20 L5 16 L16 5 L19 8 L8 19 Z" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/><path d="M14 7 L17 10" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>
+          Écrire
+        </div>
+        <span class="btn-cap">Primaire — corail chaud, plein, décalage net. L'action que Camille vient faire.</span>
+        <div class="demo-later">
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="#6E4F94" stroke-width="2.2"/><path d="M12 8 L12 12 L15 14" fill="none" stroke="#6E4F94" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Plus tard
+        </div>
+        <span class="btn-cap">Secondaire — lavande discret, mais chunky aussi. Repousse sans culpabiliser.</span>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<p class="foot">Plume · direction « carnet vivant illustré » — illustration maison en SVG, couleur plate, hard offset façon Gumroad. Aucune ombre molle, aucun emoji.</p>
+
+</body>
+</html>

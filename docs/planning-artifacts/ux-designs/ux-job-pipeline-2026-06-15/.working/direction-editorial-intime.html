@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plume — Direction D · Éditorial intime</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   DIRECTION D — ÉDITORIAL INTIME
+   Métaphore : la page d'un journal intime / d'une revue. Tout passe
+   par la TYPOGRAPHIE et la hiérarchie, presque pas de cadres. Calme,
+   texte sombre sur crème, un seul accent.
+   Palette :
+     crème          #F6F1E8   (page)
+     crème claire   #FCF9F2   (zone de lecture)
+     encre noire    #211F1B   (texte titre / corps)
+     gris lecture   #6E665B   (secondaire)
+     filet fin      #DED5C5
+     accent unique  #B14A33   (rouille — l'unique couleur, action)
+   Typo : Newsreader (sérif éditorial, optical sizing) en vedette,
+          Inter seulement pour micro-labels/onglets.
+   Mouvement : aucun. C'est une page qu'on lit. Hiérarchie = taille +
+   italique + filets, pas de boutons clinquants ni de cartes.
+   ============================================================ */
+:root{
+  --cream:#F6F1E8; --read:#FCF9F2; --ink:#211F1B; --gray:#6E665B;
+  --rule:#DED5C5; --rust:#B14A33; --rust-dk:#8A3722;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Newsreader',Georgia,serif; color:var(--ink);
+  background:#E9E1D2; -webkit-font-smoothing:antialiased; line-height:1.5;
+  display:flex; flex-direction:column; align-items:center;
+  padding:28px 16px 48px; min-height:100vh;
+}
+.rationale{
+  max-width:390px; font-size:13.5px; color:#52493d; background:var(--read);
+  border:1px solid var(--rule); padding:15px 18px; margin-bottom:22px;
+  line-height:1.5; font-family:'Newsreader',serif;
+}
+.rationale b{font-weight:600; font-style:italic; color:var(--rust-dk);}
+.phone{
+  width:390px; max-width:100%; background:var(--cream);
+  border-radius:30px; overflow:hidden; position:relative;
+  box-shadow:0 24px 54px rgba(33,31,27,.24);
+}
+.statusbar{display:flex; justify-content:space-between; align-items:center;
+  padding:13px 26px 0; font-family:'Inter',sans-serif; font-size:12px;
+  font-weight:500; color:var(--gray);}
+.screen{padding:6px 26px 100px;}
+
+/* en-tête éditorial — masthead */
+.masthead{padding:22px 0 0; text-align:left;}
+.masthead .eyebrow{
+  font-family:'Inter',sans-serif; font-size:10.5px; letter-spacing:.22em;
+  text-transform:uppercase; color:var(--rust); font-weight:500;
+}
+.masthead h1{
+  font-family:'Newsreader',serif; font-weight:500; font-size:40px;
+  letter-spacing:-.015em; line-height:1; margin-top:6px;
+  font-variation-settings:'opsz' 72;
+}
+.masthead .dek{font-style:italic; font-size:15px; color:var(--gray); margin-top:7px;}
+.thin-rule{height:1px; background:var(--rule); margin:16px 0;}
+.double-rule{border-top:1px solid var(--ink); border-bottom:1px solid var(--ink);
+  height:4px; margin:18px 0 6px;}
+
+/* compteur zéro-fuite : ligne d'édito, pas une pilule */
+.standfirst{font-style:italic; font-size:15.5px; color:#4f463b; line-height:1.45;}
+.standfirst b{font-style:normal; font-weight:600; color:var(--ink);}
+
+.column-head{font-family:'Inter',sans-serif; font-size:10.5px; letter-spacing:.2em;
+  text-transform:uppercase; color:var(--gray); font-weight:500; margin:24px 0 4px;}
+
+/* entrée = article de revue, séparé par des filets, pas encadré */
+.item{padding:16px 0 17px; border-bottom:1px solid var(--rule);}
+.item:first-of-type{border-top:1px solid var(--rule);}
+.item .kicker{
+  font-family:'Inter',sans-serif; font-size:10.5px; letter-spacing:.12em;
+  text-transform:uppercase; font-weight:500; color:var(--rust);
+  display:flex; align-items:baseline; gap:8px;
+}
+.item .kicker .age{margin-left:auto; color:var(--gray); font-weight:500;
+  letter-spacing:.06em; font-family:'Inter',sans-serif; font-size:10.5px;}
+.item .name{font-family:'Newsreader',serif; font-weight:500; font-size:25px;
+  letter-spacing:-.01em; margin:4px 0 0; line-height:1.08;}
+.item .role{font-style:italic; font-size:14.5px; color:var(--gray); margin-top:1px;}
+.item .pull{font-size:15px; color:#3d352b; margin:9px 0 0; line-height:1.4;}
+.item .pull::before{content:"\201C"; color:var(--rust); font-size:20px;
+  line-height:0; vertical-align:-4px; margin-right:1px;}
+.item .pull::after{content:"\201D"; color:var(--rust); font-size:20px;
+  line-height:0; vertical-align:-4px;}
+
+.item .meta{display:flex; align-items:center; justify-content:space-between; margin-top:12px;}
+.cold{font-family:'Inter',sans-serif; font-size:11px; color:var(--gray);
+  display:flex; align-items:center; gap:7px; letter-spacing:.02em;}
+.cold .ticks{display:flex; gap:3px;}
+.cold .tk{width:11px; height:2px; background:var(--rule);}
+.cold .tk.on{background:var(--ink);}
+.read-more{font-family:'Inter',sans-serif; font-size:12px; font-weight:500;
+  color:var(--rust-dk); text-decoration:none; display:inline-flex;
+  align-items:center; gap:6px; border-bottom:1px solid var(--rust);
+  padding-bottom:1px;}
+.read-more:hover{color:var(--rust);}
+
+/* entrée qui vieillit — l'âge se note dans la marge, ton doux */
+.item.aging .kicker{color:var(--rust-dk);}
+.item.aging .age{color:var(--rust-dk);}
+.item.aging .pull{color:#5a4a3c;}
+
+/* ours / pied : onglets sobres, typographiques */
+.tabs{position:absolute; left:0; right:0; bottom:0; display:flex;
+  background:var(--read); border-top:1px solid var(--ink);
+  padding:9px 22px calc(9px + env(safe-area-inset-bottom));}
+.tab{flex:1; text-align:center; font-family:'Inter',sans-serif;
+  font-size:11px; color:var(--gray); text-decoration:none; letter-spacing:.02em;}
+.tab i{display:block; font-size:19px; margin-bottom:3px; opacity:.65;}
+.tab.active{color:var(--ink); font-weight:500;}
+.tab.active i{opacity:1; color:var(--rust);}
+</style>
+</head>
+<body>
+<div class="rationale">
+  <b>D · Éditorial intime.</b> Plume comprise comme une revue qu'on tient
+  pour soi : tout repose sur la typographie (Newsreader), des filets fins
+  plutôt que des cartes, texte sombre sur crème, une seule couleur de rouille.
+  Hiérarchie par la taille et l'italique. Calme, dense en sens, vide en bruit.
+</div>
+
+<div class="phone">
+  <div class="statusbar"><span>9:41</span><span>Plume</span></div>
+
+  <div class="screen">
+    <div class="masthead">
+      <div class="eyebrow">Lundi 15 juin</div>
+      <h1>Aujourd'hui</h1>
+      <div class="dek">Ce qui mérite un mot de ta part, aujourd'hui.</div>
+    </div>
+
+    <div class="double-rule"></div>
+    <p class="standfirst">Rien ne traîne. <b>Trois relances à jour</b>, rien
+      d'oublié derrière toi.</p>
+
+    <div class="column-head">La file du jour</div>
+
+    <!-- entrée qui vieillit -->
+    <article class="item aging">
+      <div class="kicker">Relance due <span class="age">depuis 5 jours</span></div>
+      <div class="name">Léa Marchand</div>
+      <div class="role">Recruteuse, Doctolib</div>
+      <p class="pull">relancer, ça fait 5 jours</p>
+      <div class="meta">
+        <span class="cold"><span class="ticks" aria-hidden="true"><span class="tk on"></span><span class="tk on"></span><span class="tk"></span></span>tiède</span>
+        <a class="read-more" href="#">Composer le mot <i class="ti ti-arrow-right" aria-hidden="true"></i></a>
+      </div>
+    </article>
+
+    <!-- premier message -->
+    <article class="item">
+      <div class="kicker">Premier message</div>
+      <div class="name">Thomas Berger</div>
+      <div class="role">Lead dev, Alan</div>
+      <p class="pull">présenté par Camille</p>
+      <div class="meta">
+        <span class="cold"><span class="ticks" aria-hidden="true"><span class="tk"></span><span class="tk"></span><span class="tk"></span></span>jamais contacté</span>
+        <a class="read-more" href="#">Composer le mot <i class="ti ti-arrow-right" aria-hidden="true"></i></a>
+      </div>
+    </article>
+
+    <!-- relance fraîche -->
+    <article class="item">
+      <div class="kicker">Relance due <span class="age">depuis 2 jours</span></div>
+      <div class="name">Sophie Nkamga</div>
+      <div class="role">CTO, Pennylane</div>
+      <p class="pull">reprendre le fil, elle attendait ton retour</p>
+      <div class="meta">
+        <span class="cold"><span class="ticks" aria-hidden="true"><span class="tk on"></span><span class="tk"></span><span class="tk"></span></span>frais</span>
+        <a class="read-more" href="#">Composer le mot <i class="ti ti-arrow-right" aria-hidden="true"></i></a>
+      </div>
+    </article>
+
+  </div>
+
+  <nav class="tabs">
+    <a class="tab active" href="#"><i class="ti ti-sun" aria-hidden="true"></i>Aujourd'hui</a>
+    <a class="tab" href="#"><i class="ti ti-users" aria-hidden="true"></i>Réseau</a>
+    <a class="tab" href="#"><i class="ti ti-settings" aria-hidden="true"></i>Réglages</a>
+  </nav>
+</div>
+</body>
+</html>
