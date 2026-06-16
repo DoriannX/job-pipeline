@@ -23,7 +23,8 @@ export type IconName =
   | "arrow-right"
   | "chevron"
   | "copy"
-  | "edit";
+  | "edit"
+  | "trash";
 
 const PATHS: Record<IconName, ReactNode> = {
   // — Canaux —
@@ -110,6 +111,14 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <path d="M4 20 l1 -4 L16.5 4.5 a2 2 0 0 1 3 3 L8 19 Z" />
       <path d="M14 7 L17 10" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M5 7 H19" />
+      <path d="M9.5 7 V5.3 a1.3 1.3 0 0 1 1.3 -1.3 h2.4 a1.3 1.3 0 0 1 1.3 1.3 V7" />
+      <path d="M6.5 7 L7.4 18.7 a1.9 1.9 0 0 0 1.9 1.8 h5.4 a1.9 1.9 0 0 0 1.9 -1.8 L18.5 7" />
+      <path d="M10 10.5 V17 M14 10.5 V17" />
     </>
   ),
 };

@@ -1,25 +1,24 @@
 "use client";
 
-// Orchestrateur CLIENT de l'onglet Réseau (story 2.1).
-// Pilote l'enchaînement des moments sans quitter la page : liste sobre ↔ formulaire
-// (ajout / édition) ↔ confirmation de suppression. La galerie triée par froideur +
-// la recherche = story 2.3 (hors périmètre ici).
+// Orchestrateur CLIENT de l'onglet Réseau (stories 2.1 → 2.3).
+// Pilote l'enchaînement des moments sans quitter la page : galerie ↔ formulaire
+// (ajout / édition) ↔ confirmation de suppression. Le réseau PEUPLÉ s'affiche en
+// galerie triée par froideur + recherche (story 2.3, via ReseauGallery) ; le réseau
+// VIDE garde l'état d'amorçage de 2.1 (EmptyNetwork).
 //
-// Les données arrivent du serveur (page.tsx via db.forUser) ; après chaque mutation,
-// la server action a déjà `revalidatePath('/reseau')` — on déclenche `router.refresh()`
-// pour re-rendre la page serveur avec la liste à jour.
+// Les données arrivent du serveur (page.tsx via db.forUser, froideur déjà dérivée) ;
+// après chaque mutation, la server action a déjà `revalidatePath('/reseau')` — on
+// déclenche `router.refresh()` pour re-rendre la page serveur avec la liste à jour.
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { Icon } from "@/design/icons";
-
 import { createContactAction, updateContactAction } from "./actions";
-import { ContactCard } from "./ContactCard";
 import { ContactForm, type ContactFormDefaults } from "./ContactForm";
 import { DeleteContactDialog } from "./DeleteContactDialog";
 import { EmptyNetwork } from "./EmptyNetwork";
 import { QuickAddForm } from "./QuickAddForm";
+import { ReseauGallery } from "./ReseauGallery";
 import type { ContactView } from "./types";
 
 type Mode =
@@ -89,49 +88,24 @@ export function ReseauClient({ contacts }: ReseauClientProps) {
     );
   }
 
-  // — Réseau VIDE : état d'amorçage propriétaire —
+  // — Réseau VIDE : état d'amorçage propriétaire (inchangé depuis 2.1) —
   if (contacts.length === 0) {
     return <EmptyNetwork onAddFirst={() => setMode({ kind: "add" })} />;
   }
 
-  // — Liste sobre des contacts —
+  // — Réseau PEUPLÉ : galerie triée par froideur + recherche (story 2.3) —
+  // L'édition et la suppression (capacités 2.1) restent accessibles DEPUIS la galerie
+  // (actions par contact) ; la fiche 2.4 les reprendra ensuite. Le dialogue de
+  // suppression se monte à la demande quand `toDelete` est posé.
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col gap-5 px-margin-mobile py-8">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-display-name font-semibold tracking-[-0.01em] text-ink">
-          Ton réseau
-        </h1>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setMode({ kind: "quickAdd" })}
-            aria-label="Ajout rapide de plusieurs contacts"
-            className="rounded-button border-[length:--border-width-ink] border-ink bg-surface-card px-4 py-2 font-body text-body font-bold text-ink outline-accent outline-offset-2 focus-visible:outline-2"
-          >
-            Ajout rapide
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode({ kind: "add" })}
-            aria-label="Ajouter un contact"
-            className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-accent px-4 py-2 font-body text-body font-bold text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2"
-          >
-            <Icon name="plus" size={20} />
-            Ajouter
-          </button>
-        </div>
-      </header>
-
-      <ul className="flex flex-col gap-4">
-        {contacts.map((contact) => (
-          <ContactCard
-            key={contact.id}
-            contact={contact}
-            onEdit={(c) => setMode({ kind: "edit", contact: c })}
-            onDelete={(c) => setToDelete(c)}
-          />
-        ))}
-      </ul>
+    <>
+      <ReseauGallery
+        contacts={contacts}
+        onAdd={() => setMode({ kind: "add" })}
+        onQuickAdd={() => setMode({ kind: "quickAdd" })}
+        onEdit={(contact) => setMode({ kind: "edit", contact })}
+        onDelete={(contact) => setToDelete(contact)}
+      />
 
       {toDelete ? (
         <DeleteContactDialog
@@ -143,7 +117,7 @@ export function ReseauClient({ contacts }: ReseauClientProps) {
           }}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 
