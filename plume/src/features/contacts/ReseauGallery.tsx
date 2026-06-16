@@ -21,10 +21,16 @@ import type { ContactView } from "./types";
 
 interface ReseauGalleryProps {
   contacts: ContactView[];
+  /** Nombre de collisions ambiguës en attente de revue (story 2.5). */
+  pendingMerges: number;
   /** Ouvre le formulaire d'ajout (géré par l'orchestrateur ReseauClient). */
   onAdd: () => void;
   /** Ouvre l'ajout rapide multiple (story 2.2). */
   onQuickAdd: () => void;
+  /** Ouvre l'import CSV LinkedIn (story 2.5). */
+  onImport: () => void;
+  /** Ouvre la file de revue des collisions à vérifier (story 2.5). */
+  onReview: () => void;
   /** Ouvre l'édition d'un contact (capacité 2.1, accessible depuis la galerie). */
   onEdit: (contact: ContactView) => void;
   /** Déclenche la confirmation de suppression d'un contact (capacité 2.1). */
@@ -38,8 +44,11 @@ const SORTS: { key: SortKey; label: string }[] = [
 
 export function ReseauGallery({
   contacts,
+  pendingMerges,
   onAdd,
   onQuickAdd,
+  onImport,
+  onReview,
   onEdit,
   onDelete,
 }: ReseauGalleryProps) {
@@ -58,7 +67,15 @@ export function ReseauGallery({
         <h1 className="font-display text-display-name font-semibold tracking-[-0.01em] text-ink">
           Ton réseau
         </h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={onImport}
+            aria-label="Importer un CSV LinkedIn"
+            className="rounded-button border-[length:--border-width-ink] border-ink bg-surface-card px-4 py-2 font-body text-body font-bold text-ink outline-accent outline-offset-2 focus-visible:outline-2"
+          >
+            Importer un CSV
+          </button>
           <button
             type="button"
             onClick={onQuickAdd}
@@ -78,6 +95,24 @@ export function ReseauGallery({
           </button>
         </div>
       </header>
+
+      {/* Rappel DOUX des collisions à vérifier (file de revue 1-par-1, UX-DR16) — ton
+          neutre, jamais alarmiste ; visible seulement s'il reste des candidats. */}
+      {pendingMerges > 0 ? (
+        <button
+          type="button"
+          onClick={onReview}
+          className="flex items-center justify-between gap-3 rounded-card border-[length:--border-width-ink] border-ink bg-accent-tint px-4 py-3 text-left font-body text-body text-accent-deep outline-accent outline-offset-2 focus-visible:outline-2"
+        >
+          <span>
+            {pendingMerges} contact{pendingMerges > 1 ? "s" : ""} à vérifier après
+            ton import.
+          </span>
+          <span aria-hidden="true" className="font-bold">
+            Vérifier
+          </span>
+        </button>
+      ) : null}
 
       {/* — Recherche par nom (FR-5) — label SR, icône loupe, focus net (flou = 0). */}
       <div className="flex flex-col gap-3">

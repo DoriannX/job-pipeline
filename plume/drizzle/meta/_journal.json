@@ -22,6 +22,13 @@
       "when": 1781639223699,
       "tag": "0002_curved_smasher",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1781641610962,
+      "tag": "0003_tranquil_fallen_one",
+      "breakpoints": true
     }
   ]
 }

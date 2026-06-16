@@ -20,7 +20,7 @@ import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import * as prodSchema from "@/lib/db/schema";
 
 /** Ré-export du schéma de prod pour les tests (qui ne l'importent pas en direct). */
-export const { users, contacts } = prodSchema;
+export const { users, contacts, importJobs, mergeCandidates } = prodSchema;
 
 const MIGRATIONS_DIR = fileURLToPath(
   new URL("../../drizzle", import.meta.url),

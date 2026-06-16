@@ -149,3 +149,77 @@ export const contacts = sqliteTable(
     uniqueIndex("uq_contacts_user_dedup").on(table.userId, table.dedupKey),
   ],
 );
+
+// --- import_jobs : import CSV LinkedIn en backfill asynchrone (Epic 2, story 2.5) ---
+// Table SCOPÉE par tenant : `user_id` borne chaque job à son propriétaire (AR-2, AR-13).
+// Le job porte SON tenant dans sa ligne : c'est lui qui « voyage » avec le payload du
+// traitement post-réponse (`after()`), la requête HTTP déclencheuse pouvant être finie.
+//
+// Statut : 'pending' à la création, 'done' une fois le bilan écrit, 'error' si le
+// traitement a échoué. Les compteurs (total/created/merged/skipped) + `reasons` (JSON)
+// composent l'`ImportReport` rendu en carte-bilan non bloquante dans Réseau (UX-DR16).
+
+/** Une entrée du bilan d'import : la ligne fautive et la raison (ton neutre). */
+export type ImportReason = {
+  ligne: number;
+  raison: string;
+};
+
+export const importJobs = sqliteTable("import_jobs", {
+  // PK opaque cuid2 — généré côté app.
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  // Frontière tenant : NOT NULL, référence users (cascade quand le user disparaît).
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  // Cycle de vie du job : 'pending' | 'done' | 'error'.
+  status: text("status").$type<"pending" | "done" | "error">().notNull(),
+  // Nom du fichier importé (pour l'affichage du bilan), nullable.
+  filename: text("filename"),
+  // Compteurs du bilan (ImportReport). Posés à la fin du traitement.
+  total: integer("total", { mode: "number" }).notNull().default(0),
+  created: integer("created", { mode: "number" }).notNull().default(0),
+  merged: integer("merged", { mode: "number" }).notNull().default(0),
+  skipped: integer("skipped", { mode: "number" }).notNull().default(0),
+  // Détail des lignes ignorées/à vérifier : JSON `[{ligne, raison}, …]`.
+  reasons: text("reasons", { mode: "json" }).$type<ImportReason[]>(),
+  // Horodatages (epoch ms), posés via l'horloge injectée (jamais Date.now() en dur).
+  createdAt: integer("created_at", { mode: "number" }),
+  finishedAt: integer("finished_at", { mode: "number" }),
+});
+
+// --- merge_candidates : file de revue des collisions ambiguës (story 2.5, UX-DR16) ---
+// Table SCOPÉE par tenant. Une ligne CSV qui ENTRE EN COLLISION AMBIGUË avec un contact
+// existant (même nom+entreprise, mais l'email diffère/absent d'un côté) n'est NI créée en
+// double NI fusionnée à tort : on dépose un candidat 'pending' à résoudre 1-par-1
+// (Fusionner / Garder séparés). Les données entrantes sont stockées telles que parsées.
+
+export const mergeCandidates = sqliteTable("merge_candidates", {
+  // PK opaque cuid2 — généré côté app.
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  // Frontière tenant : NOT NULL, référence users (cascade).
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  // Job d'import qui a produit ce candidat (traçabilité du bilan).
+  importJobId: text("import_job_id").notNull(),
+  // Contact existant en collision (celui que l'on POURRAIT enrichir si « Fusionner »).
+  existingContactId: text("existing_contact_id").notNull(),
+  // Données de la ligne ENTRANTE (telles que parsées du CSV).
+  nom: text("nom").notNull(),
+  entreprise: text("entreprise"),
+  email: text("email"),
+  // Coordonnées entrantes (JSON {linkedin,email,…}), comme pour `contacts.handles`.
+  handles: text("handles", { mode: "json" }).$type<ContactHandles>(),
+  // Statut de résolution : 'pending' | 'merged' | 'kept_separate'.
+  status: text("status")
+    .$type<"pending" | "merged" | "kept_separate">()
+    .notNull()
+    .default("pending"),
+  // Horodatage de création (epoch ms), posé via l'horloge injectée.
+  createdAt: integer("created_at", { mode: "number" }),
+});
