@@ -25,6 +25,10 @@ interface ReseauGalleryProps {
   onAdd: () => void;
   /** Ouvre l'ajout rapide multiple (story 2.2). */
   onQuickAdd: () => void;
+  /** Ouvre l'édition d'un contact (capacité 2.1, accessible depuis la galerie). */
+  onEdit: (contact: ContactView) => void;
+  /** Déclenche la confirmation de suppression d'un contact (capacité 2.1). */
+  onDelete: (contact: ContactView) => void;
 }
 
 const SORTS: { key: SortKey; label: string }[] = [
@@ -36,6 +40,8 @@ export function ReseauGallery({
   contacts,
   onAdd,
   onQuickAdd,
+  onEdit,
+  onDelete,
 }: ReseauGalleryProps) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("coldness");
@@ -136,7 +142,7 @@ export function ReseauGallery({
       ) : (
         <ul className="grid grid-cols-3 gap-4">
           {visibles.map((contact) => (
-            <li key={contact.id}>
+            <li key={contact.id} className="flex flex-col items-center gap-1">
               <Link
                 href={`/reseau/${contact.id}`}
                 className="flex flex-col items-center gap-2 rounded-card px-1 py-2 text-center outline-accent outline-offset-2 focus-visible:outline-2"
@@ -147,6 +153,26 @@ export function ReseauGallery({
                 </span>
                 <ColdTag state={contact.coldness} />
               </Link>
+              {/* Actions par contact (capacités 2.1, accessibles sans attendre la fiche
+                  2.4) : ton DOUX (encre douce), jamais de rouge alarme. */}
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => onEdit(contact)}
+                  aria-label={`Modifier ${contact.nom}`}
+                  className="rounded-md p-1 text-ink-soft outline-accent outline-offset-2 focus-visible:outline-2"
+                >
+                  <Icon name="edit" size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDelete(contact)}
+                  aria-label={`Supprimer ${contact.nom}`}
+                  className="rounded-md p-1 text-ink-soft outline-accent outline-offset-2 focus-visible:outline-2"
+                >
+                  <Icon name="trash" size={18} />
+                </button>
+              </div>
             </li>
           ))}
         </ul>

@@ -94,14 +94,17 @@ export function ReseauClient({ contacts }: ReseauClientProps) {
   }
 
   // — Réseau PEUPLÉ : galerie triée par froideur + recherche (story 2.3) —
-  // L'édition/suppression d'un contact passe désormais par sa fiche (`/reseau/[id]`,
-  // story 2.4) ; le dialogue de suppression reste monté ici, prêt à être déclenché.
+  // L'édition et la suppression (capacités 2.1) restent accessibles DEPUIS la galerie
+  // (actions par contact) ; la fiche 2.4 les reprendra ensuite. Le dialogue de
+  // suppression se monte à la demande quand `toDelete` est posé.
   return (
     <>
       <ReseauGallery
         contacts={contacts}
         onAdd={() => setMode({ kind: "add" })}
         onQuickAdd={() => setMode({ kind: "quickAdd" })}
+        onEdit={(contact) => setMode({ kind: "edit", contact })}
+        onDelete={(contact) => setToDelete(contact)}
       />
 
       {toDelete ? (
