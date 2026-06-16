@@ -19,6 +19,9 @@ import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 import * as prodSchema from "@/lib/db/schema";
 
+/** Ré-export du schéma de prod pour les tests (qui ne l'importent pas en direct). */
+export const { users, contacts } = prodSchema;
+
 const MIGRATIONS_DIR = fileURLToPath(
   new URL("../../drizzle", import.meta.url),
 );
@@ -78,4 +81,16 @@ export async function makeTestDb(): Promise<TestDb> {
   await db.run(sql.raw(DDL_TEST_ITEMS));
 
   return db;
+}
+
+/**
+ * Insère des lignes `users` directement (chemin harnais, hors porte) afin de
+ * satisfaire la FK `contacts.user_id → users.id`. Réservé au setup de test :
+ * la porte `forUser` ne gère que les tables scopées, pas la table `users` elle-même.
+ */
+export async function seedUsers(
+  db: TestDb,
+  rows: (typeof prodSchema.users.$inferInsert)[],
+): Promise<void> {
+  await db.insert(prodSchema.users).values(rows);
 }

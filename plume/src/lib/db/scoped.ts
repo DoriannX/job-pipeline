@@ -156,10 +156,14 @@ export function scopedDb(
 }
 
 /**
- * Porte d'entrée canonique : `forUser(db, userId, now)`.
+ * Porte scopée GÉNÉRIQUE à db injectée : `forUserDb(db, userId, now)`.
  * Équivaut à `scopedDb(db, { tenantId: userId, now })`.
+ *
+ * C'est la forme testable (db en mémoire fournie). En prod/serveur, on n'appelle
+ * jamais cette fonction directement : on passe par la convenance `forUser(userId)`
+ * de `db/server.ts` (qui câble la db serveur + l'horloge système + les repositories).
  */
-export function forUser(
+export function forUserDb(
   db: ScopableDb,
   userId: string,
   now: Clock,

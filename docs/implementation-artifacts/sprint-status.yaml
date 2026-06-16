@@ -49,16 +49,16 @@ story_location: "{project-root}/docs/implementation-artifacts"
 
 development_status:
   # ---- Epic 1: Socle, identite & design-system ----
-  epic-1: in-progress
+  epic-1: done
   1-1-initialiser-le-starter-l-outillage: done
   1-2-poser-le-design-system-foyer-unique: done
   1-3-connexion-google-porte-de-donnees-scopee: done
-  1-4-coquille-de-navigation-3-onglets: review
+  1-4-coquille-de-navigation-3-onglets: done
   epic-1-retrospective: optional
 
   # ---- Epic 2: Mon reseau (Contacts) ----
-  epic-2: backlog
-  2-1-ajouter-editer-supprimer-un-contact-manuellement: backlog
+  epic-2: in-progress
+  2-1-ajouter-editer-supprimer-un-contact-manuellement: review
   2-2-ajout-rapide-multiple: backlog
   2-3-galerie-reseau-triee-par-froideur-recherche: backlog
   2-4-fiche-contact-timeline: backlog
