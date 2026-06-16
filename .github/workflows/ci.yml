@@ -1,0 +1,52 @@
+name: CI (plume)
+
+# Socle Epic 1 (AR-15) : lint + typecheck + test + check migrations Drizzle.
+# Scopé au sous-projet `plume/` (l'ancien pipeline Python a son propre workflow).
+
+on:
+  push:
+    paths:
+      - "plume/**"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    paths:
+      - "plume/**"
+      - ".github/workflows/ci.yml"
+
+defaults:
+  run:
+    working-directory: plume
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: plume/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Check Drizzle migrations
+        run: pnpm db:check
+
+      - name: Build
+        run: pnpm build
