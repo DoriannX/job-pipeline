@@ -32,17 +32,34 @@ describe("onglet actif — logique pure", () => {
 // Plancher : chaque onglet ouvre sur un état vide serein (jamais d'écran blanc).
 describe("états vides sereins — présence", () => {
   const appDir = join(process.cwd(), "src/app/(app)");
-  const pages = [
+
+  // Onglets encore en placeholder (story 1.4) : ils rendent l'EmptyState générique.
+  const genericEmptyPages = [
     "aujourdhui/page.tsx",
-    "reseau/page.tsx",
     "reseau/[contactId]/page.tsx",
     "reglages/page.tsx",
   ];
 
-  it("chaque page d'onglet rend un EmptyState", () => {
-    for (const page of pages) {
+  it("les onglets placeholder rendent un EmptyState générique", () => {
+    for (const page of genericEmptyPages) {
       const src = readFileSync(join(appDir, page), "utf8");
       expect(src, `${page} doit rendre un EmptyState`).toContain("EmptyState");
     }
+  });
+
+  it("Réseau possède son PROPRE état vide d'amorçage (story 2.1)", () => {
+    // La story 2.1 est propriétaire du moment « réseau vide / premier contact » :
+    // la page délègue au client qui rend EmptyNetwork (plume + CTA) — jamais un blanc.
+    const src = readFileSync(join(appDir, "reseau/page.tsx"), "utf8");
+    expect(src, "reseau/page.tsx doit déléguer au ReseauClient").toContain(
+      "ReseauClient",
+    );
+    const client = readFileSync(
+      join(process.cwd(), "src/features/contacts/ReseauClient.tsx"),
+      "utf8",
+    );
+    expect(client, "ReseauClient doit rendre EmptyNetwork sur réseau vide").toContain(
+      "EmptyNetwork",
+    );
   });
 });

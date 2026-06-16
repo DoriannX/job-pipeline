@@ -1,14 +1,35 @@
-import { EmptyState } from "@/components/ui/EmptyState";
+import { redirect } from "next/navigation";
 
-// Onglet Réseau — état d'AMORÇAGE léger en story 1.4.
-// Le vrai écran « réseau vide / premier contact » (plume + CTA « Ajouter un premier
-// contact ») appartient à la story 2.1, propriétaire unique de ce moment : on ne le
-// sur-conçoit pas ici. Simple état serein en attendant les contacts.
-export default function ReseauPage() {
-  return (
-    <EmptyState
-      title="Ton réseau t'attend."
-      message="Bientôt, tu retrouveras ici les visages que tu veux garder au chaud."
-    />
-  );
+import { auth } from "@/lib/auth";
+import { forUser } from "@/lib/db";
+import { ReseauClient } from "@/features/contacts/ReseauClient";
+import type { ContactView } from "@/features/contacts/types";
+
+// Onglet Réseau (story 2.1) — propriétaire du moment « réseau vide / premier contact ».
+//
+// Server component : `auth()` résout le tenant À LA REQUÊTE (segment dynamique, pas de
+// secret requis au build). On lit les contacts via la porte `db.forUser` (jamais le
+// schéma ni Drizzle), puis on délègue l'orchestration (liste ↔ formulaire ↔ suppression)
+// au client `ReseauClient`. Le tri par froideur + la recherche arrivent en story 2.3.
+export default async function ReseauPage() {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) {
+    redirect("/login");
+  }
+
+  const db = await forUser(userId);
+  const rows = await db.contacts.list();
+
+  // Projection client-safe (formes plates, sérialisables) — pas de fuite du schéma.
+  const contacts: ContactView[] = rows.map((c) => ({
+    id: c.id,
+    nom: c.nom,
+    canalPrefere: c.canalPrefere ?? null,
+    handles: c.handles ?? null,
+    notes: c.notes ?? null,
+    dernierContactAt: c.dernierContactAt ?? null,
+  }));
+
+  return <ReseauClient contacts={contacts} />;
 }
