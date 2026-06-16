@@ -67,7 +67,7 @@ development_status:
 
   # ---- Epic 3: Le moat, bout en bout (composer, envoyer, mesurer, historiser) ----
   epic-3: in-progress
-  3-1-composeur-en-flow-champ-unique-brouillon-immortel: in-progress
+  3-1-composeur-en-flow-champ-unique-brouillon-immortel: done
   3-2-garantir-zero-tell-d-ia-sanitize: backlog
   3-3-generer-un-message-dans-la-voix-streaming: backlog
   3-4-ameliorer-un-message-en-place: backlog
