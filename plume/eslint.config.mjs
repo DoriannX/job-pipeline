@@ -133,6 +133,29 @@ const overrideHarnaisTest = {
   },
 };
 
+// (F) Override src/app/api/**/route.ts : les ROUTE HANDLERS sont des endpoints
+// SERVEUR (jamais expédiés au client) — contrairement au reste de src/app/** qui
+// peut être du Client Component. Ils ont donc le droit d'importer les wrappers
+// serveur encapsulant le SDK Claude (`@/lib/*.server`) et `server-only` — c'est
+// précisément la couture voulue par l'archi (la route passe par le wrapper, jamais
+// par le SDK nu). On GARDE l'interdiction du SDK Claude nu et de Drizzle nu : la
+// route doit rester derrière les façades (`@/lib/claude.server`, `db.forUser`).
+const overrideRouteHandlers = {
+  files: ["src/app/api/**/route.{ts,tsx}"],
+  rules: {
+    "no-restricted-imports": [
+      "error",
+      {
+        // On conserve la porte data + l'interdiction du SDK Claude nu ;
+        // on lève uniquement la barrière server/client (modules *.server / server-only),
+        // car un route handler EST du code serveur.
+        paths: [...importsPorteData, importSdkClaude],
+        patterns: patternsPorteData,
+      },
+    ],
+  },
+};
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -142,6 +165,7 @@ const eslintConfig = defineConfig([
   overridePorteData,
   overrideAuthRoot,
   overrideHarnaisTest,
+  overrideRouteHandlers,
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
