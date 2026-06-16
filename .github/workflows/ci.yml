@@ -25,6 +25,10 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          # Pin explicite : pas de package.json à la racine du repo (le manifeste
+          # vit dans plume/), donc action-setup ne peut pas lire `packageManager`.
+          version: 10.33.0
 
       - name: Setup Node
         uses: actions/setup-node@v4
