@@ -51,8 +51,8 @@ development_status:
   # ---- Epic 1: Socle, identite & design-system ----
   epic-1: in-progress
   1-1-initialiser-le-starter-l-outillage: done
-  1-2-poser-le-design-system-foyer-unique: review
-  1-3-connexion-google-porte-de-donnees-scopee: backlog
+  1-2-poser-le-design-system-foyer-unique: done
+  1-3-connexion-google-porte-de-donnees-scopee: review
   1-4-coquille-de-navigation-3-onglets: backlog
   epic-1-retrospective: optional
 
