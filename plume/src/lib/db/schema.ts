@@ -15,6 +15,7 @@ import {
   primaryKey,
   sqliteTable,
   text,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
 import type { Canal, Source } from "../domain/enums";
@@ -103,32 +104,45 @@ export type ContactHandles = {
   whatsapp?: string;
 };
 
-export const contacts = sqliteTable("contacts", {
-  // PK opaque cuid2 — généré côté app.
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => createId()),
-  // Frontière tenant : NOT NULL, référence users (cascade quand le user disparaît).
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  // Nom — seul champ requis pour créer un Contact (FR-2).
-  nom: text("nom").notNull(),
-  // Canal préféré — union métier (`@/lib/domain/enums`), nullable tant que non choisi.
-  canalPrefere: text("canal_prefere").$type<Canal>(),
-  // Coordonnées par canal, sérialisées en JSON ({linkedin,email,phone,whatsapp}).
-  handles: text("handles", { mode: "json" }).$type<ContactHandles>(),
-  // Notes libres.
-  notes: text("notes"),
-  // Dernier contact, epoch ms ; NULL = jamais contacté (porte le Score de froideur, story 2.3).
-  dernierContactAt: integer("dernier_contact_at", { mode: "number" }),
-  // Provenance — 'manuel' par défaut (AR-9, AR-16).
-  source: text("source").$type<Source>().notNull().default(SOURCE_DEFAUT),
-  // Horodatage d'import (epoch ms) ; NULL pour une saisie manuelle.
-  importedAt: integer("imported_at", { mode: "number" }),
-  // Base légale de traitement (RGPD) ; NULL au MVP pour la saisie manuelle.
-  legalBasis: text("legal_basis"),
-  // Horodatages de cycle de vie (epoch ms), posés via l'horloge injectée.
-  createdAt: integer("created_at", { mode: "number" }),
-  updatedAt: integer("updated_at", { mode: "number" }),
-});
+export const contacts = sqliteTable(
+  "contacts",
+  {
+    // PK opaque cuid2 — généré côté app.
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    // Frontière tenant : NOT NULL, référence users (cascade quand le user disparaît).
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Nom — seul champ requis pour créer un Contact (FR-2).
+    nom: text("nom").notNull(),
+    // Entreprise — utilisée pour la dédup nom+entreprise (story 2.2), nullable.
+    entreprise: text("entreprise"),
+    // Canal préféré — union métier (`@/lib/domain/enums`), nullable tant que non choisi.
+    canalPrefere: text("canal_prefere").$type<Canal>(),
+    // Coordonnées par canal, sérialisées en JSON ({linkedin,email,phone,whatsapp}).
+    handles: text("handles", { mode: "json" }).$type<ContactHandles>(),
+    // Notes libres.
+    notes: text("notes"),
+    // Dernier contact, epoch ms ; NULL = jamais contacté (porte le Score de froideur, story 2.3).
+    dernierContactAt: integer("dernier_contact_at", { mode: "number" }),
+    // Provenance — 'manuel' par défaut (AR-9, AR-16).
+    source: text("source").$type<Source>().notNull().default(SOURCE_DEFAUT),
+    // Horodatage d'import (epoch ms) ; NULL pour une saisie manuelle.
+    importedAt: integer("imported_at", { mode: "number" }),
+    // Base légale de traitement (RGPD) ; NULL au MVP pour la saisie manuelle.
+    legalBasis: text("legal_basis"),
+    // Clé de dédup (story 2.2) : email normalisé sinon nom+entreprise normalisés
+    // (calculée par `computeDedupKey`, zone neutre). NOT NULL — toujours dérivable.
+    dedupKey: text("dedup_key").notNull(),
+    // Horodatages de cycle de vie (epoch ms), posés via l'horloge injectée.
+    createdAt: integer("created_at", { mode: "number" }),
+    updatedAt: integer("updated_at", { mode: "number" }),
+  },
+  (table) => [
+    // Unicité PAR TENANT : aucun doublon (AR-9) chez un même user, mais deux users
+    // peuvent partager la même `dedup_key` sans collision (cross-tenant garanti).
+    uniqueIndex("uq_contacts_user_dedup").on(table.userId, table.dedupKey),
+  ],
+);

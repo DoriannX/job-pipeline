@@ -19,11 +19,13 @@ import { ContactCard } from "./ContactCard";
 import { ContactForm, type ContactFormDefaults } from "./ContactForm";
 import { DeleteContactDialog } from "./DeleteContactDialog";
 import { EmptyNetwork } from "./EmptyNetwork";
+import { QuickAddForm } from "./QuickAddForm";
 import type { ContactView } from "./types";
 
 type Mode =
   | { kind: "list" }
   | { kind: "add" }
+  | { kind: "quickAdd" }
   | { kind: "edit"; contact: ContactView };
 
 interface ReseauClientProps {
@@ -51,6 +53,16 @@ export function ReseauClient({ contacts }: ReseauClientProps) {
           onCancel={backToList}
           onSuccess={afterMutation}
         />
+      </FormShell>
+    );
+  }
+
+  // — AJOUT RAPIDE multiple (story 2.2) — on reste sur l'écran après succès pour
+  //   laisser lire le compte-rendu ; on rafraîchit juste la liste serveur.
+  if (mode.kind === "quickAdd") {
+    return (
+      <FormShell title="Ajout rapide">
+        <QuickAddForm onCancel={backToList} onSuccess={() => router.refresh()} />
       </FormShell>
     );
   }
@@ -85,19 +97,29 @@ export function ReseauClient({ contacts }: ReseauClientProps) {
   // — Liste sobre des contacts —
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-5 px-margin-mobile py-8">
-      <header className="flex items-center justify-between gap-3">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-display text-display-name font-semibold tracking-[-0.01em] text-ink">
           Ton réseau
         </h1>
-        <button
-          type="button"
-          onClick={() => setMode({ kind: "add" })}
-          aria-label="Ajouter un contact"
-          className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-accent px-4 py-2 font-body text-body font-bold text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2"
-        >
-          <Icon name="plus" size={20} />
-          Ajouter
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setMode({ kind: "quickAdd" })}
+            aria-label="Ajout rapide de plusieurs contacts"
+            className="rounded-button border-[length:--border-width-ink] border-ink bg-surface-card px-4 py-2 font-body text-body font-bold text-ink outline-accent outline-offset-2 focus-visible:outline-2"
+          >
+            Ajout rapide
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode({ kind: "add" })}
+            aria-label="Ajouter un contact"
+            className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-accent px-4 py-2 font-body text-body font-bold text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2"
+          >
+            <Icon name="plus" size={20} />
+            Ajouter
+          </button>
+        </div>
       </header>
 
       <ul className="flex flex-col gap-4">

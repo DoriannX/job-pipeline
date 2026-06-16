@@ -12,11 +12,16 @@
 
 import { revalidatePath } from "next/cache";
 
-import { forUser } from "@/lib/db";
+import { forUser, type BulkCreateItem } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { isCanal } from "@/lib/domain/enums";
 
-import { contactInputSchema, isHandlesEmpty } from "./validation";
+import { parseQuickAdd } from "./dedup";
+import {
+  contactInputSchema,
+  isHandlesEmpty,
+  quickAddEntrySchema,
+} from "./validation";
 
 const RESEAU_PATH = "/reseau";
 
@@ -104,6 +109,57 @@ export async function createContactAction(
 
   revalidatePath(RESEAU_PATH);
   return { ok: true };
+}
+
+/** État renvoyé par l'ajout rapide multiple (pour `useActionState`). */
+export type QuickAddState = {
+  ok: boolean;
+  /** Compte-rendu neutre : N créés / N fusionnés (présent uniquement si `ok`). */
+  report?: { created: number; merged: number };
+  /** Message d'erreur global, ton doux (jamais rouge alarme). */
+  error?: string;
+};
+
+/**
+ * Ajout rapide MULTIPLE (story 2.2, FR-34) : on colle N lignes, on en crée N
+ * Contacts EN UNE action, dédupliqués contre l'existant (AR-9). Signature
+ * `useActionState` : `(prevState, formData) => Promise<QuickAddState>`.
+ *
+ * Pipeline : auth() → parseQuickAdd → validation Zod par entrée (nom requis) →
+ * `forUser(userId).contacts.bulkCreate(...)` (dédup DB par tenant) → compte-rendu neutre.
+ */
+export async function quickAddAction(
+  _prev: QuickAddState,
+  formData: FormData,
+): Promise<QuickAddState> {
+  const userId = await requireUserId();
+
+  const raw = String(formData.get("rawText") ?? "");
+  const entries = parseQuickAdd(raw);
+  if (entries.length === 0) {
+    return { ok: false, error: "Colle au moins une ligne pour ajouter." };
+  }
+
+  // Validation Zod à la frontière : on ne garde que les entrées au nom valide.
+  const items: BulkCreateItem[] = [];
+  for (const entry of entries) {
+    const parsed = quickAddEntrySchema.safeParse(entry);
+    if (parsed.success) {
+      items.push({
+        nom: parsed.data.nom,
+        entreprise: parsed.data.entreprise ?? null,
+      });
+    }
+  }
+  if (items.length === 0) {
+    return { ok: false, error: "Aucun nom valide à ajouter." };
+  }
+
+  const db = await forUser(userId);
+  const report = await db.contacts.bulkCreate(items);
+
+  revalidatePath(RESEAU_PATH);
+  return { ok: true, report };
 }
 
 /**

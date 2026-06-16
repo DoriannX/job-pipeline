@@ -79,6 +79,18 @@ export type ScopedDb = {
     table: T,
     values: Omit<T["$inferInsert"], "userId"> | Omit<T["$inferInsert"], "userId">[],
   ) => Promise<T["$inferSelect"][]>;
+  /**
+   * Insertion IDEMPOTENTE : `user_id` injecté, et les conflits sont SILENCIEUX
+   * (`ON CONFLICT DO NOTHING`). Sert la dédup côté base (AR-9) : seules les lignes
+   * réellement insérées sont renvoyées (`returning`), ce qui permet de compter
+   * créés vs ignorés. Le `target` (colonnes du conflit) est obligatoire pour viser
+   * l'index unique voulu (ex. l'index par tenant `(user_id, dedup_key)`).
+   */
+  insertIgnore: <T extends SQLiteTable>(
+    table: T,
+    values: Omit<T["$inferInsert"], "userId"> | Omit<T["$inferInsert"], "userId">[],
+    target: SQLiteColumn | SQLiteColumn[],
+  ) => Promise<T["$inferSelect"][]>;
   /** Mise à jour, bornée au tenant. Renvoie la/les ligne(s) modifiée(s). */
   update: <T extends SQLiteTable>(
     table: T,
@@ -132,6 +144,20 @@ export function scopedDb(
       return db
         .insert(table)
         .values(scoped as (typeof table)["$inferInsert"][])
+        .returning() as Promise<(typeof table)["$inferSelect"][]>;
+    },
+
+    async insertIgnore(table, values, target) {
+      // Même injection de tenant que `insert`, mais en ignorant les conflits.
+      const list = Array.isArray(values) ? values : [values];
+      const scoped = list.map((v) => ({
+        ...(v as Record<string, unknown>),
+        userId: tenantId,
+      }));
+      return db
+        .insert(table)
+        .values(scoped as (typeof table)["$inferInsert"][])
+        .onConflictDoNothing({ target })
         .returning() as Promise<(typeof table)["$inferSelect"][]>;
     },
 
