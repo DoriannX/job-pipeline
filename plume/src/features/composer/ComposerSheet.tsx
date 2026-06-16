@@ -1,20 +1,22 @@
 "use client";
 
-// ComposerSheet — bottom-sheet du Composeur (story 3.1).
+// ComposerSheet — bottom-sheet du Composeur (stories 3.1 + 3.3).
 //
 // POINT DE MONTAGE UNIQUE : ce composant est monté UNE seule fois dans `(app)/layout.tsx`,
 // au-dessus des routes (jamais un onglet — overlay « en flow », FR-13). Il s'OUVRE quand
 // l'URL porte `?compose=<contactId>` ; absent ⇒ il ne rend rien (point de montage inerte).
 // Fermer = retirer ce seul param (en préservant les autres).
 //
-// PÉRIMÈTRE 3.1 STRICT : champ unique (source de vérité) + sélecteur 4 canaux + segment
-// Rapide/Soigné + brouillon immortel (persisté À CHAQUE frappe avant tout réseau, restauré
-// à la réouverture) + Copier (commit MANUEL ; aucun auto-send, FR-12). PAS de génération IA
-// ni de streaming (stories 3.3/3.4), PAS de marquage « Envoyé » (story 3.6) — hors périmètre.
+// PÉRIMÈTRE 3.1 (acquis) : champ unique (source de vérité) + sélecteur 4 canaux + segment
+// Rapide/Soigné + brouillon immortel + Copier (commit MANUEL).
+// PÉRIMÈTRE 3.3 (ajouté) : bouton GÉNÉRER → `POST /api/composer` en streaming, deltas
+// appendus dans le champ en direct, remplacement par le texte sanitizé final, FSM
+// `idle|generating|ok|error|offline` (plume « écrit », Reduce Motion respecté, spinner
+// INTERDIT, timeout doux 5 s), régénérer, pill de tokens (tappable), micro-ligne de
+// transparence API one-time, registre par défaut persistant. « Améliorer » est posé
+// (couture) mais NON câblé (pipeline = story 3.4). Pas de marquage « Envoyé » (3.6).
 //
-// État LOCAL React (pas de Zustand : non installé, inutile à ce stade). `useSearchParams`
-// impose une frontière `<Suspense>` côté prerender (cf. docs Next) : on isole donc la lecture
-// du param dans un composant enfant, monté sous Suspense.
+// La clé Claude reste server-only : ce composant ne fait que `fetch("/api/composer")`.
 
 import {
   Suspense,
@@ -26,24 +28,35 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { Icon, type IconName } from "@/design/icons";
+import { Plume } from "@/design/illustration/Plume";
 import { CANAUX, type Canal } from "@/lib/domain/enums";
 import {
   deleteDraft,
   getDraft,
   saveDraft,
-  type Draft,
 } from "@/lib/offline/localStore";
 
 import {
   loadComposerContextAction,
   type ComposerContext,
 } from "./actions";
+import type { GenerationEvent, Tone } from "./generation";
+import { streamGeneration } from "./stream-client";
+import {
+  getDefaultTone,
+  hasSeenApiNotice,
+  markApiNoticeSeen,
+  setDefaultTone,
+} from "./prefs";
 
-// Query param d'ouverture (camelCase pour les query params, cf. conventions). Sa valeur
-// = l'id du Contact ciblé, qui sert aussi de CLÉ de brouillon (un brouillon par contact).
 const COMPOSE_PARAM = "compose";
 
-type Tone = Draft["tone"];
+// FSM du Composeur (archi l.292) : un seul état à la fois, jamais de spinner infini.
+type ComposerState = "idle" | "generating" | "ok" | "error" | "offline";
+
+// Premier token perçu < 5 s (NFR-1) : au-delà sans 1er delta, on bascule sur un message
+// doux (jamais une attente muette). 5 000 ms = la borne UX-DR15.
+const FIRST_TOKEN_TIMEOUT_MS = 5000;
 
 // Libellés FR + icônes maison des 4 canaux (mêmes valeurs que le formulaire Contact).
 const CANAL_LABEL: Record<Canal, string> = {
@@ -59,8 +72,8 @@ const CANAL_ICON: Record<Canal, IconName> = {
   sms: "sms",
 };
 
-// Segment de registre. Les alias Haiku/Opus sont PUREMENT VISUELS (indices discrets) :
-// le choix réel de modèle est branché plus tard (story 3.3), hors périmètre ici.
+// Segment de registre. Les alias Haiku/Opus restent des indices VISUELS discrets ; en 3.3
+// ils pilotent RÉELLEMENT le choix de modèle côté serveur (Rapide→Haiku, Soigné→Opus).
 const TONES: { value: Tone; label: string; alias: string }[] = [
   { value: "rapide", label: "Rapide", alias: "Haiku" },
   { value: "soigne", label: "Soigné", alias: "Opus" },
@@ -76,8 +89,7 @@ function ComposerGate() {
 
   if (!contactId) return null;
 
-  // `key` force un remontage propre quand on passe d'un contact à l'autre : l'état local
-  // (texte/canal/tone) repart du brouillon du nouveau contact, pas de l'ancien.
+  // `key` force un remontage propre quand on passe d'un contact à l'autre.
   return <ComposerSheetPanel key={contactId} contactId={contactId} />;
 }
 
@@ -85,37 +97,43 @@ interface ComposerSheetPanelProps {
   contactId: string;
 }
 
-/**
- * La feuille proprement dite, montée seulement quand un contact est ciblé. Charge le
- * contexte serveur + le brouillon local, puis gère le champ unique, le sélecteur de
- * canal, le segment et la copie. `contactId` est aussi la clé de brouillon.
- */
 function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Contexte du Contact (nom + canal préféré), ancré en tête. `null` tant que non chargé
-  // ou si introuvable (la feuille reste utilisable : champ + brouillon fonctionnent).
   const [context, setContext] = useState<ComposerContext | null>(null);
 
-  // — État du champ unique (SOURCE DE VÉRITÉ) + canal + registre. —
+  // — Champ unique (SOURCE DE VÉRITÉ) + canal + registre. —
   const [text, setText] = useState("");
   const [canal, setCanal] = useState<Canal>("linkedin");
   const [tone, setTone] = useState<Tone>("rapide");
 
-  // Garde de restauration : on ne persiste PAS tant que le brouillon n'a pas été restauré
-  // (sinon le 1er effet écraserait un brouillon existant avec les défauts vides).
   const [hydrated, setHydrated] = useState(false);
-
-  // Confirmation discrète de copie (message éphémère, ton doux).
   const [copied, setCopied] = useState(false);
+
+  // — État 3.3 : FSM + flux + résultat + transparence + détail tokens. —
+  const [state, setState] = useState<ComposerState>("idle");
+  const [softError, setSoftError] = useState<string | null>(null);
+  // GenerationEvent du dernier flux réussi — CONSERVÉ pour l'envoi (story 3.6).
+  const [lastEvent, setLastEvent] = useState<GenerationEvent | null>(null);
+  const [showApiNotice, setShowApiNotice] = useState(false);
+  const [showTokenDetail, setShowTokenDetail] = useState(false);
+  // État réseau réactif : Générer se re-grise tout seul si on passe hors-ligne, même
+  // feuille ouverte et inerte (FR-7/UX-DR14). Init = état courant côté navigateur.
+  const [online, setOnline] = useState(() =>
+    typeof navigator === "undefined" ? true : navigator.onLine,
+  );
 
   const dialogRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Garde d'annulation (régénérer/fermeture) : ignore le flux abandonné.
+  const abortRef = useRef<AbortController | null>(null);
+  // Timer du timeout doux 1er token.
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // — Restauration À L'OUVERTURE : contexte serveur + brouillon local en parallèle. —
-  // Si un brouillon existe, il a la priorité (texte/canal/tone) ; sinon, défauts =
-  // texte vide, canal = canal préféré du contact, tone = rapide.
+  // Le brouillon par-contact a la priorité (texte/canal/tone). Sinon : canal = canal
+  // préféré du contact ; tone = DÉFAUT GLOBAL persistant (localStorage), pas « rapide » dur.
   useEffect(() => {
     let actif = true;
 
@@ -132,9 +150,9 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
         setText(draft.text);
         setCanal(draft.canal);
         setTone(draft.tone);
-      } else if (ctx?.canalPrefere) {
-        // Pas de brouillon : on pré-sélectionne le canal préféré (changeable en 1 tap).
-        setCanal(ctx.canalPrefere);
+      } else {
+        if (ctx?.canalPrefere) setCanal(ctx.canalPrefere);
+        setTone(getDefaultTone());
       }
       setHydrated(true);
     }
@@ -145,17 +163,15 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
     };
   }, [contactId]);
 
-  // Focus initial : le champ unique reçoit le curseur dès l'ouverture (écrire sans friction).
+  // Focus initial : le champ unique reçoit le curseur dès l'ouverture.
   useEffect(() => {
     if (hydrated) textareaRef.current?.focus();
   }, [hydrated]);
 
   // — BROUILLON IMMORTEL : à chaque changement (frappe, canal, tone), on persiste AVANT
-  // tout réseau. La persistance est locale (IndexedDB) : aucune dépendance au réseau.
-  // Champ VIDE ⇒ rien à protéger : on n'écrit pas de brouillon fantôme (et on efface un
-  // brouillon vidé), pour ne pas « ressusciter » du vide à la réouverture. —
+  // tout réseau. Champ VIDE ⇒ on efface le brouillon (pas de fantôme). —
   useEffect(() => {
-    if (!hydrated) return; // n'écrase pas le brouillon restauré avec un état pré-hydratation
+    if (!hydrated) return;
     if (text.trim().length === 0) {
       void deleteDraft(contactId);
       return;
@@ -169,16 +185,35 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
     });
   }, [hydrated, contactId, text, canal, tone]);
 
-  // Fermeture = retirer le SEUL param `compose`, en préservant les autres (router.replace
-  // pour ne pas empiler une entrée d'historique vide). On reste sur le même chemin.
+  // Nettoyage : à la fermeture/démontage, on annule un flux en cours et le timer.
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+
+  // Réactivité réseau : on suit online/offline pour re-griser Générer sans attendre un clic.
+  useEffect(() => {
+    const sync = () => setOnline(navigator.onLine);
+    window.addEventListener("online", sync);
+    window.addEventListener("offline", sync);
+    return () => {
+      window.removeEventListener("online", sync);
+      window.removeEventListener("offline", sync);
+    };
+  }, []);
+
+  // Fermeture = retirer le SEUL param `compose`, en préservant les autres.
   const close = useCallback(() => {
+    abortRef.current?.abort();
     const params = new URLSearchParams(searchParams.toString());
     params.delete(COMPOSE_PARAM);
     const query = params.toString();
     router.replace(query ? `?${query}` : "?", { scroll: false });
   }, [router, searchParams]);
 
-  // Fermeture clavier (Échap) — la feuille = dialog modal.
+  // Fermeture clavier (Échap).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") close();
@@ -187,6 +222,12 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
     return () => document.removeEventListener("keydown", onKey);
   }, [close]);
 
+  // Changement de registre : met à jour l'état ET le défaut global persistant (FR-14).
+  function changerTone(value: Tone) {
+    setTone(value);
+    setDefaultTone(value);
+  }
+
   // Copier = commit MANUEL (FR-12). Aucun envoi automatique, aucun marquage « Envoyé ».
   async function copier() {
     try {
@@ -194,12 +235,104 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Clipboard indisponible (permission / contexte non sécurisé) : on reste silencieux
-      // et doux — le texte demeure dans le champ, l'utilisateur peut le sélectionner.
+      // Clipboard indisponible : on reste silencieux et doux (le texte demeure éditable).
     }
   }
 
+  // — GÉNÉRATION (cœur 3.3). Le champ reste la SOURCE DE VÉRITÉ : on y APPEND les deltas
+  // en direct, puis on REMPLACE par le texte sanitizé final. Toute erreur = message doux,
+  // champ inchangé. Hors-ligne = on ne lance même pas (Générer grisé). —
+  const generer = useCallback(() => {
+    if (!online) {
+      setState("offline");
+      setSoftError(
+        "Tu es hors-ligne : la génération reprendra dès le retour du réseau. Ton texte reste éditable.",
+      );
+      return;
+    }
+    if (text.trim().length === 0) return;
+
+    // Transparence API one-time (FR-32) : à la 1re génération seulement.
+    if (!hasSeenApiNotice()) {
+      setShowApiNotice(true);
+      markApiNoticeSeen();
+    }
+
+    // Annule un éventuel flux précédent (régénérer).
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setState("generating");
+    setSoftError(null);
+    setShowTokenDetail(false);
+    setLastEvent(null);
+
+    // Le champ devient le réceptacle du flux : on le vide pour accueillir les deltas.
+    const idea = text;
+    setText("");
+
+    // Timeout DOUX 1er token : si rien n'arrive sous 5 s, message doux (pas d'annulation
+    // du flux — il peut encore aboutir ; on prévient juste l'attente muette).
+    timeoutRef.current = setTimeout(() => {
+      setSoftError(
+        "C'est un peu long… la plume réfléchit. Tu peux patienter ou réessayer.",
+      );
+    }, FIRST_TOKEN_TIMEOUT_MS);
+
+    const clearTimer = () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+
+    void streamGeneration(
+      { idea, canal, tone },
+      {
+        onFirstDelta: () => {
+          clearTimer();
+          setSoftError(null);
+        },
+        onDelta: (delta) => {
+          if (controller.signal.aborted) return;
+          setText((prev) => prev + delta);
+        },
+        onDone: ({ text: finalText, event }) => {
+          if (controller.signal.aborted) return;
+          clearTimer();
+          // Cas rare : rien d'exploitable n'est revenu (vide après sanitize). On ne
+          // laisse pas un cul-de-sac muet : message doux + idée brute restaurée (FR-7).
+          if (finalText.trim().length === 0) {
+            setText(idea);
+            setSoftError("Rien n'est revenu cette fois. Réessaie ?");
+            setState("error");
+            return;
+          }
+          // REMPLACEMENT par le texte sanitizé final (le champ redevient autoritaire).
+          setText(finalText);
+          setLastEvent(event);
+          setState("ok");
+        },
+        onError: (message) => {
+          if (controller.signal.aborted) return;
+          clearTimer();
+          // Échec doux : on restaure l'idée brute dans le champ (AUCUNE saisie perdue, FR-7).
+          setText((prev) => (prev.length === 0 ? idea : prev));
+          setSoftError(message);
+          setState("error");
+        },
+      },
+      controller.signal,
+    );
+  }, [text, canal, tone, online]);
+
   const nom = context?.nom ?? "ce contact";
+  const generating = state === "generating";
+  const champVide = text.trim().length === 0;
+  // Générer grisé : pendant la génération, champ vide, ou hors-ligne.
+  const generateDisabled = generating || champVide || !online;
+  const showResultActions = state === "ok" && lastEvent !== null && !champVide;
 
   return (
     <div
@@ -216,19 +349,17 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
         className="absolute inset-0 bg-ink/30"
       />
 
-      {/* Feuille : monte du bas, grand rayon en haut, offset dur VERS LE HAUT (accent),
-          poignée grab. `mt-auto` la colle en bas ; `max-h` la garde scrollable. */}
       <div
         ref={dialogRef}
-        className="relative mt-auto flex max-h-[92dvh] w-full max-w-md flex-col gap-4 rounded-t-sheet border-[length:--border-width-ink] border-ink bg-surface-card px-margin-mobile pb-8 pt-3 shadow-[var(--shadow-sheet-top)]"
+        className="relative mt-auto flex max-h-[92dvh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-t-sheet border-[length:--border-width-ink] border-ink bg-surface-card px-margin-mobile pb-8 pt-3 shadow-[var(--shadow-sheet-top)]"
       >
-        {/* Poignée grab (affordance « feuille tirable »), purement visuelle. */}
+        {/* Poignée grab. */}
         <div
           aria-hidden="true"
           className="mx-auto h-1.5 w-12 rounded-full bg-line"
         />
 
-        {/* — Contexte Contact ANCRÉ au-dessus (FR-13) : nom + canal, jamais un onglet. — */}
+        {/* — Contexte Contact ANCRÉ au-dessus (FR-13). — */}
         <header className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 flex-col">
             <span className="font-body text-label font-bold uppercase tracking-[0.12em] text-ink-soft">
@@ -251,8 +382,7 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
           </button>
         </header>
 
-        {/* — Sélecteur 4 canaux (FR-2) : actif = aplat mauve plein ; inactifs = contour doux.
-            Le canal préféré est pré-sélectionné ; changeable en 1 tap. — */}
+        {/* — Sélecteur 4 canaux (FR-2). — */}
         <fieldset className="flex flex-col gap-2">
           <legend className="font-body text-label font-bold uppercase tracking-[0.12em] text-ink-soft">
             Canal
@@ -280,8 +410,7 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
           </div>
         </fieldset>
 
-        {/* — Segment Rapide / Soigné : piste chip, segment actif en aplat mauve. Alias
-            Haiku/Opus discrets (purement visuels). — */}
+        {/* — Segment Rapide / Soigné : choix persistant (défaut global). — */}
         <fieldset className="flex flex-col gap-2">
           <legend className="font-body text-label font-bold uppercase tracking-[0.12em] text-ink-soft">
             Registre
@@ -293,7 +422,7 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
                 <button
                   key={value}
                   type="button"
-                  onClick={() => setTone(value)}
+                  onClick={() => changerTone(value)}
                   aria-pressed={active}
                   className={`inline-flex items-center gap-1.5 rounded-[14px] px-4 py-1.5 font-body text-body font-bold outline-accent outline-offset-2 focus-visible:outline-2 ${
                     active
@@ -316,23 +445,76 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
           </div>
         </fieldset>
 
-        {/* — CHAMP UNIQUE (source de vérité) : le texte affiché EST le Message (FR-6). Vide
-            par défaut, éditable. Fond note, contour encre, caret mauve. — */}
-        <label className="flex flex-col gap-2">
+        {/* — CHAMP UNIQUE (source de vérité). Pendant la génération, la plume « écrit »
+            en superposition douce (jamais de spinner) ; le champ reste éditable. — */}
+        <label className="relative flex flex-col gap-2">
           <span className="sr-only">Message</span>
           <textarea
             ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={7}
-            placeholder="Écris ton message…"
+            placeholder="Écris ton idée, ou touche Générer…"
             className="w-full resize-none rounded-button border-[length:--border-width-ink] border-ink bg-surface-note px-4 py-3 font-body text-body text-ink caret-accent outline-accent outline-offset-2 placeholder:text-ink-hint focus-visible:outline-2"
           />
+          {generating ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className="pointer-events-none absolute right-3 top-3 flex items-center gap-2"
+            >
+              {/* « La plume écrit » : animation douce, neutralisée par Reduce Motion. */}
+              <Plume name="feather" size={40} className="plume-ecrit" />
+              <span className="sr-only">La plume écrit ton message…</span>
+            </div>
+          ) : null}
         </label>
 
-        {/* — Copier = COMMIT MANUEL (FR-12). Bouton primaire chunky ; jamais d'auto-send.
-            Désactivé si le champ est vide (rien à copier). — */}
-        <div className="flex items-center justify-between gap-3">
+        {/* — Micro-ligne de transparence API one-time (FR-32, UX-DR21). — */}
+        {showApiNotice ? (
+          <p className="font-body text-label text-ink-hint">
+            Pour générer, ton texte est envoyé à l&apos;API Claude.
+          </p>
+        ) : null}
+
+        {/* — Bandeau d'erreur / hors-ligne DOUX (jamais rouge alarme). Le champ reste
+            éditable, aucune saisie perdue (UX-DR14). — */}
+        {softError ? (
+          <p
+            role="status"
+            aria-live="polite"
+            className="rounded-button border-[length:--border-width-ink] border-line bg-surface-note px-4 py-2 font-body text-label text-ink-soft"
+          >
+            {softError}
+          </p>
+        ) : null}
+
+        {/* — Pill de TOKENS (tappable → détail input/output). Apparaît après succès. — */}
+        {showResultActions && lastEvent ? (
+          <div className="flex flex-col gap-1">
+            <button
+              type="button"
+              onClick={() => setShowTokenDetail((v) => !v)}
+              aria-expanded={showTokenDetail}
+              className="inline-flex w-fit items-center gap-1.5 rounded-button border-[length:--border-width-ink] border-line bg-surface-chip px-3 py-1 font-body text-label font-bold text-ink-soft outline-accent outline-offset-2 focus-visible:outline-2"
+            >
+              <Icon name="sparkle" size={16} />
+              {lastEvent.tokens.input + lastEvent.tokens.output} jetons
+            </button>
+            {showTokenDetail ? (
+              <p className="font-body text-label text-ink-hint">
+                Entrée : {lastEvent.tokens.input} · Sortie :{" "}
+                {lastEvent.tokens.output} · Modèle : {lastEvent.tone === "rapide"
+                  ? "Rapide"
+                  : "Soigné"}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* — ACTIONS. Avant génération : Générer (primaire). Après succès : Copier +
+            Améliorer (couture 3.4, non câblé) + Régénérer + Copier. — */}
+        <div className="flex flex-col gap-3">
           <span
             role="status"
             aria-live="polite"
@@ -340,15 +522,64 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
           >
             {copied ? "Copié" : ""}
           </span>
-          <button
-            type="button"
-            onClick={copier}
-            disabled={text.trim().length === 0}
-            className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-accent px-6 py-3 font-body text-button font-bold text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-70"
-          >
-            <Icon name="copy" size={20} />
-            Copier
-          </button>
+
+          {showResultActions ? (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {/* Améliorer : VISIBLE, pipeline = story 3.4 (couture). Désactivé ici. */}
+              <button
+                type="button"
+                disabled
+                aria-disabled="true"
+                title="Bientôt : retravaille ton texte (story 3.4)"
+                className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-line bg-surface-card px-4 py-3 font-body text-button font-bold text-ink-soft opacity-60"
+              >
+                <Icon name="double-sparkle" size={20} />
+                Améliorer
+              </button>
+              {/* Régénérer : relance un appel avec le texte courant comme idée. */}
+              <button
+                type="button"
+                onClick={generer}
+                disabled={generateDisabled}
+                className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-surface-card px-4 py-3 font-body text-button font-bold text-ink outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-60"
+              >
+                <Icon name="sparkle" size={20} />
+                Régénérer
+              </button>
+              <button
+                type="button"
+                onClick={copier}
+                disabled={champVide}
+                className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-accent px-6 py-3 font-body text-button font-bold text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-70"
+              >
+                <Icon name="copy" size={20} />
+                Copier
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {/* Copier reste dispo (commit manuel possible même sans génération). */}
+              <button
+                type="button"
+                onClick={copier}
+                disabled={champVide}
+                className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-line bg-surface-card px-4 py-3 font-body text-button font-bold text-ink-soft outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-60"
+              >
+                <Icon name="copy" size={20} />
+                Copier
+              </button>
+              {/* Générer : primaire. Grisé pendant génération / champ vide / hors-ligne. */}
+              <button
+                type="button"
+                onClick={generer}
+                disabled={generateDisabled}
+                className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-accent px-6 py-3 font-body text-button font-bold text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-70"
+              >
+                <Icon name="sparkle" size={20} />
+                {generating ? "Génération…" : "Générer"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
