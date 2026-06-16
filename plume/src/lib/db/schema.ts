@@ -135,7 +135,10 @@ export const contacts = sqliteTable(
     legalBasis: text("legal_basis"),
     // Clé de dédup (story 2.2) : email normalisé sinon nom+entreprise normalisés
     // (calculée par `computeDedupKey`, zone neutre). NOT NULL — toujours dérivable.
-    dedupKey: text("dedup_key").notNull(),
+    // DEFAULT '' transitoire : rend la migration rétro-compatible (SQLite refuse un
+    // ADD NOT NULL nu sur une table peuplée) ; l'app pose TOUJOURS une vraie clé via
+    // le repository, donc '' n'est jamais persisté pour une ligne créée par le code.
+    dedupKey: text("dedup_key").notNull().default(""),
     // Horodatages de cycle de vie (epoch ms), posés via l'horloge injectée.
     createdAt: integer("created_at", { mode: "number" }),
     updatedAt: integer("updated_at", { mode: "number" }),
