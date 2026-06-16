@@ -59,8 +59,8 @@ development_status:
   # ---- Epic 2: Mon reseau (Contacts) ----
   epic-2: in-progress
   2-1-ajouter-editer-supprimer-un-contact-manuellement: done
-  2-2-ajout-rapide-multiple: review
-  2-3-galerie-reseau-triee-par-froideur-recherche: backlog
+  2-2-ajout-rapide-multiple: done
+  2-3-galerie-reseau-triee-par-froideur-recherche: review
   2-4-fiche-contact-timeline: backlog
   2-5-import-csv-linkedin-en-backfill-asynchrone: backlog
   epic-2-retrospective: optional
