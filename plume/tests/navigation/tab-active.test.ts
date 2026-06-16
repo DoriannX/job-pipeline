@@ -34,17 +34,28 @@ describe("états vides sereins — présence", () => {
   const appDir = join(process.cwd(), "src/app/(app)");
 
   // Onglets encore en placeholder (story 1.4) : ils rendent l'EmptyState générique.
-  const genericEmptyPages = [
-    "aujourdhui/page.tsx",
-    "reseau/[contactId]/page.tsx",
-    "reglages/page.tsx",
-  ];
+  // NB : la fiche Contact (reseau/[contactId]) n'est PLUS un placeholder depuis la
+  // story 2.4 — elle rend sa propre coquille (identité + timeline narrative), couverte
+  // par l'assertion dédiée plus bas.
+  const genericEmptyPages = ["aujourdhui/page.tsx", "reglages/page.tsx"];
 
   it("les onglets placeholder rendent un EmptyState générique", () => {
     for (const page of genericEmptyPages) {
       const src = readFileSync(join(appDir, page), "utf8");
       expect(src, `${page} doit rendre un EmptyState`).toContain("EmptyState");
     }
+  });
+
+  it("la fiche Contact (story 2.4) rend sa coquille (jamais un écran blanc)", () => {
+    // La fiche délègue au composant ContactDetail (identité Fraunces + froideur +
+    // canaux + bouton Écrire + timeline narrative). Un id inexistant/d'autrui passe
+    // par notFound() — jamais de fuite, jamais de blanc.
+    const src = readFileSync(
+      join(appDir, "reseau/[contactId]/page.tsx"),
+      "utf8",
+    );
+    expect(src, "la fiche doit rendre ContactDetail").toContain("ContactDetail");
+    expect(src, "la fiche gère l'absence via notFound").toContain("notFound");
   });
 
   it("Réseau possède son PROPRE état vide d'amorçage (story 2.1)", () => {
