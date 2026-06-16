@@ -1,26 +1,105 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Thème CLAIR unique (UX-DR13) : prefers-color-scheme est volontairement ignoré. */
+/* @theme = miroir CSS de src/design/tokens.ts (foyer unique). Toute dérive est */
+/* attrapée par tests/design/tokens.test.ts. Ne PAS coder de couleur en dur ailleurs. */
+@theme {
+  /* Surfaces */
+  --color-surface-app: #e9f3ef;
+  --color-surface-card: #fbfefd;
+  --color-surface-note: #edf6f2;
+  --color-surface-chip: #dcefe9;
+
+  /* Encre & lignes */
+  --color-ink: #2e3f3b;
+  --color-ink-soft: #5f726d;
+  --color-ink-hint: #9db5ad;
+  --color-line: #cfe3db;
+
+  /* Menthe (marque) */
+  --color-mint: #7fbeaf;
+  --color-mint-deep: #4e8978;
+  --color-mint-offset: #cadfd8;
+  --color-mint-offset-soft: #bfd9d0;
+
+  /* Mauve (action / états actifs) */
+  --color-accent: #b391ac;
+  --color-accent-deep: #876585;
+  --color-accent-on: #ffffff;
+  --color-accent-tint: #ece2ea;
+
+  /* Froideur (4 états + -shade) */
+  --color-cold-never: #c9c2d6;
+  --color-cold-fresh: #8fbca8;
+  --color-cold-warm: #cba7c0;
+  --color-cold-cold: #a7bcc6;
+  --color-cold-never-shade: #b3aac6;
+  --color-cold-fresh-shade: #73a28c;
+  --color-cold-warm-shade: #b289a6;
+  --color-cold-cold-shade: #8aa2ae;
+
+  --color-pager-dot-idle: #c7ddd5;
+
+  /* Typographie — familles injectées par next/font (layout.tsx) */
+  --font-display: var(--font-fraunces), Fraunces, serif;
+  --font-body: var(--font-quicksand), Quicksand, sans-serif;
+
+  --text-display-name: 32px;
+  --text-display-name--line-height: 1.04;
+  --text-display-title: 30px;
+  --text-display-title--line-height: 1.05;
+  --text-body: 16px;
+  --text-body--line-height: 1.5;
+  --text-button: 20px;
+  --text-label: 12px;
+  --text-label--letter-spacing: 0.12em;
+
+  /* Rayons */
+  --radius-sm: 6px;
+  --radius-md: 14px;
+  --radius-card: 16px;
+  --radius-sheet: 34px;
+  --radius-button: 22px;
+  --radius-deck: 32px;
+
+  /* Espacement (échelle par pas de 4 ; clés non-numériques pour gutter/marge) */
+  --spacing-gutter: 22px;
+  --spacing-margin-mobile: 24px;
+
+  /* Contours */
+  --border-width-ink: 2.5px;
+  --border-width-illustration: 3px;
+
+  /* Offsets durs — flou = 0 TOUJOURS (Npx Npx 0 0 couleur) */
+  --shadow-phone: 13px 14px 0 0 #cadfd8;
+  --shadow-button-primary: 0 6px 0 0 #876585;
+  --shadow-button-secondary: 0 6px 0 0 #bfd9d0;
+  --shadow-group-mint: 5px 5px 0 0 #7fbeaf;
+  --shadow-group-accent: 8px 8px 0 0 #b391ac;
+  --shadow-sheet-top: 0 -7px 0 0 #b391ac;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100%;
+  background: var(--color-surface-app);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-weight: 500;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Reduce Motion respecté (plancher a11y, UX-DR4) : on coupe les animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

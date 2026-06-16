@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SOURCE DE VÉRITÉ de l'illustration maison de Plume.
+  Extrait verbatim de mockups/plume-hero-v2.html (DA figée, décision #16).
+  À RÉUTILISER tel quel sur tous les écrans : ne JAMAIS redessiner une
+  version « générique » à la main (sinon perte du caractère fait-main,
+  retour au look IA que l'utilisateur a fui — voir review-craft.md [critical]).
+
+  Règle de partage : la plume et le blob sont UN tracé partagé, pas
+  redessiné par écran. Le blob se RECOLORE via `fill` (corps) + ombre
+  interne `-shade` + joues d'un ton proche, selon la froideur. Le reste
+  (géométrie, trait encre #2E3F3B, visage) reste identique.
+
+  Note d'animation (.float) : la position (transform="translate()") va sur
+  un <g> PARENT, l'animation .float sur un <g> ENFANT ; sinon la plume
+  saute à l'origine (bug récurrent, décision #26 / ⚙️).
+-->
+<svg width="320" height="180" viewBox="0 0 320 180" xmlns="http://www.w3.org/2000/svg" font-family="Fraunces, serif">
+
+  <!-- ============================================================= -->
+  <!-- plume-mascotte canonique                                       -->
+  <!-- corps menthe #7FBEAF, trait encre #2E3F3B, joue + étincelle     -->
+  <!-- mauve #B391AC. Échelle « grande » (état vide / onboarding).     -->
+  <!-- ============================================================= -->
+  <g transform="translate(70 110)">
+    <!-- en prod : envelopper d'un <g class="float"> pour l'animation flottante -->
+    <g transform="rotate(-14)">
+      <!-- corps de la plume, menthe plein -->
+      <path d="M44 -76 C8 -64 -14 -24 -14 14 C16 4 36 12 54 -8
+               C45 -8 36 -5 27 -2
+               C44 -19 60 -40 63 -68
+               C57 -56 48 -47 39 -38
+               C51 -53 54 -64 44 -76 Z"
+            fill="#7FBEAF" stroke="#2E3F3B" stroke-width="3" stroke-linejoin="round"/>
+      <!-- rachis -->
+      <path d="M38 -64 C24 -42 8 -12 -6 10" fill="none" stroke="#2E3F3B" stroke-width="2.2" stroke-linecap="round"/>
+      <!-- barbes -->
+      <path d="M30 -50 l11 -7 M22 -36 l11 -7 M13 -22 l11 -7 M4 -8 l11 -7" stroke="#4E8978" stroke-width="1.8" stroke-linecap="round"/>
+      <!-- tige -->
+      <line x1="-14" y1="14" x2="-26" y2="30" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+      <!-- petit visage amical -->
+      <path d="M20 -52 q4 -5 8 0" fill="none" stroke="#2E3F3B" stroke-width="2.4" stroke-linecap="round"/>
+      <path d="M33 -56 q4 -5 8 0" fill="none" stroke="#2E3F3B" stroke-width="2.4" stroke-linecap="round"/>
+      <!-- joue : infime touche mauve poussiéreux (exception déco mauve réservée à la mascotte) -->
+      <ellipse cx="22" cy="-42" rx="4.5" ry="3" fill="#B391AC" opacity=".7"/>
+      <path d="M26 -46 q5 5 10 0" fill="none" stroke="#2E3F3B" stroke-width="2.4" stroke-linecap="round"/>
+    </g>
+    <!-- étincelle mauve compagne de la mascotte -->
+    <path d="M58 -70 l1.6 4.5 l4.5 1.6 l-4.5 1.6 l-1.6 4.5 l-1.6 -4.5 l-4.5 -1.6 l4.5 -1.6 z" fill="#B391AC"/>
+  </g>
+
+  <!-- ============================================================= -->
+  <!-- avatar-blob canonique — recolorer via fill selon froideur      -->
+  <!-- Ici en « jamais contacté » : corps fill #C9C2D6, ombre interne  -->
+  <!-- (-shade) #B3AAC6, joues #A99FC0. Pour un autre état, remplacer  -->
+  <!-- ces trois fills par {colors.cold.<état>} / <état>-shade / ton    -->
+  <!-- proche. Le reste (trait encre, cheveux, yeux, sourire) NE CHANGE -->
+  <!-- PAS. viewBox d'origine 0 0 124 124.                              -->
+  <!-- ============================================================= -->
+  <g transform="translate(180 28)">
+    <!-- corps du blob : le fill porte la froideur -->
+    <path d="M62 10 C88 10 108 26 110 52 C112 78 96 104 66 110 C40 115 16 98 12 70 C8 44 24 18 50 12 C54 11 58 10 62 10 Z"
+          fill="#C9C2D6" stroke="#2E3F3B" stroke-width="3" stroke-linejoin="round"/>
+    <!-- ombre interne du même ton, plus profonde (-shade) : donne le volume fait-main -->
+    <path d="M30 78 C26 64 30 50 42 44 C36 58 36 70 44 82 C40 84 34 83 30 78 Z" fill="#B3AAC6"/>
+    <!-- cheveux, trait encre -->
+    <path d="M28 44 C36 24 60 18 80 28 C92 34 96 46 94 56 C88 44 78 38 66 40 C70 34 66 30 60 31 C56 38 48 40 42 38 C44 46 38 50 32 52 C30 49 28 47 28 44 Z"
+          fill="#5A3D2A" stroke="#2E3F3B" stroke-width="2.4" stroke-linejoin="round"/>
+    <!-- yeux en arc -->
+    <path d="M44 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+    <path d="M70 66 q5 -6 10 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+    <!-- joues teintées d'un ton proche -->
+    <ellipse cx="42" cy="80" rx="6" ry="4" fill="#A99FC0" opacity=".7"/>
+    <ellipse cx="84" cy="80" rx="6" ry="4" fill="#A99FC0" opacity=".7"/>
+    <!-- sourire courbe -->
+    <path d="M54 84 q9 9 18 0" fill="none" stroke="#2E3F3B" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+</svg>
