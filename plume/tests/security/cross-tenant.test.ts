@@ -18,6 +18,7 @@ import {
   mergeCandidatesRepository,
   processCsvImport,
   resolveMergeCandidate,
+  seedVoixRepository,
 } from "@/lib/db";
 import type { Clock } from "@/lib/domain/time";
 
@@ -321,5 +322,71 @@ describe("invariant n°1 — tables d'IMPORT `import_jobs` / `merge_candidates` 
     expect(listA[0].userId).toBe(userA.id);
     expect(listB[0].userId).toBe(userB.id);
     expect(listA[0].id).not.toBe(listB[0].id);
+  });
+});
+
+describe("invariant n°1 — table de VOIX `seed_voix` (story 3.5)", () => {
+  let db: TestDb;
+  const userA = makeUser({ name: "Alice" });
+  const userB = makeUser({ name: "Bob" });
+
+  // Repositories de la Voix montés au-dessus de la porte scopée, par tenant.
+  const repoA = () => seedVoixRepository(forUserDb(db, userA.id, now));
+  const repoB = () => seedVoixRepository(forUserDb(db, userB.id, now));
+
+  beforeEach(async () => {
+    db = await makeTestDb();
+    // FK seed_voix.user_id → users.id : les deux users doivent exister.
+    await seedUsers(db, [userA, userB]);
+  });
+
+  it("create impose user_id : un seed appartient toujours à son créateur", async () => {
+    const created = await repoA().create("Salut, on se cale un café ?");
+    expect(created.userId).toBe(userA.id);
+    expect(created.texte).toBe("Salut, on se cale un café ?");
+  });
+
+  it("list ne renvoie QUE les seeds du tenant (zéro fuite croisée)", async () => {
+    await repoA().create("seed A #1");
+    await repoA().create("seed A #2");
+    await repoB().create("seed B #1");
+
+    const seenByA = await repoA().list();
+    expect(seenByA.map((s) => s.texte).sort()).toEqual(["seed A #1", "seed A #2"]);
+    expect(seenByA.every((s) => s.userId === userA.id)).toBe(true);
+
+    const seenByB = await repoB().list();
+    expect(seenByB.map((s) => s.texte)).toEqual(["seed B #1"]);
+    expect(seenByB.every((s) => s.userId === userB.id)).toBe(true);
+  });
+
+  it("list est ordonné du plus RÉCENT au plus ancien", async () => {
+    // Horloge croissante : chaque create reçoit un createdAt strictement plus grand.
+    let t = 1_700_000_000_000;
+    const clock: Clock = () => (t += 1000);
+    const repo = seedVoixRepository(forUserDb(db, userA.id, clock));
+
+    await repo.create("le plus ancien");
+    await repo.create("au milieu");
+    await repo.create("le plus récent");
+
+    const list = await repo.list();
+    expect(list.map((s) => s.texte)).toEqual([
+      "le plus récent",
+      "au milieu",
+      "le plus ancien",
+    ]);
+  });
+
+  it("remove d'autrui n'affecte rien ; remove du sien réussit", async () => {
+    const seedA = await repoA().create("À supprimer par A seul");
+
+    // B (qui connaîtrait l'id) tente de supprimer le seed de A : refusé.
+    expect(await repoB().remove(seedA.id)).toBe(false);
+    expect(await repoA().list()).toHaveLength(1);
+
+    // A supprime le sien : OK.
+    expect(await repoA().remove(seedA.id)).toBe(true);
+    expect(await repoA().list()).toHaveLength(0);
   });
 });

@@ -34,3 +34,8 @@ export {
   type ResolveMergeDeps,
   type MergeDecision,
 } from "./import-repositories";
+export {
+  seedVoixRepository,
+  type SeedVoixRepository,
+  type SeedVoix,
+} from "./voice-repositories";

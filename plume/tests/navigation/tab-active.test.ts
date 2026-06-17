@@ -35,15 +35,24 @@ describe("états vides sereins — présence", () => {
 
   // Onglets encore en placeholder (story 1.4) : ils rendent l'EmptyState générique.
   // NB : la fiche Contact (reseau/[contactId]) n'est PLUS un placeholder depuis la
-  // story 2.4 — elle rend sa propre coquille (identité + timeline narrative), couverte
-  // par l'assertion dédiée plus bas.
-  const genericEmptyPages = ["aujourdhui/page.tsx", "reglages/page.tsx"];
+  // story 2.4 ; Réglages ne l'est PLUS depuis la story 3.5 (gestion de la Voix) —
+  // chacun rend sa propre coquille, couverte par une assertion dédiée plus bas.
+  const genericEmptyPages = ["aujourdhui/page.tsx"];
 
   it("les onglets placeholder rendent un EmptyState générique", () => {
     for (const page of genericEmptyPages) {
       const src = readFileSync(join(appDir, page), "utf8");
       expect(src, `${page} doit rendre un EmptyState`).toContain("EmptyState");
     }
+  });
+
+  it("Réglages possède sa PROPRE section « Ta voix » (story 3.5)", () => {
+    // Depuis 3.5, Réglages n'est plus un placeholder : il rend la section de gestion du
+    // seed de voix (VoiceSection) — jamais un écran blanc. Le seed reste optionnel (FR-16).
+    const src = readFileSync(join(appDir, "reglages/page.tsx"), "utf8");
+    expect(src, "reglages/page.tsx doit rendre VoiceSection").toContain(
+      "VoiceSection",
+    );
   });
 
   it("la fiche Contact (story 2.4) rend sa coquille (jamais un écran blanc)", () => {

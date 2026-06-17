@@ -223,3 +223,30 @@ export const mergeCandidates = sqliteTable("merge_candidates", {
   // Horodatage de création (epoch ms), posé via l'horloge injectée.
   createdAt: integer("created_at", { mode: "number" }),
 });
+
+// --- seed_voix : amorce optionnelle de la Voix de l'utilisateur (Epic 3, story 3.5) ---
+// Table SCOPÉE par tenant : `user_id` borne chaque seed à son propriétaire (invariant
+// n°1 / AR-2, AR-13). Un seed = un ancien message collé par l'utilisateur pour AMORCER
+// sa voix ; le texte est nettoyé par `sanitize()` À L'IMPORT (point unique, AR-3) puis
+// alimente immédiatement le few-shot de génération (stratégie bornée `selectFewShot`).
+//
+// Optionnel (FR-16) : sans seed, Plume écrit en ton NEUTRE — jamais d'échec. En 3.6, le
+// corpus de Voix s'étendra aux Messages ENVOYÉS (FR-17) ; ici on ne lit QUE `seed_voix`.
+//
+// Conventions : colonnes SQL en snake_case ; PK `id` = cuid2 opaque ; `created_at` en
+// epoch ms (number) injecté par l'horloge applicative (jamais Date.now() en dur). Sert
+// l'ordre « du plus récent au plus ancien » (les N plus récents bornent le prompt).
+export const seedVoix = sqliteTable("seed_voix", {
+  // PK opaque cuid2 — généré côté app.
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  // Frontière tenant : NOT NULL, référence users (cascade quand le user disparaît).
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  // Texte de l'amorce — déjà sanitizé À L'IMPORT (jamais re-nettoyé à la lecture).
+  texte: text("texte").notNull(),
+  // Horodatage de création (epoch ms), posé via l'horloge injectée.
+  createdAt: integer("created_at", { mode: "number" }),
+});

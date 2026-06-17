@@ -21,6 +21,10 @@ import {
 } from "./import-repositories";
 import { contactsRepository, type ContactsRepository } from "./repositories";
 import { scopedDb } from "./scoped";
+import {
+  seedVoixRepository,
+  type SeedVoixRepository,
+} from "./voice-repositories";
 import { systemClock } from "../domain/time";
 
 /** Surface de données scopée exposée aux features (un repo par entité). */
@@ -28,6 +32,7 @@ export type UserGate = {
   contacts: ContactsRepository;
   importJobs: ImportJobsRepository;
   mergeCandidates: MergeCandidatesRepository;
+  seedVoix: SeedVoixRepository;
 };
 
 /**
@@ -46,5 +51,6 @@ export async function forUser(userId: string): Promise<UserGate> {
     contacts: contactsRepository(scoped),
     importJobs: importJobsRepository(scoped),
     mergeCandidates: mergeCandidatesRepository(scoped),
+    seedVoix: seedVoixRepository(scoped),
   };
 }

@@ -28,6 +28,7 @@ import { forUser } from "@/lib/db";
 import { CANAUX } from "@/lib/domain/enums";
 import { AppError, generateMessage } from "@/lib/claude.server";
 import { buildGenerationEvent } from "@/lib/composer/pipeline.server";
+import { selectFewShot } from "@/lib/composer/voice";
 
 // Runtime Node (le SDK Anthropic + l'accès DB visent Node, pas l'edge). Force-dynamic :
 // aucune prérendu, l'env n'est lu qu'à la requête → build sans secret.
@@ -78,17 +79,27 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Corps JSON illisible." }, { status: 400 });
   }
 
-  // 3. Extraction du CORPUS DE VOIX scopé. Vide pour l'instant (corpus 3.5 non
-  //    constitué) → `[]` (ton neutre). Le point d'extraction scopé est posé ici :
-  //    quand `seed_voix` / messages envoyés existeront, c'est ICI qu'on les lira via
-  //    `forUser(userId)` — sans toucher au reste du pipeline. Un échec d'accès DB ne
-  //    doit PAS casser la génération : on l'absorbe et on dégrade en corpus vide.
-  const voiceExamples: string[] = [];
-  const voiceExamplesRef: string[] = [];
+  // 3. Extraction du CORPUS DE VOIX scopé (story 3.5). On lit les `seed_voix` du tenant
+  //    via la porte scopée, puis on BORNE le few-shot avec la stratégie nommée
+  //    `selectFewShot` (les N seeds les plus récents — AR-7, NFR-1). `voiceExamplesRef`
+  //    trace les ids EXACTS des seeds injectés (pour le `GenerationEvent`). Liste vide →
+  //    `[]` → ton NEUTRE (FR-16). Un échec d'accès DB ne doit PAS casser la génération :
+  //    on l'absorbe et on dégrade en corpus vide (jamais de 500).
+  //    FRONTIÈRE 3.6 : ici on ne lit QUE `seed_voix` ; les Messages ENVOYÉS (FR-17)
+  //    s'ajouteront à cette même couture en 3.6 (liste fusionnée, déjà ordonnée).
+  let voiceExamples: string[] = [];
+  let voiceExamplesRef: string[] = [];
   try {
-    await forUser(userId); // résolution scopée (seam 3.5 ; aujourd'hui : aucun corpus)
+    const gate = await forUser(userId);
+    const seeds = await gate.seedVoix.list(); // ordonnés récent → ancien
+    voiceExamples = selectFewShot(seeds.map((s) => s.texte));
+    // On trace les ids des seeds RÉELLEMENT injectés : `selectFewShot` garde les N
+    // premiers (les plus récents), donc les N premiers ids correspondent 1-pour-1.
+    voiceExamplesRef = seeds.slice(0, voiceExamples.length).map((s) => s.id);
   } catch {
     // Accès DB indisponible : ton neutre (corpus vide), jamais de 500 brut.
+    voiceExamples = [];
+    voiceExamplesRef = [];
   }
 
   const { idea, canal, tone, mode } = parsed;

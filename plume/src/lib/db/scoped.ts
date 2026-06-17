@@ -64,10 +64,11 @@ export type ScopedDb = {
   readonly tenantId: string;
   /** Horloge injectée, ré-exposée pour la logique temporelle appelante. */
   readonly now: Clock;
-  /** Lecture multi-lignes, filtrée par tenant. */
+  /** Lecture multi-lignes, filtrée par tenant ; tri optionnel (ex. `desc(col)`). */
   findMany: <T extends SQLiteTable>(
     table: T,
     where?: SQL,
+    orderBy?: SQL | SQL[],
   ) => Promise<T["$inferSelect"][]>;
   /** Lecture d'une ligne (ou undefined), filtrée par tenant. */
   findFirst: <T extends SQLiteTable>(
@@ -116,13 +117,17 @@ export function scopedDb(
     tenantId,
     now,
 
-    async findMany(table, where) {
-      return db
+    async findMany(table, where, orderBy) {
+      const query = db
         .select()
         .from(table)
-        .where(scopedWhere(table, tenantId, where)) as Promise<
-        (typeof table)["$inferSelect"][]
-      >;
+        .where(scopedWhere(table, tenantId, where));
+      // Tri optionnel (ex. `desc(col)` pour « récent → ancien »). Sans tri, l'ordre
+      // libSQL n'est pas garanti : on ne l'impose donc qu'à la demande de l'appelant.
+      const ordered = orderBy
+        ? query.orderBy(...(Array.isArray(orderBy) ? orderBy : [orderBy]))
+        : query;
+      return ordered as Promise<(typeof table)["$inferSelect"][]>;
     },
 
     async findFirst(table, where) {
