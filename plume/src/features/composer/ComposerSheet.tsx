@@ -570,7 +570,7 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
         ) : null}
 
         {/* — ACTIONS. Avant génération : Générer (primaire). Après succès : Copier +
-            Améliorer (couture 3.4, non câblé) + Régénérer + Copier. — */}
+            Améliorer (câblé, mode `improve`) + Régénérer. — */}
         <div className="flex flex-col gap-3">
           <span
             role="status"
