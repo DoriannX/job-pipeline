@@ -98,21 +98,72 @@ export function ContactDetail({ contact }: ContactDetailProps) {
       {/* — Édition + suppression (capacités 2.1, accessibles aussi ici) — wrapper client. */}
       <ContactDetailActions contact={contact} />
 
-      {/* — TIMELINE narrative — COQUILLE prête, peuplée dès Epic 3. JAMAIS une grille/table :
-          un titre Fraunces + un état vide serein. Pas d'UI morte (aucune colonne fantôme). */}
+      {/* — TIMELINE narrative « Votre histoire » — peuplée dès Epic 3 (story 3.6) par les
+          Messages ENVOYÉS, marqués `accent`. JAMAIS une grille/table : une suite de cartes
+          narratives (date, canal, statut, texte). État vide serein si aucun échange. */}
       <section className="flex flex-col gap-3 border-t-[length:--border-width-ink] border-line pt-6">
         <h2 className="font-display text-display-title font-semibold tracking-[-0.01em] text-ink">
           Votre histoire
         </h2>
-        <div className="flex flex-col items-center gap-2 rounded-card border-[length:--border-width-ink] border-line bg-surface-note px-5 py-8 text-center">
-          <Plume name="feather" size={72} />
-          <p className="font-body text-body text-ink-soft">
-            Le fil de vos échanges apparaîtra ici.
-          </p>
-        </div>
+        {contact.messages.length > 0 ? (
+          <ul className="flex flex-col gap-3">
+            {contact.messages.map((msg) => (
+              <li
+                key={msg.id}
+                className={`flex flex-col gap-2 rounded-card border-[length:--border-width-ink] px-5 py-4 ${
+                  msg.accent
+                    ? "border-accent bg-accent-tint"
+                    : "border-line bg-surface-card"
+                }`}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Icon
+                    name={msg.canalIcon}
+                    size={18}
+                    className={msg.accent ? "text-accent-deep" : "text-ink-soft"}
+                  />
+                  <span
+                    className={`text-label font-bold uppercase tracking-[0.12em] ${
+                      msg.accent ? "text-accent-deep" : "text-ink-soft"
+                    }`}
+                  >
+                    {msg.canalLabel} · {msg.statutLabel}
+                  </span>
+                  {msg.at !== null ? (
+                    <time
+                      dateTime={new Date(msg.at).toISOString()}
+                      className="ml-auto font-body text-label text-ink-hint"
+                    >
+                      {formatDate(msg.at)}
+                    </time>
+                  ) : null}
+                </div>
+                <p className="whitespace-pre-line font-body text-body text-ink">
+                  {msg.texte}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="flex flex-col items-center gap-2 rounded-card border-[length:--border-width-ink] border-line bg-surface-note px-5 py-8 text-center">
+            <Plume name="feather" size={72} />
+            <p className="font-body text-body text-ink-soft">
+              Le fil de vos échanges apparaîtra ici.
+            </p>
+          </div>
+        )}
       </section>
     </div>
   );
+}
+
+/** Date FR courte (jour mois année) pour la timeline ; epoch ms → libellé lisible. */
+function formatDate(epochMs: number): string {
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date(epochMs));
 }
 
 export default ContactDetail;

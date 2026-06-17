@@ -103,6 +103,16 @@ export type ScopedDb = {
     table: T,
     where?: SQL,
   ) => Promise<T["$inferSelect"][]>;
+  /**
+   * Porte TRANSACTIONNELLE scopée (AR-8) : exécute `fn` dans UNE transaction Drizzle,
+   * en lui passant une porte scopée AU MÊME TENANT (le `user_id` reste borné à
+   * l'intérieur de la transaction). Si `fn` lève — ou si une écriture échoue —, la
+   * transaction est ANNULÉE (rollback total) : aucune écriture partielle ne subsiste.
+   *
+   * C'est le socle de l'écriture atomique « message figé + generation_events » (SM-1) :
+   * les deux insertions et la mise à jour du contact réussissent ENSEMBLE ou pas du tout.
+   */
+  transaction: <T>(fn: (tx: ScopedDb) => Promise<T>) => Promise<T>;
 };
 
 /**
@@ -182,6 +192,23 @@ export function scopedDb(
         .delete(table)
         .where(scopedWhere(table, tenantId, where))
         .returning() as Promise<(typeof table)["$inferSelect"][]>;
+    },
+
+    async transaction(fn) {
+      // On délègue à la transaction Drizzle de la db injectée, puis on RE-SCOPE le
+      // handle transactionnel au MÊME tenant : à l'intérieur, toutes les opérations
+      // restent bornées par `user_id`. Le `txDb` est un `LibSQLTransaction` ; il porte
+      // la même surface structurelle (select/insert/update/delete/transaction) qu'une
+      // db libSQL, mais son type Drizzle est distinct → cast SÛR vers `ScopableDb`
+      // (on ne fait qu'utiliser les méthodes communes). Drizzle annule la transaction
+      // si le callback rejette (rollback total) : l'atomicité moat tient (AR-8).
+      return db.transaction(async (txDb) => {
+        const txScoped = scopedDb(txDb as unknown as ScopableDb, {
+          tenantId,
+          now,
+        });
+        return fn(txScoped);
+      });
     },
   };
 }

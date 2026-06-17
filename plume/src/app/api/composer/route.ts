@@ -79,23 +79,33 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Corps JSON illisible." }, { status: 400 });
   }
 
-  // 3. Extraction du CORPUS DE VOIX scopé (story 3.5). On lit les `seed_voix` du tenant
-  //    via la porte scopée, puis on BORNE le few-shot avec la stratégie nommée
-  //    `selectFewShot` (les N seeds les plus récents — AR-7, NFR-1). `voiceExamplesRef`
-  //    trace les ids EXACTS des seeds injectés (pour le `GenerationEvent`). Liste vide →
-  //    `[]` → ton NEUTRE (FR-16). Un échec d'accès DB ne doit PAS casser la génération :
-  //    on l'absorbe et on dégrade en corpus vide (jamais de 500).
-  //    FRONTIÈRE 3.6 : ici on ne lit QUE `seed_voix` ; les Messages ENVOYÉS (FR-17)
-  //    s'ajouteront à cette même couture en 3.6 (liste fusionnée, déjà ordonnée).
+  // 3. Extraction du CORPUS DE VOIX scopé (FR-17, archi l.193). Le corpus = `seed_voix`
+  //    (amorce optionnelle) + TOUS les Messages ENVOYÉS (manuels inclus, aucune exclusion)
+  //    — c'est la couture annoncée en 3.5, effective ici en 3.6. On lit les deux sources
+  //    via la porte scopée, on les FUSIONNE en une liste ordonnée récent → ancien, puis on
+  //    BORNE le few-shot avec la stratégie nommée `selectFewShot` (les N plus récents,
+  //    AR-7, NFR-1). `voiceExamplesRef` trace les ids EXACTS injectés (seeds et/ou
+  //    messages). Liste vide → `[]` → ton NEUTRE (FR-16). Un échec d'accès DB ne doit PAS
+  //    casser la génération : on l'absorbe et on dégrade en corpus vide (jamais de 500).
   let voiceExamples: string[] = [];
   let voiceExamplesRef: string[] = [];
   try {
     const gate = await forUser(userId);
-    const seeds = await gate.seedVoix.list(); // ordonnés récent → ancien
-    voiceExamples = selectFewShot(seeds.map((s) => s.texte));
-    // On trace les ids des seeds RÉELLEMENT injectés : `selectFewShot` garde les N
-    // premiers (les plus récents), donc les N premiers ids correspondent 1-pour-1.
-    voiceExamplesRef = seeds.slice(0, voiceExamples.length).map((s) => s.id);
+    // Les deux sources sont déjà ordonnées récent → ancien par leur repository.
+    const [seeds, sentTexts] = await Promise.all([
+      gate.seedVoix.list(),
+      gate.messages.listSentTexts(),
+    ]);
+    // Exemples candidats, AVEC leur référence (id de seed, ou marqueur de message). On
+    // entrelace par récence approximative en plaçant les Messages envoyés D'ABORD (la
+    // voix la plus actuelle = ce que l'utilisateur a réellement envoyé), puis les seeds.
+    const candidates: { texte: string; ref: string }[] = [
+      ...sentTexts.map((texte, i) => ({ texte, ref: `message:${i}` })),
+      ...seeds.map((s) => ({ texte: s.texte, ref: s.id })),
+    ];
+    voiceExamples = selectFewShot(candidates.map((c) => c.texte));
+    // `selectFewShot` garde les N premiers : les N premières refs correspondent 1-pour-1.
+    voiceExamplesRef = candidates.slice(0, voiceExamples.length).map((c) => c.ref);
   } catch {
     // Accès DB indisponible : ton neutre (corpus vide), jamais de 500 brut.
     voiceExamples = [];

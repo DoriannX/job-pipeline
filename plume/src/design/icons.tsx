@@ -24,7 +24,8 @@ export type IconName =
   | "chevron"
   | "copy"
   | "edit"
-  | "trash";
+  | "trash"
+  | "check";
 
 const PATHS: Record<IconName, ReactNode> = {
   // — Canaux —
@@ -121,6 +122,8 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M10 10.5 V17 M14 10.5 V17" />
     </>
   ),
+  // — Marquage « Envoyé » (story 3.6) : coche douce. —
+  check: <path d="M5 12.5 L10 17.5 L19 6.5" />,
 };
 
 export const ICON_NAMES = Object.keys(PATHS) as IconName[];

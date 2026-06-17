@@ -154,3 +154,53 @@ describe("migration 0004 — rétro-compatible (CREATE TABLE only) sur base peup
     expect(String(seeds.rows[0].texte)).toBe("Salut, on se cale un cafe ?");
   });
 });
+
+describe("migration 0005 — rétro-compatible (CREATE TABLE only) sur base peuplée", () => {
+  it("ajoute messages / generation_events sans toucher aux contacts existants (story 3.6)", async () => {
+    const client = createClient({ url: "file::memory:?cache=private" });
+    const files = migrationFiles();
+
+    // État 3.5 : on applique tout SAUF 0005 (contacts déjà peuplé, dedup actif).
+    for (const f of files.filter((f) => !f.startsWith("0005"))) {
+      await apply(client, f);
+    }
+    await client.execute(
+      "INSERT INTO users (id, timezone, voix_ton) VALUES ('u1','Europe/Paris','neutre')",
+    );
+    await client.execute(
+      "INSERT INTO contacts (id, user_id, nom, source, dedup_key) VALUES ('c1','u1','Alice','manuel','name:alice|')",
+    );
+
+    // 0005 ne fait que des CREATE TABLE : aucune ALTER sur une table peuplée.
+    const m0005 = files.find((f) => f.startsWith("0005"));
+    expect(m0005).toBeDefined();
+    await apply(client, m0005!);
+
+    // Les contacts pré-existants sont intacts.
+    const c = await client.execute("SELECT id, nom FROM contacts");
+    expect(c.rows).toHaveLength(1);
+    expect(String(c.rows[0].nom)).toBe("Alice");
+
+    // messages : DEFAULT 'brouillon' + genere_par_ia DEFAULT false appliqués.
+    await client.execute(
+      "INSERT INTO messages (id, user_id, contact_id, canal, texte, envoye_at, created_at) VALUES ('m1','u1','c1','linkedin','Salut !',1700000000000,1700000000000)",
+    );
+    const msgs = await client.execute(
+      "SELECT statut, genere_par_ia, envoye_at FROM messages",
+    );
+    expect(msgs.rows).toHaveLength(1);
+    expect(String(msgs.rows[0].statut)).toBe("brouillon");
+    expect(Number(msgs.rows[0].genere_par_ia)).toBe(0);
+
+    // generation_events : edit_distance REAL stocké tel quel.
+    await client.execute(
+      "INSERT INTO generation_events (id, user_id, message_id, contact_id, generated, sent, edit_distance, raw_intent, prompt_version, model_id, sanitize_version, tokens_input, tokens_output, created_at) VALUES ('g1','u1','m1','c1','genere','envoye',0.2,'idee',1,'claude-haiku-4-5',1,100,40,1700000000000)",
+    );
+    const evs = await client.execute(
+      "SELECT edit_distance, tokens_input FROM generation_events",
+    );
+    expect(evs.rows).toHaveLength(1);
+    expect(Number(evs.rows[0].edit_distance)).toBeCloseTo(0.2, 5);
+    expect(Number(evs.rows[0].tokens_input)).toBe(100);
+  });
+});

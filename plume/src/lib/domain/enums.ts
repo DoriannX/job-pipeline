@@ -16,6 +16,31 @@ export function isCanal(v: unknown): v is Canal {
 }
 
 /**
+ * Statut d'un Message dans sa machine à états (AR-5). Valeurs NON traduites
+ * (clé stable, stockée en `text` ; le libellé FR vit dans `lib/copy.ts`).
+ *
+ * La story 3.6 n'écrit que la transition `brouillon → envoye` (Marquer Envoyé) ;
+ * le RESTE du cycle (`vu`/`repondu`/`ignore`) est consommé par les Relances en
+ * Epic 4 (story 3.8). On fige l'union COMPLÈTE dès maintenant pour que les
+ * timestamps/états que les Relances liront soient conçus d'emblée (AR-5).
+ */
+export const MESSAGE_STATUS = [
+  "brouillon",
+  "envoye",
+  "vu",
+  "repondu",
+  "ignore",
+] as const;
+export type MessageStatut = (typeof MESSAGE_STATUS)[number];
+
+/** Garde de type : `v` est-il un statut de Message connu ? */
+export function isMessageStatut(v: unknown): v is MessageStatut {
+  return (
+    typeof v === "string" && (MESSAGE_STATUS as readonly string[]).includes(v)
+  );
+}
+
+/**
  * Provenance d'un Contact (AR-9, AR-16). 'manuel' par défaut (story 2.1) ;
  * 'rapide' (collage multiple, story 2.2) et 'import_csv' (backfill LinkedIn,
  * story 2.4+) sont déjà déclarés pour figer l'union dès maintenant.

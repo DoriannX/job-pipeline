@@ -16,13 +16,21 @@ import {
   forUserDb,
   importJobsRepository,
   mergeCandidatesRepository,
+  messagesRepository,
   processCsvImport,
   resolveMergeCandidate,
   seedVoixRepository,
 } from "@/lib/db";
 import type { Clock } from "@/lib/domain/time";
 
-import { makeTestDb, seedUsers, testItems, type TestDb } from "../db/harness";
+import {
+  generationEvents,
+  makeTestDb,
+  seedUsers,
+  testItems,
+  type TestDb,
+} from "../db/harness";
+import { makeMarkSent } from "../factories/message";
 import { makeUser } from "../factories/user";
 
 // Horloge figée : déterminisme, et zéro Date.now() en dur dans les tests.
@@ -388,5 +396,88 @@ describe("invariant n°1 — table de VOIX `seed_voix` (story 3.5)", () => {
     // A supprime le sien : OK.
     expect(await repoA().remove(seedA.id)).toBe(true);
     expect(await repoA().list()).toHaveLength(0);
+  });
+});
+
+describe("invariant n°1 — tables `messages` / `generation_events` (story 3.6, DoD)", () => {
+  let db: TestDb;
+  const userA = makeUser({ name: "Alice" });
+  const userB = makeUser({ name: "Bob" });
+
+  // Porte complète par tenant : contacts (pour la FK) + messages (markSent atomique).
+  const gate = (userId: string) => {
+    const scoped = forUserDb(db, userId, now);
+    return {
+      contacts: contactsRepository(scoped),
+      messages: messagesRepository(scoped),
+    };
+  };
+
+  beforeEach(async () => {
+    db = await makeTestDb();
+    await seedUsers(db, [userA, userB]);
+  });
+
+  it("listForContact ne renvoie QUE les Messages du tenant (zéro fuite croisée)", async () => {
+    const gA = gate(userA.id);
+    const gB = gate(userB.id);
+    const cA = await gA.contacts.create({ nom: "Contact de A" });
+    const cB = await gB.contacts.create({ nom: "Contact de B" });
+
+    await gA.messages.markSent(
+      makeMarkSent(cA.id, { texte: "secret de A", generation: null }),
+    );
+    await gB.messages.markSent(
+      makeMarkSent(cB.id, { texte: "secret de B", generation: null }),
+    );
+
+    // A ne voit que son message ; B ne voit que le sien.
+    const aMsgs = await gA.messages.listForContact(cA.id);
+    expect(aMsgs.map((m) => m.texte)).toEqual(["secret de A"]);
+    expect(aMsgs.every((m) => m.userId === userA.id)).toBe(true);
+
+    // B connaît l'id du contact de A mais ne lit AUCUN de ses messages.
+    expect(await gB.messages.listForContact(cA.id)).toHaveLength(0);
+    // Le corpus de voix de B ne contient pas les envoyés de A.
+    expect(await gB.messages.listSentTexts()).toEqual(["secret de B"]);
+  });
+
+  it("markSent impose user_id sur le Message ET son generation_events", async () => {
+    const gA = gate(userA.id);
+    const cA = await gA.contacts.create({ nom: "Contact de A" });
+
+    const message = await gA.messages.markSent(makeMarkSent(cA.id));
+    expect(message.userId).toBe(userA.id);
+
+    // L'event écrit dans la même transaction porte aussi le tenant de A. (db fraîche par
+    // test → un seul event ; on lit tout, sans `eq` nu de drizzle-orm hors de la porte.)
+    const events = await db.select().from(generationEvents);
+    expect(events).toHaveLength(1);
+    expect(events[0].messageId).toBe(message.id);
+    expect(events[0].userId).toBe(userA.id);
+
+    // B (qui connaîtrait l'id du contact) ne peut pas écrire un Message sur le
+    // contact de A : la FK + le scoping du contact côté A protègent, mais surtout B
+    // n'a aucun chemin de lecture vers cet event.
+    const gB = gate(userB.id);
+    expect(await gB.messages.listForContact(cA.id)).toHaveLength(0);
+    expect(await gB.messages.listSentTexts()).toHaveLength(0);
+  });
+
+  it("le corpus de voix (listSentTexts) est strictement scopé par tenant", async () => {
+    const gA = gate(userA.id);
+    const gB = gate(userB.id);
+    const cA = await gA.contacts.create({ nom: "A" });
+    const cB = await gB.contacts.create({ nom: "B" });
+
+    await gA.messages.markSent(makeMarkSent(cA.id, { texte: "voix de A #1", generation: null }));
+    await gA.messages.markSent(makeMarkSent(cA.id, { texte: "voix de A #2", generation: null }));
+    await gB.messages.markSent(makeMarkSent(cB.id, { texte: "voix de B", generation: null }));
+
+    expect((await gA.messages.listSentTexts()).sort()).toEqual([
+      "voix de A #1",
+      "voix de A #2",
+    ]);
+    expect(await gB.messages.listSentTexts()).toEqual(["voix de B"]);
   });
 });

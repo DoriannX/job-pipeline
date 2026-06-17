@@ -38,6 +38,8 @@ import {
   saveDraft,
 } from "@/lib/offline/localStore";
 
+import { markSentAction } from "@/features/messages/send";
+
 import {
   loadComposerContextAction,
   type ComposerContext,
@@ -112,6 +114,8 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
 
   const [hydrated, setHydrated] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Envoi en cours (Marquer Envoyé) : verrouille le bouton le temps de l'écriture moat.
+  const [sending, setSending] = useState(false);
 
   // — État 3.3 : FSM + flux + résultat + transparence + détail tokens. —
   const [state, setState] = useState<ComposerState>("idle");
@@ -243,6 +247,40 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
       // Clipboard indisponible : on reste silencieux et doux (le texte demeure éditable).
+    }
+  }
+
+  // Marquer Envoyé (FR-21/FR-18 « Copier PUIS Marquer Envoyé », tous canaux). On
+  // n'envoie RIEN à un canal externe : on ENREGISTRE le Message (texte FIGÉ courant) +
+  // on instrumente le moat dans UNE transaction serveur (atomique). Le `lastEvent` (le
+  // GenerationEvent du dernier flux) est passé s'il existe, sinon `null` (texte tapé main).
+  // À succès : on efface le brouillon (immortel jusqu'ici), on ferme le composeur, et on
+  // laisse la fiche se rafraîchir (revalidatePath côté action). Échec = doux, champ gardé.
+  async function marquerEnvoye() {
+    if (sending) return;
+    if (text.trim().length === 0) return;
+
+    setSending(true);
+    setSoftError(null);
+    try {
+      const result = await markSentAction({
+        contactId,
+        texte: text,
+        canal,
+        event: lastEvent ?? null,
+      });
+      if (!result.ok) {
+        // Échec doux : message lisible, le texte reste éditable (aucune saisie perdue).
+        setSoftError(result.error);
+        setSending(false);
+        return;
+      }
+      // Succès : le brouillon a vécu, on l'efface (plus de fantôme), puis on ferme.
+      await deleteDraft(contactId).catch(() => {});
+      close();
+    } catch {
+      setSoftError("L'enregistrement a échoué. Réessaie dans un instant.");
+      setSending(false);
     }
   }
 
@@ -621,10 +659,21 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
                 type="button"
                 onClick={copier}
                 disabled={champVide}
-                className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-accent px-6 py-3 font-body text-button font-bold text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-70"
+                className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-surface-card px-4 py-3 font-body text-button font-bold text-ink outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-60"
               >
                 <Icon name="copy" size={20} />
                 Copier
+              </button>
+              {/* Marquer Envoyé : commit FINAL (FR-21). Primaire après Copier. Enregistre
+                  le Message + instrumente le moat ; aucun envoi sortant. */}
+              <button
+                type="button"
+                onClick={marquerEnvoye}
+                disabled={champVide || sending}
+                className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-accent px-6 py-3 font-body text-button font-bold text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-70"
+              >
+                <Icon name="check" size={20} />
+                {sending ? "Enregistrement…" : "Marquer Envoyé"}
               </button>
             </div>
           ) : (
@@ -640,6 +689,19 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
                 Copier
               </button>
               <div className="flex flex-wrap items-center gap-2">
+                {/* Marquer Envoyé : disponible dès que le champ est NON VIDE (tous canaux,
+                    génération facultative — un texte tapé main est aussi un Message). */}
+                {!champVide ? (
+                  <button
+                    type="button"
+                    onClick={marquerEnvoye}
+                    disabled={champVide || sending}
+                    className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-surface-card px-4 py-3 font-body text-button font-bold text-ink outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-60"
+                  >
+                    <Icon name="check" size={20} />
+                    {sending ? "…" : "Marquer Envoyé"}
+                  </button>
+                ) : null}
                 {/* Bouton INTELLIGENT (UX-DR8) : Améliorer apparaît dès que le champ est
                     NON VIDE — l'utilisateur fait retravailler son propre texte. */}
                 {!champVide ? (

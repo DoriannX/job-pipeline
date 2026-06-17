@@ -39,3 +39,11 @@ export {
   type SeedVoixRepository,
   type SeedVoix,
 } from "./voice-repositories";
+export {
+  messagesRepository,
+  type MessagesRepository,
+  type Message,
+  type GenerationEventRow,
+  type MarkSentInput,
+  type MarkSentGeneration,
+} from "./message-repositories";

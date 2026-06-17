@@ -8,7 +8,8 @@
 // IMPORTANT : `test_items` n'existe QUE dans la db de test. Le schéma de prod
 // (src/lib/db/schema.ts) reste à users + tables auth uniquement.
 
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -20,8 +21,15 @@ import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import * as prodSchema from "@/lib/db/schema";
 
 /** Ré-export du schéma de prod pour les tests (qui ne l'importent pas en direct). */
-export const { users, contacts, importJobs, mergeCandidates, seedVoix } =
-  prodSchema;
+export const {
+  users,
+  contacts,
+  importJobs,
+  mergeCandidates,
+  seedVoix,
+  messages,
+  generationEvents,
+} = prodSchema;
 
 const MIGRATIONS_DIR = fileURLToPath(
   new URL("../../drizzle", import.meta.url),
@@ -47,6 +55,24 @@ const DDL_TEST_ITEMS = `CREATE TABLE \`test_items\` (
 /** Schéma combiné prod + scaffolding, exposé au type Db de la porte. */
 export const testSchema = { ...prodSchema, testItems };
 
+// Dossiers temporaires créés par `makeTestDb`, nettoyés en bloc à la sortie du process
+// de test (chaque db est jetable ; on évite d'accumuler des fichiers entre les runs).
+const tempDirs: string[] = [];
+let cleanupRegistered = false;
+function registerCleanup(): void {
+  if (cleanupRegistered) return;
+  cleanupRegistered = true;
+  process.on("exit", () => {
+    for (const dir of tempDirs) {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // Best-effort : un fichier déjà supprimé / verrouillé n'est pas une erreur de test.
+      }
+    }
+  });
+}
+
 export type TestDb = LibSQLDatabase<typeof testSchema>;
 
 /** Découpe un fichier de migration Drizzle en instructions exécutables. */
@@ -58,13 +84,24 @@ function statementsOf(migrationSql: string): string[] {
 }
 
 /**
- * Crée une db libSQL en mémoire isolée, applique les migrations générées, puis
- * ajoute la table scaffolding `test_items`. Idempotent : chaque appel = une db
- * distincte (nom unique en mémoire), donc des tests parfaitement isolables.
+ * Crée une db libSQL ISOLÉE par appel, applique les migrations générées, puis ajoute
+ * la table scaffolding `test_items`. Chaque appel = une db distincte (fichier temporaire
+ * unique), donc des tests parfaitement isolables.
+ *
+ * POURQUOI un fichier temporaire et non `:memory:` : le client libSQL n'accepte le mode
+ * en mémoire que sous le nom FIXE `:memory:` (`cache=private` le rend connection-privé,
+ * `cache=shared` le partage entre TOUS les tests → isolation perdue). Or une TRANSACTION
+ * Drizzle (story 3.6) crée une connexion distincte qui, en mode privé, ne voit pas les
+ * tables. Un fichier temporaire unique résout les deux : isolation par fichier ET
+ * visibilité transactionnelle inter-connexions. Le fichier est nettoyé au démontage.
  */
 export async function makeTestDb(): Promise<TestDb> {
-  // Nom unique : chaque base ":memory:" nommée est indépendante.
-  const client = createClient({ url: "file::memory:?cache=private" });
+  // Dossier temporaire unique → fichier SQLite isolé, partagé entre connexions (tx OK).
+  registerCleanup();
+  const dir = mkdtempSync(path.join(tmpdir(), "plume-test-"));
+  tempDirs.push(dir);
+  const dbPath = path.join(dir, "test.db");
+  const client = createClient({ url: `file:${dbPath}` });
   const db = drizzle(client, { schema: testSchema });
 
   // Applique chaque migration générée, dans l'ordre du dossier drizzle/.
