@@ -294,6 +294,13 @@ export const messages = sqliteTable("messages", {
   envoyeAt: integer("envoye_at", { mode: "number" }),
   // Horodatage de création (epoch ms), posé via l'horloge injectée.
   createdAt: integer("created_at", { mode: "number" }),
+  // Jeton de VERSION pour le VERROU OPTIMISTE après envoi (story 3.7, AR-12). Epoch ms,
+  // posé à l'envoi (1er jeton = `envoye_at`) puis ré-écrit à CHAQUE édition via Modifier.
+  // L'autorité serveur sur `Sent` n'autorise `editSent` que si le jeton fourni ÉGALE
+  // celui en base (`WHERE updated_at = expectedUpdatedAt`) : une réédition concurrente
+  // (jeton périmé) matche 0 ligne → CONFLIT (409), aucune écriture. Nullable : ADD COLUMN
+  // rétro-compatible sur la table `messages` peuplée (jamais NOT NULL nu, cf. migration).
+  updatedAt: integer("updated_at", { mode: "number" }),
 });
 
 // --- generation_events : observabilité du moat (SM-1, archi l.80-84) --------

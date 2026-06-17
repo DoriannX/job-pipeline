@@ -160,8 +160,10 @@ describe("migration 0005 — rétro-compatible (CREATE TABLE only) sur base peup
     const client = createClient({ url: "file::memory:?cache=private" });
     const files = migrationFiles();
 
-    // État 3.5 : on applique tout SAUF 0005 (contacts déjà peuplé, dedup actif).
-    for (const f of files.filter((f) => !f.startsWith("0005"))) {
+    // État 3.5 : on applique tout ce qui PRÉCÈDE 0005 (contacts déjà peuplé, dedup actif).
+    // On borne strictement aux migrations antérieures : les migrations POSTÉRIEURES (0006+)
+    // dépendent des tables créées par 0005 et ne peuvent pas s'appliquer avant elle.
+    for (const f of files.filter((f) => f < "0005")) {
       await apply(client, f);
     }
     await client.execute(
@@ -202,5 +204,50 @@ describe("migration 0005 — rétro-compatible (CREATE TABLE only) sur base peup
     expect(evs.rows).toHaveLength(1);
     expect(Number(evs.rows[0].edit_distance)).toBeCloseTo(0.2, 5);
     expect(Number(evs.rows[0].tokens_input)).toBe(100);
+  });
+});
+
+describe("migration 0006 — ADD COLUMN nullable rétro-compatible (story 3.7)", () => {
+  it("ajoute messages.updated_at sur une table `messages` DÉJÀ PEUPLÉE, sans casse", async () => {
+    const client = createClient({ url: "file::memory:?cache=private" });
+    const files = migrationFiles();
+
+    // État 3.6 : on applique tout SAUF 0006 (messages existe SANS updated_at).
+    for (const f of files.filter((f) => !f.startsWith("0006"))) {
+      await apply(client, f);
+    }
+    await client.execute(
+      "INSERT INTO users (id, timezone, voix_ton) VALUES ('u1','Europe/Paris','neutre')",
+    );
+    await client.execute(
+      "INSERT INTO contacts (id, user_id, nom, source, dedup_key) VALUES ('c1','u1','Alice','manuel','name:alice|')",
+    );
+    // Un message envoyé PRÉ-EXISTANT (avant la migration) : pas d'updated_at encore.
+    await client.execute(
+      "INSERT INTO messages (id, user_id, contact_id, canal, texte, statut, envoye_at, created_at) VALUES ('m1','u1','c1','linkedin','Salut !','envoye',1700000000000,1700000000000)",
+    );
+
+    // 0006 = ADD COLUMN nullable : NE DOIT PAS échouer sur la table peuplée (rétro-compat).
+    const m0006 = files.find((f) => f.startsWith("0006"));
+    expect(m0006).toBeDefined();
+    await apply(client, m0006!);
+
+    // La ligne pré-existante est intacte ; son updated_at est NULL (colonne nullable).
+    const before = await client.execute(
+      "SELECT texte, statut, updated_at FROM messages WHERE id = 'm1'",
+    );
+    expect(before.rows).toHaveLength(1);
+    expect(String(before.rows[0].texte)).toBe("Salut !");
+    expect(String(before.rows[0].statut)).toBe("envoye");
+    expect(before.rows[0].updated_at).toBeNull();
+
+    // Une nouvelle ligne peut écrire updated_at (le verrou optimiste 3.7 l'utilise).
+    await client.execute(
+      "INSERT INTO messages (id, user_id, contact_id, canal, texte, statut, envoye_at, created_at, updated_at) VALUES ('m2','u1','c1','email','Coucou','envoye',1700000001000,1700000001000,1700000001000)",
+    );
+    const after = await client.execute(
+      "SELECT updated_at FROM messages WHERE id = 'm2'",
+    );
+    expect(Number(after.rows[0].updated_at)).toBe(1700000001000);
   });
 });

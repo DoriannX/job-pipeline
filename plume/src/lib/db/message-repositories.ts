@@ -12,7 +12,7 @@
 //   (c) met à jour `contacts.dernier_contact_at` → la froideur (Epic 2) devient vivante.
 // Si une seule de ces écritures échoue, la transaction est ANNULÉE (rollback total).
 
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 import { normalizedLevenshtein } from "../domain/edit-distance";
 import type { Canal } from "../domain/enums";
@@ -51,6 +51,31 @@ export type MarkSentGeneration = {
   tokens: { input: number; output: number };
 };
 
+/**
+ * Entrée de l'ÉDITION d'un Message envoyé (story 3.7) — la frontière du repository.
+ * `expectedUpdatedAt` est le JETON DE VERSION optimiste : l'édition n'est appliquée que
+ * si le `updated_at` en base lui est ÉGAL (sinon CONFLIT, 0 ligne, aucune écriture).
+ */
+export type EditSentInput = {
+  /** Id du Message à rouvrir (scopé au tenant par la porte). */
+  id: string;
+  /** Nouveau texte FIGÉ (déjà sanitizé en amont par l'action, AR-3). */
+  texte: string;
+  /** Jeton de version attendu : `updated_at` courant (porté côté client depuis la fiche). */
+  expectedUpdatedAt: number;
+};
+
+/**
+ * Résultat de `editSent` — l'autorité serveur sur `Sent` distingue trois issues :
+ *   • `ok` : l'édition a été appliquée (le Message porte le NOUVEAU `updated_at`) ;
+ *   • `conflict` : jeton périmé / réédition concurrente (0 ligne) → sémantique 409 ;
+ *   • `not-found` : aucun Message de ce tenant à cet id (porte scopée → invisible).
+ */
+export type EditSentResult =
+  | { status: "ok"; message: Message }
+  | { status: "conflict" }
+  | { status: "not-found" };
+
 /** Entrée de `markSent` — la frontière du repository (jamais `userId`, imposé par la porte). */
 export type MarkSentInput = {
   /** Contact destinataire. */
@@ -81,6 +106,19 @@ export type MessagesRepository = {
    * transaction scopée. Renvoie le Message créé.
    */
   markSent: (input: MarkSentInput) => Promise<Message>;
+  /**
+   * Lit UN Message scopé par son id (ou `null` si introuvable / d'un autre tenant).
+   * Sert à charger l'état courant + son jeton `updated_at` avant de rouvrir en édition.
+   */
+  getById: (id: string) => Promise<Message | null>;
+  /**
+   * ÉDITION d'un Message envoyé avec CONCURRENCE OPTIMISTE (story 3.7, AR-12). Met à jour
+   * `texte` + `updated_at` UNIQUEMENT si `updated_at = expectedUpdatedAt` (autorité serveur
+   * sur `Sent`). NE TOUCHE JAMAIS `generation_events`, `texte_genere`, `genere_par_ia` ni
+   * `statut` (reste 'envoye'). 0 ligne modifiée ⇒ CONFLIT (jeton périmé / réédition
+   * concurrente, 409) — aucune écriture. Un Message d'un autre tenant est invisible (porte).
+   */
+  editSent: (input: EditSentInput) => Promise<EditSentResult>;
 };
 
 /**
@@ -140,6 +178,9 @@ export function messagesRepository(scoped: ScopedDb): MessagesRepository {
           genereParIa: generation !== null,
           envoyeAt: ts,
           createdAt: ts,
+          // 1er jeton de version optimiste (story 3.7) = l'instant d'envoi. Toute
+          // édition ultérieure le ré-écrira ; `editSent` exige sa valeur courante.
+          updatedAt: ts,
         });
 
         // (b) SI génération : `generation_events` lié au message qu'on vient d'insérer.
@@ -173,6 +214,39 @@ export function messagesRepository(scoped: ScopedDb): MessagesRepository {
 
         return message;
       });
+    },
+
+    async getById(id) {
+      // Lecture scopée : un message d'un autre tenant est invisible (porte) → null.
+      const row = await scoped.findFirst(messages, eq(messages.id, id));
+      return row ?? null;
+    },
+
+    async editSent({ id, texte, expectedUpdatedAt }) {
+      const ts = now(scoped.now);
+
+      // VERROU OPTIMISTE (autorité serveur sur Sent, AR-12) : on n'écrit QUE si le jeton
+      // fourni égale celui en base. `update` est scopé au tenant (la porte ajoute
+      // `user_id = tenant`) ET filtré sur `id` + `updated_at = expectedUpdatedAt`. On ne
+      // pose QUE `texte` + `updated_at` : `generation_events`, `texte_genere`,
+      // `genere_par_ia`, `statut` (reste 'envoye') et `edit_distance` (figé à l'envoi)
+      // restent INTACTS — l'historique du moat ne bouge pas.
+      const updated = await scoped.update(
+        messages,
+        { texte, updatedAt: ts },
+        and(eq(messages.id, id), eq(messages.updatedAt, expectedUpdatedAt)),
+      );
+
+      if (updated.length > 0) {
+        // Une ligne modifiée : édition appliquée, le Message porte le NOUVEAU jeton.
+        return { status: "ok", message: updated[0] };
+      }
+
+      // 0 ligne : soit le Message n'existe pas (ou est d'un autre tenant) → introuvable,
+      // soit il existe mais son jeton diffère (réédition concurrente / jeton périmé) →
+      // CONFLIT (409). On distingue les deux par une lecture scopée de l'état courant.
+      const current = await scoped.findFirst(messages, eq(messages.id, id));
+      return current ? { status: "conflict" } : { status: "not-found" };
     },
   };
 }

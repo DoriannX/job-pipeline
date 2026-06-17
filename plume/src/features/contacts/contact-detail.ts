@@ -149,6 +149,14 @@ export type MessageTimelineItem = {
   at: number | null;
   /** Mise en avant visuelle (accent mauve) — vrai pour les Messages envoyés. */
   accent: boolean;
+  /**
+   * Jeton de version optimiste (story 3.7) : le `updated_at` courant du Message, porté
+   * jusqu'au wrapper d'édition (Modifier) pour servir d'`expectedUpdatedAt`. `null` si
+   * la colonne n'est pas encore peuplée (anciens messages d'avant la migration 0006).
+   */
+  updatedAt: number | null;
+  /** Vrai si le Message est ÉDITABLE via Modifier (au statut 'envoye' avec un jeton). */
+  editable: boolean;
 };
 
 /** Forme plate d'un Message reçue du serveur (sous-ensemble de la ligne `messages`). */
@@ -159,6 +167,8 @@ export type MessageTimelineInput = {
   texte: string;
   envoyeAt: number | null;
   createdAt: number | null;
+  /** Jeton de version optimiste (`messages.updated_at`) ; null si non peuplé. */
+  updatedAt: number | null;
 };
 
 /**
@@ -179,5 +189,10 @@ export function timelineItems(
     texte: m.texte,
     at: m.envoyeAt ?? m.createdAt ?? null,
     accent: m.statut === "envoye",
+    updatedAt: m.updatedAt,
+    // Un Message ENVOYÉ avec un jeton de version est rouvrable via Modifier (story 3.7).
+    // Sans jeton (ancien message d'avant la migration), on ne propose pas l'édition
+    // optimiste (aucun `expectedUpdatedAt` fiable) : il reste read-only, jamais cassé.
+    editable: m.statut === "envoye" && m.updatedAt !== null,
   }));
 }

@@ -43,6 +43,13 @@
       "when": 1781712369473,
       "tag": "0005_amused_vertigo",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1781713623661,
+      "tag": "0006_whole_pestilence",
+      "breakpoints": true
     }
   ]
 }
