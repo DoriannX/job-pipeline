@@ -70,7 +70,7 @@ development_status:
   3-1-composeur-en-flow-champ-unique-brouillon-immortel: done
   3-2-garantir-zero-tell-d-ia-sanitize: done
   3-3-generer-un-message-dans-la-voix-streaming: done
-  3-4-ameliorer-un-message-en-place: backlog
+  3-4-ameliorer-un-message-en-place: done
   3-5-seed-de-voix-optionnel-apprentissage-au-fil-de-l-eau: backlog
   3-6-marquer-envoye-enregistrer-le-message-instrumenter-le-moat-sm-1: backlog
   3-7-verrou-read-only-apres-envoye-modifier: backlog

@@ -1,6 +1,6 @@
 "use client";
 
-// ComposerSheet — bottom-sheet du Composeur (stories 3.1 + 3.3).
+// ComposerSheet — bottom-sheet du Composeur (stories 3.1 + 3.3 + 3.4).
 //
 // POINT DE MONTAGE UNIQUE : ce composant est monté UNE seule fois dans `(app)/layout.tsx`,
 // au-dessus des routes (jamais un onglet — overlay « en flow », FR-13). Il s'OUVRE quand
@@ -13,8 +13,10 @@
 // appendus dans le champ en direct, remplacement par le texte sanitizé final, FSM
 // `idle|generating|ok|error|offline` (plume « écrit », Reduce Motion respecté, spinner
 // INTERDIT, timeout doux 5 s), régénérer, pill de tokens (tappable), micro-ligne de
-// transparence API one-time, registre par défaut persistant. « Améliorer » est posé
-// (couture) mais NON câblé (pipeline = story 3.4). Pas de marquage « Envoyé » (3.6).
+// transparence API one-time, registre par défaut persistant.
+// PÉRIMÈTRE 3.4 (ajouté) : bouton intelligent « Améliorer » câblé (mode `improve`, même
+// flux/FSM que Générer — seule l'instruction du prompt change côté serveur) ; UNDO d'un
+// niveau (snapshot du texte d'avant + « Annuler l'amélioration »). Pas de « Envoyé » (3.6).
 //
 // La clé Claude reste server-only : ce composant ne fait que `fetch("/api/composer")`.
 
@@ -40,7 +42,7 @@ import {
   loadComposerContextAction,
   type ComposerContext,
 } from "./actions";
-import type { GenerationEvent, Tone } from "./generation";
+import type { GenerationEvent, GenerationMode, Tone } from "./generation";
 import { streamGeneration } from "./stream-client";
 import {
   getDefaultTone,
@@ -114,6 +116,11 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
   // — État 3.3 : FSM + flux + résultat + transparence + détail tokens. —
   const [state, setState] = useState<ComposerState>("idle");
   const [softError, setSoftError] = useState<string | null>(null);
+  // UNDO d'amélioration (AR-12, story 3.4) : snapshot du texte AVANT qu'« Améliorer »
+  // ne le remplace. `null` ⇒ pas d'undo disponible. Un SEUL niveau d'undo. On le vide
+  // dès qu'il devient caduc : fermeture/changement de contact (remontage via `key`),
+  // nouvelle frappe manuelle, génération, ou nouvelle amélioration.
+  const [undoSnapshot, setUndoSnapshot] = useState<string | null>(null);
   // GenerationEvent du dernier flux réussi — CONSERVÉ pour l'envoi (story 3.6).
   const [lastEvent, setLastEvent] = useState<GenerationEvent | null>(null);
   const [showApiNotice, setShowApiNotice] = useState(false);
@@ -239,100 +246,150 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
     }
   }
 
-  // — GÉNÉRATION (cœur 3.3). Le champ reste la SOURCE DE VÉRITÉ : on y APPEND les deltas
-  // en direct, puis on REMPLACE par le texte sanitizé final. Toute erreur = message doux,
-  // champ inchangé. Hors-ligne = on ne lance même pas (Générer grisé). —
-  const generer = useCallback(() => {
-    if (!online) {
-      setState("offline");
-      setSoftError(
-        "Tu es hors-ligne : la génération reprendra dès le retour du réseau. Ton texte reste éditable.",
-      );
-      return;
-    }
-    if (text.trim().length === 0) return;
-
-    // Transparence API one-time (FR-32) : à la 1re génération seulement.
-    if (!hasSeenApiNotice()) {
-      setShowApiNotice(true);
-      markApiNoticeSeen();
-    }
-
-    // Annule un éventuel flux précédent (régénérer).
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setState("generating");
-    setSoftError(null);
-    setShowTokenDetail(false);
-    setLastEvent(null);
-
-    // Le champ devient le réceptacle du flux : on le vide pour accueillir les deltas.
-    const idea = text;
-    setText("");
-
-    // Timeout DOUX 1er token : si rien n'arrive sous 5 s, message doux (pas d'annulation
-    // du flux — il peut encore aboutir ; on prévient juste l'attente muette).
-    timeoutRef.current = setTimeout(() => {
-      setSoftError(
-        "C'est un peu long… la plume réfléchit. Tu peux patienter ou réessayer.",
-      );
-    }, FIRST_TOKEN_TIMEOUT_MS);
-
-    const clearTimer = () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
+  // — FLUX EN PLACE (cœur 3.3, factorisé pour 3.4). Le champ reste la SOURCE DE VÉRITÉ :
+  // on y APPEND les deltas en direct, puis on REMPLACE par le texte sanitizé final. Toute
+  // erreur = message doux + restauration du texte d'entrée (AUCUNE saisie perdue, FR-7).
+  // Hors-ligne = on ne lance même pas (boutons grisés). Le `mode` choisit la recette :
+  //   - `generate` : `text` = idée brute à mettre en forme (Générer/Régénérer) ;
+  //   - `improve`  : `text` = message à retravailler en place (Améliorer), avec UNDO. —
+  const runStream = useCallback(
+    (mode: GenerationMode) => {
+      if (!online) {
+        setState("offline");
+        setSoftError(
+          mode === "improve"
+            ? "Tu es hors-ligne : l'amélioration reprendra dès le retour du réseau. Ton texte reste éditable."
+            : "Tu es hors-ligne : la génération reprendra dès le retour du réseau. Ton texte reste éditable.",
+        );
+        return;
       }
-    };
+      if (text.trim().length === 0) return;
 
-    void streamGeneration(
-      { idea, canal, tone },
-      {
-        onFirstDelta: () => {
-          clearTimer();
-          setSoftError(null);
-        },
-        onDelta: (delta) => {
-          if (controller.signal.aborted) return;
-          setText((prev) => prev + delta);
-        },
-        onDone: ({ text: finalText, event }) => {
-          if (controller.signal.aborted) return;
-          clearTimer();
-          // Cas rare : rien d'exploitable n'est revenu (vide après sanitize). On ne
-          // laisse pas un cul-de-sac muet : message doux + idée brute restaurée (FR-7).
-          if (finalText.trim().length === 0) {
-            setText(idea);
-            setSoftError("Rien n'est revenu cette fois. Réessaie ?");
+      // Transparence API one-time (FR-32) : à la 1re sollicitation de l'API seulement
+      // (génération OU amélioration — même point de contact).
+      if (!hasSeenApiNotice()) {
+        setShowApiNotice(true);
+        markApiNoticeSeen();
+      }
+
+      // Annule un éventuel flux précédent (régénérer/réaméliorer).
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      // UNDO (AR-12) : en mode `improve`, on SNAPSHOTE le texte d'avant AVANT de toucher
+      // au champ — l'utilisateur pourra restaurer exactement la version précédente. En
+      // mode `generate`, pas d'undo d'amélioration : on purge un éventuel snapshot caduc.
+      const input = text;
+      setUndoSnapshot(mode === "improve" ? input : null);
+
+      setState("generating");
+      setSoftError(null);
+      setShowTokenDetail(false);
+      setLastEvent(null);
+
+      // Le champ devient le réceptacle du flux : on le vide pour accueillir les deltas.
+      setText("");
+
+      // Timeout DOUX 1er token : si rien n'arrive sous 5 s, message doux (pas d'annulation
+      // du flux — il peut encore aboutir ; on prévient juste l'attente muette).
+      timeoutRef.current = setTimeout(() => {
+        setSoftError(
+          "C'est un peu long… la plume réfléchit. Tu peux patienter ou réessayer.",
+        );
+      }, FIRST_TOKEN_TIMEOUT_MS);
+
+      const clearTimer = () => {
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+          timeoutRef.current = null;
+        }
+      };
+
+      void streamGeneration(
+        { idea: input, canal, tone, mode },
+        {
+          onFirstDelta: () => {
+            clearTimer();
+            setSoftError(null);
+          },
+          onDelta: (delta) => {
+            if (controller.signal.aborted) return;
+            setText((prev) => prev + delta);
+          },
+          onDone: ({ text: finalText, event }) => {
+            if (controller.signal.aborted) return;
+            clearTimer();
+            // Cas rare : rien d'exploitable n'est revenu (vide après sanitize). On ne
+            // laisse pas un cul-de-sac muet : message doux + texte d'entrée restauré (FR-7).
+            // L'undo devient caduc (le texte d'avant est déjà de retour dans le champ).
+            if (finalText.trim().length === 0) {
+              setText(input);
+              setUndoSnapshot(null);
+              setSoftError("Rien n'est revenu cette fois. Réessaie ?");
+              setState("error");
+              return;
+            }
+            // REMPLACEMENT par le texte sanitizé final (le champ redevient autoritaire).
+            setText(finalText);
+            setLastEvent(event);
+            setState("ok");
+          },
+          onError: (message) => {
+            if (controller.signal.aborted) return;
+            clearTimer();
+            // Échec doux : on restaure le texte d'entrée (AUCUNE saisie perdue, FR-7).
+            // L'undo devient caduc (rien n'a remplacé le texte).
+            setText((prev) => (prev.length === 0 ? input : prev));
+            setUndoSnapshot(null);
+            setSoftError(message);
             setState("error");
-            return;
-          }
-          // REMPLACEMENT par le texte sanitizé final (le champ redevient autoritaire).
-          setText(finalText);
-          setLastEvent(event);
-          setState("ok");
+          },
         },
-        onError: (message) => {
-          if (controller.signal.aborted) return;
-          clearTimer();
-          // Échec doux : on restaure l'idée brute dans le champ (AUCUNE saisie perdue, FR-7).
-          setText((prev) => (prev.length === 0 ? idea : prev));
-          setSoftError(message);
-          setState("error");
-        },
-      },
-      controller.signal,
-    );
-  }, [text, canal, tone, online]);
+        controller.signal,
+      );
+    },
+    [text, canal, tone, online],
+  );
+
+  // Générer / Régénérer (story 3.3) et Améliorer (story 3.4) : même flux, mode distinct.
+  const generer = useCallback(() => runStream("generate"), [runStream]);
+  const ameliorer = useCallback(() => runStream("improve"), [runStream]);
+
+  // UNDO d'amélioration (AR-12) : restaure EXACTEMENT le texte d'avant l'amélioration,
+  // puis retire l'offre d'undo (un seul niveau). On repasse en `idle` : le résultat
+  // restauré reste éditable, mais ce n'est plus « un texte fraîchement amélioré ».
+  const annulerAmelioration = useCallback(() => {
+    if (undoSnapshot === null) return;
+    abortRef.current?.abort();
+    setText(undoSnapshot);
+    setUndoSnapshot(null);
+    setLastEvent(null);
+    setShowTokenDetail(false);
+    setSoftError(null);
+    setState("idle");
+  }, [undoSnapshot]);
+
+  // Frappe MANUELLE dans le champ : invalide l'undo (le texte d'avant n'est plus le bon
+  // point de retour dès que l'utilisateur édite). Les deltas du flux passent par
+  // `setText` directement (pas par ce handler), donc le snapshot survit au streaming.
+  const onTextChange = useCallback((value: string) => {
+    setText(value);
+    setUndoSnapshot(null);
+  }, []);
 
   const nom = context?.nom ?? "ce contact";
   const generating = state === "generating";
   const champVide = text.trim().length === 0;
-  // Générer grisé : pendant la génération, champ vide, ou hors-ligne.
+  // Générer/Améliorer grisés : pendant un flux, champ vide, ou hors-ligne.
   const generateDisabled = generating || champVide || !online;
+  // Bouton INTELLIGENT (UX-DR8) : Améliorer est accessible dès que le champ est NON VIDE
+  // — l'utilisateur peut faire retravailler un texte qu'il a écrit lui-même, sans passer
+  // par une génération. Mêmes gardes que Générer (flux/vide/hors-ligne).
+  const improveDisabled = generateDisabled;
   const showResultActions = state === "ok" && lastEvent !== null && !champVide;
+  // Offre d'undo : un snapshot existe et aucun flux n'est en cours.
+  const canUndo = undoSnapshot !== null && !generating;
 
   return (
     <div
@@ -452,7 +509,7 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
           <textarea
             ref={textareaRef}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => onTextChange(e.target.value)}
             rows={7}
             placeholder="Écris ton idée, ou touche Générer…"
             className="w-full resize-none rounded-button border-[length:--border-width-ink] border-ink bg-surface-note px-4 py-3 font-body text-body text-ink caret-accent outline-accent outline-offset-2 placeholder:text-ink-hint focus-visible:outline-2"
@@ -513,7 +570,7 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
         ) : null}
 
         {/* — ACTIONS. Avant génération : Générer (primaire). Après succès : Copier +
-            Améliorer (couture 3.4, non câblé) + Régénérer + Copier. — */}
+            Améliorer (câblé, mode `improve`) + Régénérer. — */}
         <div className="flex flex-col gap-3">
           <span
             role="status"
@@ -523,15 +580,29 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
             {copied ? "Copié" : ""}
           </span>
 
-          {showResultActions ? (
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {/* Améliorer : VISIBLE, pipeline = story 3.4 (couture). Désactivé ici. */}
+          {/* — UNDO d'amélioration (AR-12) : un seul niveau, restaure le texte d'avant.
+              Visible dès qu'un snapshot existe (post-amélioration), hors flux. — */}
+          {canUndo ? (
+            <div className="flex items-center justify-end">
               <button
                 type="button"
-                disabled
-                aria-disabled="true"
-                title="Bientôt : retravaille ton texte (story 3.4)"
-                className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-line bg-surface-card px-4 py-3 font-body text-button font-bold text-ink-soft opacity-60"
+                onClick={annulerAmelioration}
+                className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-line bg-surface-card px-4 py-2 font-body text-label font-bold text-ink-soft outline-accent outline-offset-2 focus-visible:outline-2"
+              >
+                <Icon name="arrow-down" size={16} />
+                Annuler l&apos;amélioration
+              </button>
+            </div>
+          ) : null}
+
+          {showResultActions ? (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {/* Améliorer : retravaille le texte courant en place (story 3.4). */}
+              <button
+                type="button"
+                onClick={ameliorer}
+                disabled={improveDisabled}
+                className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-surface-card px-4 py-3 font-body text-button font-bold text-ink outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-60"
               >
                 <Icon name="double-sparkle" size={20} />
                 Améliorer
@@ -568,16 +639,31 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
                 <Icon name="copy" size={20} />
                 Copier
               </button>
-              {/* Générer : primaire. Grisé pendant génération / champ vide / hors-ligne. */}
-              <button
-                type="button"
-                onClick={generer}
-                disabled={generateDisabled}
-                className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-accent px-6 py-3 font-body text-button font-bold text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-70"
-              >
-                <Icon name="sparkle" size={20} />
-                {generating ? "Génération…" : "Générer"}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Bouton INTELLIGENT (UX-DR8) : Améliorer apparaît dès que le champ est
+                    NON VIDE — l'utilisateur fait retravailler son propre texte. */}
+                {!champVide ? (
+                  <button
+                    type="button"
+                    onClick={ameliorer}
+                    disabled={improveDisabled}
+                    className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-surface-card px-4 py-3 font-body text-button font-bold text-ink outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-60"
+                  >
+                    <Icon name="double-sparkle" size={20} />
+                    {generating ? "…" : "Améliorer"}
+                  </button>
+                ) : null}
+                {/* Générer : primaire. Grisé pendant flux / champ vide / hors-ligne. */}
+                <button
+                  type="button"
+                  onClick={generer}
+                  disabled={generateDisabled}
+                  className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-accent px-6 py-3 font-body text-button font-bold text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-70"
+                >
+                  <Icon name="sparkle" size={20} />
+                  {generating ? "Génération…" : "Générer"}
+                </button>
+              </div>
             </div>
           )}
         </div>

@@ -96,6 +96,50 @@ describe("claude.server — paramètres interdits (un écart = 400 runtime)", ()
     expect(args).toHaveProperty("system");
     expect(args).toHaveProperty("messages");
   });
+
+  it("mode improve : toujours AUCUN temperature/thinking (mêmes paramètres que generate)", async () => {
+    await generateMessage({ ...baseInput, tone: "soigne", mode: "improve" }, () => {});
+    const args = calls[0];
+    expect(args).not.toHaveProperty("temperature");
+    expect(args).not.toHaveProperty("top_p");
+    expect(args).not.toHaveProperty("top_k");
+    expect(args).not.toHaveProperty("thinking");
+  });
+});
+
+// Helper : extrait le texte du 1er tour utilisateur passé au SDK (pour vérifier que le
+// mode a bien atteint buildPrompt).
+function userText(args: StreamArgs): string {
+  const messages = args.messages as { role: string; content: unknown }[];
+  const first = messages[0];
+  return typeof first.content === "string"
+    ? first.content
+    : JSON.stringify(first.content);
+}
+
+describe("claude.server — mode improve (story 3.4)", () => {
+  it("sélectionne le bon modèle selon le tone (rapide→haiku, soigne→opus)", async () => {
+    await generateMessage({ ...baseInput, tone: "rapide", mode: "improve" }, () => {});
+    expect(calls[0].model).toBe("claude-haiku-4-5");
+    calls.length = 0;
+    await generateMessage({ ...baseInput, tone: "soigne", mode: "improve" }, () => {});
+    expect(calls[0].model).toBe("claude-opus-4-8");
+  });
+
+  it("le mode atteint buildPrompt : le tour user demande de RETRAVAILLER en place", async () => {
+    await generateMessage({ ...baseInput, tone: "rapide", mode: "improve" }, () => {});
+    const t = userText(calls[0]);
+    expect(t).toMatch(/retravaille/i);
+    expect(t).toMatch(/en place/i);
+    expect(t).toContain(baseInput.idea);
+  });
+
+  it("default (sans mode) = generate : mise en forme d'une idée brute", async () => {
+    await generateMessage({ ...baseInput, tone: "rapide" }, () => {});
+    const t = userText(calls[0]);
+    expect(t).toMatch(/idée brute/i);
+    expect(t).not.toMatch(/retravaille/i);
+  });
 });
 
 describe("claude.server — streaming & usage", () => {

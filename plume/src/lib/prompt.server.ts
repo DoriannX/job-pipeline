@@ -27,8 +27,22 @@ import type { Canal } from "@/lib/domain/enums";
  * (3.6). À INCRÉMENTER à chaque changement OBSERVABLE de la fabrication du prompt
  * (instructions, régimes de longueur, format du few-shot). Un entier se compare et
  * s'indexe trivialement, et trace sans ambiguïté quelle recette a produit un texte.
+ *
+ * v2 (story 3.4) : introduction du `mode` (`generate` | `improve`). Le mode fait partie
+ * de la RECETTE — le tour utilisateur diffère de façon OBSERVABLE entre les deux —, donc
+ * on incrémente. Le préfixe stable (système + few-shot, cachable) reste IDENTIQUE.
  */
-export const PROMPT_VERSION = 1;
+export const PROMPT_VERSION = 2;
+
+/**
+ * Mode de fabrication du tour utilisateur (story 3.4).
+ *   - `generate` : mettre en forme une IDÉE BRUTE dans la voix (story 3.3) ;
+ *   - `improve`  : RETRAVAILLER EN PLACE un texte déjà écrit par l'utilisateur, sans
+ *                  imposer de ton étranger (FR-8, UX-DR8).
+ * Le `system`/few-shot (préfixe cachable) est le MÊME pour les deux : seule l'INSTRUCTION
+ * du tour utilisateur change.
+ */
+export type PromptMode = "generate" | "improve";
 
 /** Contexte volatil minimal du contact (suffixe non cachable). Optionnel. */
 export interface PromptContactContext {
@@ -38,7 +52,12 @@ export interface PromptContactContext {
 
 /** Ingrédients de construction du prompt. */
 export interface BuildPromptInput {
-  /** Idée brute saisie par l'utilisateur (le « quoi dire »). */
+  /**
+   * Texte d'entrée. En mode `generate` : l'IDÉE BRUTE à mettre en forme. En mode
+   * `improve` : le MESSAGE déjà écrit par l'utilisateur à retravailler en place. Le
+   * champ est réutilisé tel quel (le mode décide comment il est interprété) — c'est le
+   * même flux serveur que 3.3, seule l'instruction change.
+   */
   idea: string;
   /** Canal ciblé — pilote le régime de longueur (FR-9). */
   canal: Canal;
@@ -47,6 +66,11 @@ export interface BuildPromptInput {
    * l'instant (corpus 3.5 non encore constitué) → ton neutre, jamais d'échec.
    */
   voiceExamples: string[];
+  /**
+   * Mode de fabrication du tour utilisateur (story 3.4). Défaut `generate` pour
+   * compatibilité avec 3.3 (les appelants existants n'ont rien à changer).
+   */
+  mode?: PromptMode;
   /** Contexte contact volatil (nom). Optionnel. */
   contact?: PromptContactContext;
 }
@@ -139,8 +163,11 @@ function buildFewShotBlock(voiceExamples: string[]): string {
  * `messages` (tour utilisateur), APRÈS le breakpoint — il ne casse pas le cache.
  */
 export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
-  const { idea, canal, voiceExamples, contact } = input;
+  const { idea, canal, voiceExamples, contact, mode = "generate" } = input;
 
+  // PRÉFIXE STABLE/CACHABLE — IDENTIQUE pour `generate` et `improve` (même voix, même
+  // Liste noire des Tells, même few-shot). Le mode ne touche JAMAIS au système : on
+  // préserve la césure du cache et la persona.
   const system: Anthropic.TextBlockParam[] = [
     { type: "text", text: SYSTEME_VOIX_BASE },
     {
@@ -151,17 +178,27 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
     },
   ];
 
-  // Suffixe VOLATIL — assemblé dans le tour utilisateur, hors du préfixe caché.
+  // Suffixe VOLATIL — assemblé dans le tour utilisateur, hors du préfixe caché. La
+  // contrainte canal-aware (FR-9) s'applique IDENTIQUEMENT aux deux modes ; seule
+  // l'instruction sur le texte (« mettre en forme » vs « retravailler en place ») change.
   const contrainteCanal = CONTRAINTE_CANAL[canal];
   const adresse = contact?.nom?.trim()
     ? `Tu écris à ${contact.nom.trim()}.\n`
     : "";
 
-  const userText =
-    `${contrainteCanal}\n\n` +
-    `${adresse}` +
-    `Idée brute à mettre en forme dans la voix de l'utilisateur :\n` +
-    `"""\n${idea}\n"""`;
+  const consigne =
+    mode === "improve"
+      ? // AMÉLIORER (FR-8, UX-DR8) : retravail EN PLACE, sans ton étranger.
+        "Voici un message DÉJÀ écrit par l'utilisateur. Retravaille-le EN PLACE : garde " +
+        "SES idées et SA voix, n'impose AUCUN ton étranger. Rends-le plus net et plus " +
+        "naturel, et adapte-le au canal (contrainte ci-dessus). Ne change pas le fond, " +
+        "ne rallonge pas inutilement.\n\n" +
+        `Message à retravailler :\n"""\n${idea}\n"""`
+      : // GÉNÉRER (story 3.3) : mise en forme d'une idée brute.
+        "Idée brute à mettre en forme dans la voix de l'utilisateur :\n" +
+        `"""\n${idea}\n"""`;
+
+  const userText = `${contrainteCanal}\n\n${adresse}${consigne}`;
 
   const messages: Anthropic.MessageParam[] = [
     { role: "user", content: userText },
