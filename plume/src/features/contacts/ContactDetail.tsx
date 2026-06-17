@@ -16,6 +16,7 @@ import { Icon } from "@/design/icons";
 import { Plume } from "@/design/illustration/Plume";
 
 import { MessageCardActions } from "@/features/messages/MessageCardActions";
+import { MessageStatusButton } from "@/features/messages/MessageStatusButton";
 
 import { ContactDetailActions } from "./ContactDetailActions";
 import { channelChips, type ContactDetailView } from "./contact-detail";
@@ -129,8 +130,16 @@ export function ContactDetail({ contact }: ContactDetailProps) {
                       msg.accent ? "text-accent-deep" : "text-ink-soft"
                     }`}
                   >
-                    {msg.canalLabel} · {msg.statutLabel}
+                    {msg.canalLabel} ·{" "}
                   </span>
+                  {/* Pastille de statut TAPPABLE (story 3.8) : ouvre le mini-sheet des
+                      transitions légales. Statut terminal/brouillon ⇒ pastille statique. */}
+                  <MessageStatusButton
+                    messageId={msg.id}
+                    statutLabel={msg.statutLabel}
+                    options={msg.statutOptions}
+                    accent={msg.accent}
+                  />
                   {msg.at !== null ? (
                     <time
                       dateTime={new Date(msg.at).toISOString()}

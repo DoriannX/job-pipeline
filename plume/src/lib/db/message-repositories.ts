@@ -15,7 +15,8 @@
 import { and, desc, eq } from "drizzle-orm";
 
 import { normalizedLevenshtein } from "../domain/edit-distance";
-import type { Canal } from "../domain/enums";
+import type { Canal, MessageStatut } from "../domain/enums";
+import { canTransition } from "../domain/message-status";
 import { now } from "../domain/time";
 import { contacts, generationEvents, messages } from "./schema";
 import type { ScopedDb } from "./scoped";
@@ -76,6 +77,29 @@ export type EditSentResult =
   | { status: "conflict" }
   | { status: "not-found" };
 
+/**
+ * Entrée d'une TRANSITION DE STATUT (story 3.8) — la frontière du repository. On ne porte
+ * QUE l'id (scopé par la porte) et le statut CIBLE ; le statut courant est relu en base
+ * (autorité serveur sur la machine à états AR-5). Jamais `userId` : imposé par la porte.
+ */
+export type SetStatusInput = {
+  /** Id du Message dont on fait évoluer le statut (scopé au tenant par la porte). */
+  id: string;
+  /** Statut CIBLE de la transition (validé légal côté repository contre l'état courant). */
+  statut: MessageStatut;
+};
+
+/**
+ * Résultat de `setStatus` — la transition de la machine à états (AR-5) distingue :
+ *   • `ok` : transition LÉGALE appliquée (le Message porte le nouveau `statut` + `updated_at`) ;
+ *   • `illegal` : transition INTERDITE par la machine (ex. `repondu → vu`) — AUCUNE écriture ;
+ *   • `not-found` : aucun Message de ce tenant à cet id (porte scopée → invisible).
+ */
+export type SetStatusResult =
+  | { status: "ok"; message: Message }
+  | { status: "illegal" }
+  | { status: "not-found" };
+
 /** Entrée de `markSent` — la frontière du repository (jamais `userId`, imposé par la porte). */
 export type MarkSentInput = {
   /** Contact destinataire. */
@@ -119,6 +143,18 @@ export type MessagesRepository = {
    * concurrente, 409) — aucune écriture. Un Message d'un autre tenant est invisible (porte).
    */
   editSent: (input: EditSentInput) => Promise<EditSentResult>;
+  /**
+   * TRANSITION DE STATUT de la machine à états (story 3.8, AR-5). Relit le statut COURANT
+   * (scopé) et n'écrit QUE si `canTransition(courant, cible)` ; sinon `illegal` (aucune
+   * écriture). Sur succès, pose `statut = <cible>` + `updated_at = now` (et RIEN d'autre :
+   * `texte`, `texte_genere`, `genere_par_ia`, `generation_events` restent INTACTS). Un
+   * Message d'un autre tenant est invisible (porte) → `not-found`.
+   *
+   * COUTURE RELANCE (Epic 4) : marquer `repondu`/`ignore` est le SIGNAL qui clôturera la
+   * Relance associée ; ici on se borne à écrire le statut + le `updated_at` (le timestamp
+   * que les Relances liront). La fermeture de la Relance N'EST PAS implémentée (hors 3.8).
+   */
+  setStatus: (input: SetStatusInput) => Promise<SetStatusResult>;
 };
 
 /**
@@ -247,6 +283,35 @@ export function messagesRepository(scoped: ScopedDb): MessagesRepository {
       // CONFLIT (409). On distingue les deux par une lecture scopée de l'état courant.
       const current = await scoped.findFirst(messages, eq(messages.id, id));
       return current ? { status: "conflict" } : { status: "not-found" };
+    },
+
+    async setStatus({ id, statut }) {
+      // PORTE SCOPÉE : on relit l'état COURANT (un Message d'un autre tenant est invisible
+      // → not-found, jamais de fuite). C'est la source du statut de départ de la machine.
+      const current = await scoped.findFirst(messages, eq(messages.id, id));
+      if (!current) {
+        return { status: "not-found" };
+      }
+
+      // AUTORITÉ MACHINE À ÉTATS (AR-5) : la transition courant → cible doit être LÉGALE.
+      // Sinon : refus net, AUCUNE écriture (le statut et `updated_at` ne bougent pas).
+      if (!canTransition(current.statut, statut)) {
+        return { status: "illegal" };
+      }
+
+      // Transition légale : on pose le NOUVEAU statut + on fait AVANCER `updated_at`
+      // (cohérent avec le verrou optimiste 3.7 ; c'est aussi le timestamp que les Relances
+      // liront en Epic 4). On ne touche RIEN d'autre — `texte`, `texte_genere`,
+      // `genere_par_ia` et les `generation_events` du moat restent INTACTS. Update scopé.
+      const ts = now(scoped.now);
+      const updated = await scoped.update(
+        messages,
+        { statut, updatedAt: ts },
+        eq(messages.id, id),
+      );
+
+      // L'update scopé matche la ligne relue ci-dessus (même tenant, même id) : 1 ligne.
+      return { status: "ok", message: updated[0] };
     },
   };
 }
