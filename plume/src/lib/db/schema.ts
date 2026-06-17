@@ -13,12 +13,13 @@ import { createId } from "@paralleldrive/cuid2";
 import {
   integer,
   primaryKey,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
-import type { Canal, Source } from "../domain/enums";
+import type { Canal, MessageStatut, Source } from "../domain/enums";
 import { SOURCE_DEFAUT } from "../domain/enums";
 
 // --- users : colonnes adaptateur Auth.js + colonnes domaine Plume ---
@@ -247,6 +248,101 @@ export const seedVoix = sqliteTable("seed_voix", {
     .references(() => users.id, { onDelete: "cascade" }),
   // Texte de l'amorce — déjà sanitizé À L'IMPORT (jamais re-nettoyé à la lecture).
   texte: text("texte").notNull(),
+  // Horodatage de création (epoch ms), posé via l'horloge injectée.
+  createdAt: integer("created_at", { mode: "number" }),
+});
+
+// --- messages : un Message tracé du Contact (Epic 3, story 3.6) -------------
+// Table SCOPÉE par tenant : `user_id` borne chaque Message à son propriétaire (invariant
+// n°1 / AR-2, AR-13). Un Message = la sortie FIGÉE d'une rédaction (générée-éditée OU
+// tapée main), marquée Envoyé. Le `texte` est la sortie sanitizée FINALE (l'éditée si
+// retouchée à la main) ; `texte_genere` garde la sortie IA AVANT édition pour SM-1.
+//
+// MACHINE À ÉTATS (AR-5) : la story 3.6 n'écrit que `brouillon → envoye` (Marquer Envoyé,
+// `envoye_at` posé). Les états `vu`/`repondu`/`ignore` et les timestamps que les Relances
+// CONSOMMERONT (Epic 4 / story 3.8) sont conçus dès maintenant — l'union `MessageStatut`
+// est complète, stockée en `text` NON traduit (libellé FR dans `lib/copy.ts`).
+//
+// Conventions : colonnes SQL en snake_case ; PK `id` = cuid2 opaque ; temps en epoch ms
+// (number) injecté par l'horloge applicative (jamais Date.now() en dur).
+export const messages = sqliteTable("messages", {
+  // PK opaque cuid2 — généré côté app.
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  // Frontière tenant : NOT NULL, référence users (cascade quand le user disparaît).
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  // Contact destinataire — NOT NULL, référence contacts (cascade quand le contact disparaît).
+  contactId: text("contact_id")
+    .notNull()
+    .references(() => contacts.id, { onDelete: "cascade" }),
+  // Canal utilisé (union métier `@/lib/domain/enums`) — LinkedIn / E-mail / WhatsApp / SMS.
+  canal: text("canal").$type<Canal>().notNull(),
+  // Texte FIGÉ = sortie sanitizée finale (l'éditée si retouchée à la main). NOT NULL (AR-5).
+  texte: text("texte").notNull(),
+  // Sortie IA AVANT édition (pour la distance d'édition SM-1) ; NULL si tapé main.
+  texteGenere: text("texte_genere"),
+  // Statut dans la machine à états — défaut 'brouillon' ; 3.6 le passe à 'envoye'.
+  statut: text("statut").$type<MessageStatut>().notNull().default("brouillon"),
+  // Le Message a-t-il été produit par l'IA ? (booléen SQLite = integer 0/1).
+  genereParIa: integer("genere_par_ia", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  // Horodatage d'envoi (epoch ms) ; NULL tant qu'au statut 'brouillon'.
+  envoyeAt: integer("envoye_at", { mode: "number" }),
+  // Horodatage de création (epoch ms), posé via l'horloge injectée.
+  createdAt: integer("created_at", { mode: "number" }),
+});
+
+// --- generation_events : observabilité du moat (SM-1, archi l.80-84) --------
+// Table SCOPÉE par tenant. Un événement de génération est écrit TRANSACTIONNELLEMENT
+// AVEC l'envoi (jamais un log async ratable, archi l.82) — uniquement quand une
+// génération IA a eu lieu (un Message tapé main n'en produit pas). Il capture, dans le
+// MÊME enregistrement, la qualité du moat (`edit_distance` = distance d'édition
+// généré→envoyé, SM-1) ET le coût (`tokens_*`) — les deux faces de la même donnée.
+//
+// L'écart d'édition est IMPOSSIBLE à rétro-calculer s'il n'est pas gardé dès J1 : d'où
+// la capture transactionnelle. Les champs versionnés (`prompt_version`, `model_id`,
+// `sanitize_version`) rendent l'historique de génération reconstructible a posteriori.
+export const generationEvents = sqliteTable("generation_events", {
+  // PK opaque cuid2 — généré côté app.
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  // Frontière tenant : NOT NULL, référence users (cascade).
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  // Message produit par cette génération — référence messages (cascade).
+  messageId: text("message_id")
+    .notNull()
+    .references(() => messages.id, { onDelete: "cascade" }),
+  // Contact concerné (traçabilité ; redondant avec le message mais pratique à requêter).
+  contactId: text("contact_id")
+    .notNull()
+    .references(() => contacts.id, { onDelete: "cascade" }),
+  // Texte GÉNÉRÉ (sortie IA sanitizée, avant édition éventuelle).
+  generated: text("generated").notNull(),
+  // Texte ENVOYÉ (sortie FIGÉE finale = `messages.texte`).
+  sent: text("sent").notNull(),
+  // Distance d'édition NORMALISÉE généré→envoyé ∈ [0,1] (métrique SM-1). REAL (fractionnaire).
+  editDistance: real("edit_distance").notNull(),
+  // Idée brute saisie par l'utilisateur (avant génération) — `raw_intent`.
+  rawIntent: text("raw_intent").notNull(),
+  // Version du prompt ayant servi (reconstructibilité du moat).
+  promptVersion: integer("prompt_version", { mode: "number" }).notNull(),
+  // Id EXACT du modèle Claude qui a produit le texte.
+  modelId: text("model_id").notNull(),
+  // Références (JSON) des exemples de voix injectés (ids seeds et/ou messages).
+  voiceExamplesRef: text("voice_examples_ref"),
+  // Version du nettoyage `sanitize()` appliqué.
+  sanitizeVersion: integer("sanitize_version", { mode: "number" }).notNull(),
+  // Tokens d'entrée (prompt facturé, hors cache) — coût + plafond free tier.
+  tokensInput: integer("tokens_input", { mode: "number" }).notNull(),
+  // Tokens de sortie (texte généré).
+  tokensOutput: integer("tokens_output", { mode: "number" }).notNull(),
   // Horodatage de création (epoch ms), posé via l'horloge injectée.
   createdAt: integer("created_at", { mode: "number" }),
 });

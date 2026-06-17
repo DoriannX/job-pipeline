@@ -4,7 +4,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { channelChips } from "@/features/contacts/contact-detail";
+import { channelChips, timelineItems } from "@/features/contacts/contact-detail";
 import { contactsRepository, forUserDb } from "@/lib/db";
 import type { Clock } from "@/lib/domain/time";
 
@@ -74,6 +74,43 @@ describe("channelChips — mise en forme des canaux renseignés", () => {
   it("trim la valeur affichée", () => {
     const chips = channelChips({ email: "  a@b.fr  " }, null);
     expect(chips[0]?.value).toBe("a@b.fr");
+  });
+});
+
+describe("timelineItems — Messages de la timeline « Votre histoire » (story 3.6)", () => {
+  it("conserve l'ordre d'entrée (récent → ancien fourni par le serveur)", () => {
+    const items = timelineItems([
+      { id: "m2", canal: "linkedin", statut: "envoye", texte: "récent", envoyeAt: 2, createdAt: 2 },
+      { id: "m1", canal: "email", statut: "envoye", texte: "ancien", envoyeAt: 1, createdAt: 1 },
+    ]);
+    expect(items.map((i) => i.id)).toEqual(["m2", "m1"]);
+  });
+
+  it("marque accent + libellés FR (canal/statut) pour un envoyé", () => {
+    const [item] = timelineItems([
+      { id: "m1", canal: "whatsapp", statut: "envoye", texte: "Salut !", envoyeAt: 1700000000000, createdAt: 1699999999000 },
+    ]);
+    expect(item.accent).toBe(true);
+    expect(item.canalLabel).toBe("WhatsApp");
+    expect(item.canalIcon).toBe("whatsapp");
+    expect(item.statutLabel).toBe("Envoyé");
+    expect(item.texte).toBe("Salut !");
+    // `at` privilégie envoye_at sur created_at.
+    expect(item.at).toBe(1700000000000);
+  });
+
+  it("retombe sur created_at si envoye_at est null", () => {
+    const [item] = timelineItems([
+      { id: "m1", canal: "sms", statut: "brouillon", texte: "wip", envoyeAt: null, createdAt: 42 },
+    ]);
+    expect(item.at).toBe(42);
+    // Un non-envoyé n'est PAS mis en avant.
+    expect(item.accent).toBe(false);
+    expect(item.statutLabel).toBe("Brouillon");
+  });
+
+  it("liste vide ⇒ aucun item", () => {
+    expect(timelineItems([])).toEqual([]);
   });
 });
 

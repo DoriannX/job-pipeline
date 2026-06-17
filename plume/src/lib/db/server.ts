@@ -19,6 +19,10 @@ import {
   type ImportJobsRepository,
   type MergeCandidatesRepository,
 } from "./import-repositories";
+import {
+  messagesRepository,
+  type MessagesRepository,
+} from "./message-repositories";
 import { contactsRepository, type ContactsRepository } from "./repositories";
 import { scopedDb } from "./scoped";
 import {
@@ -33,6 +37,7 @@ export type UserGate = {
   importJobs: ImportJobsRepository;
   mergeCandidates: MergeCandidatesRepository;
   seedVoix: SeedVoixRepository;
+  messages: MessagesRepository;
 };
 
 /**
@@ -52,5 +57,6 @@ export async function forUser(userId: string): Promise<UserGate> {
     importJobs: importJobsRepository(scoped),
     mergeCandidates: mergeCandidatesRepository(scoped),
     seedVoix: seedVoixRepository(scoped),
+    messages: messagesRepository(scoped),
   };
 }

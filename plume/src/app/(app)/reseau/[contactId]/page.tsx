@@ -5,7 +5,10 @@ import { forUser } from "@/lib/db";
 import { coldness } from "@/lib/domain/cold-score";
 import { now, systemClock } from "@/lib/domain/time";
 import { ContactDetail } from "@/features/contacts/ContactDetail";
-import type { ContactDetailView } from "@/features/contacts/contact-detail";
+import {
+  timelineItems,
+  type ContactDetailView,
+} from "@/features/contacts/contact-detail";
 
 // Fiche Contact = timeline (story 2.4).
 //
@@ -41,6 +44,20 @@ export default async function ContactPage({
     notFound();
   }
 
+  // Timeline « Votre histoire » : les Messages du contact (scopés, récent → ancien),
+  // projetés en VUE PLATE (la fiche ne voit jamais le schéma ni Drizzle — barrière n°1).
+  const messageRows = await db.messages.listForContact(contactId);
+  const messages = timelineItems(
+    messageRows.map((m) => ({
+      id: m.id,
+      canal: m.canal,
+      statut: m.statut,
+      texte: m.texte,
+      envoyeAt: m.envoyeAt ?? null,
+      createdAt: m.createdAt ?? null,
+    })),
+  );
+
   // Instant de référence figé : la froideur est DÉRIVÉE à la lecture (cold-score, jamais
   // stockée), avec un `now` INJECTÉ (jamais Date.now() hors time.ts).
   const maintenant = now(systemClock);
@@ -56,6 +73,7 @@ export default async function ContactPage({
     notes: contact.notes ?? null,
     dernierContactAt,
     coldness: coldness(dernierContactAt, maintenant),
+    messages,
   };
 
   return <ContactDetail contact={view} />;

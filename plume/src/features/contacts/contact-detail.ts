@@ -8,7 +8,7 @@
 
 import type { IconName } from "@/design/icons";
 import type { ColdState } from "@/design/tokens";
-import type { Canal } from "@/lib/domain/enums";
+import type { Canal, MessageStatut } from "@/lib/domain/enums";
 
 import type { ContactHandle } from "./types";
 
@@ -28,6 +28,8 @@ export type ContactDetailView = {
   dernierContactAt: number | null;
   /** Froideur dérivée à la lecture (cold-score), portée par couleur + ColdTag texte. */
   coldness: ColdState;
+  /** Messages de la timeline « Votre histoire », récent → ancien (peuplée Epic 3). */
+  messages: MessageTimelineItem[];
 };
 
 /** Un canal renseigné, prêt à afficher : clé handle + icône maison + libellé FR + valeur. */
@@ -99,5 +101,83 @@ export function channelChips(
     label: HANDLE_LABEL[key],
     value: (handles[key] as string).trim(),
     preferred: key === preferredHandle,
+  }));
+}
+
+// --- Timeline « Votre histoire » (Epic 3, story 3.6) -----------------------
+// La fiche affiche les Messages ENVOYÉS dans la timeline narrative. Vue PLATE,
+// sérialisable, dérivée serveur (page.tsx) — aucun schéma/Drizzle ici (barrière n°1).
+
+/** Libellé FR de chaque canal (clé technique non traduite → mot lisible). */
+const CANAL_LABEL: Record<Canal, string> = {
+  linkedin: "LinkedIn",
+  email: "E-mail",
+  whatsapp: "WhatsApp",
+  sms: "SMS",
+};
+
+/** Icône maison de chaque canal (l'icône `sms` illustre le SMS). */
+const CANAL_ICON: Record<Canal, IconName> = {
+  linkedin: "linkedin",
+  email: "email",
+  whatsapp: "whatsapp",
+  sms: "sms",
+};
+
+/** Libellé FR de chaque statut (la valeur stockée reste non traduite, clé stable AR-5). */
+const STATUT_LABEL: Record<MessageStatut, string> = {
+  brouillon: "Brouillon",
+  envoye: "Envoyé",
+  vu: "Vu",
+  repondu: "Répondu",
+  ignore: "Sans réponse",
+};
+
+/**
+ * Un Message de la timeline, prêt à afficher : date d'envoi, canal (icône + libellé),
+ * statut (libellé FR) et texte FIGÉ. `accent` = mis en avant (langage mauve, AC 3.6).
+ */
+export type MessageTimelineItem = {
+  id: string;
+  canal: Canal;
+  canalLabel: string;
+  canalIcon: IconName;
+  statut: MessageStatut;
+  statutLabel: string;
+  texte: string;
+  /** Epoch ms de l'envoi (ou de création si non envoyé) ; null si inconnu. */
+  at: number | null;
+  /** Mise en avant visuelle (accent mauve) — vrai pour les Messages envoyés. */
+  accent: boolean;
+};
+
+/** Forme plate d'un Message reçue du serveur (sous-ensemble de la ligne `messages`). */
+export type MessageTimelineInput = {
+  id: string;
+  canal: Canal;
+  statut: MessageStatut;
+  texte: string;
+  envoyeAt: number | null;
+  createdAt: number | null;
+};
+
+/**
+ * Met en forme les Messages pour la timeline « Votre histoire ». L'ordre d'entrée est
+ * conservé (le serveur le fournit déjà du plus récent au plus ancien). Un Message au
+ * statut 'envoye' est marqué `accent` (mis en avant) ; les autres restent neutres.
+ */
+export function timelineItems(
+  rows: readonly MessageTimelineInput[],
+): MessageTimelineItem[] {
+  return rows.map((m) => ({
+    id: m.id,
+    canal: m.canal,
+    canalLabel: CANAL_LABEL[m.canal],
+    canalIcon: CANAL_ICON[m.canal],
+    statut: m.statut,
+    statutLabel: STATUT_LABEL[m.statut],
+    texte: m.texte,
+    at: m.envoyeAt ?? m.createdAt ?? null,
+    accent: m.statut === "envoye",
   }));
 }
