@@ -73,7 +73,7 @@ development_status:
   3-4-ameliorer-un-message-en-place: done
   3-5-seed-de-voix-optionnel-apprentissage-au-fil-de-l-eau: done
   3-6-marquer-envoye-enregistrer-le-message-instrumenter-le-moat-sm-1: done
-  3-7-verrou-read-only-apres-envoye-modifier: backlog
+  3-7-verrou-read-only-apres-envoye-modifier: done
   3-8-cycle-de-statut-d-un-tap: backlog
   3-9-evals-figes-de-la-voix-anti-regression: backlog
   # Jalon R1 GO/PIVOT (porte de decision, PAS une story de dev) : cloture l'Epic 3.

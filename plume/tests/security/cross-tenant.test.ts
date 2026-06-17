@@ -480,4 +480,30 @@ describe("invariant n°1 — tables `messages` / `generation_events` (story 3.6,
     ]);
     expect(await gB.messages.listSentTexts()).toEqual(["voix de B"]);
   });
+
+  it("editSent/getById sont scopés : B ne peut NI lire NI éditer le message de A (story 3.7)", async () => {
+    const gA = gate(userA.id);
+    const gB = gate(userB.id);
+    const cA = await gA.contacts.create({ nom: "Contact de A" });
+
+    const msgA = await gA.messages.markSent(
+      makeMarkSent(cA.id, { texte: "message privé de A", generation: null }),
+    );
+
+    // B (qui connaîtrait l'id du message ET son jeton) ne le voit pas : getById null.
+    expect(await gB.messages.getById(msgA.id)).toBeNull();
+
+    // B tente de l'éditer avec le BON jeton : la porte scopée ne match aucune ligne →
+    // l'édition cross-tenant est impossible (not-found, jamais d'écriture chez A).
+    const piracy = await gB.messages.editSent({
+      id: msgA.id,
+      texte: "piraté par B",
+      expectedUpdatedAt: msgA.updatedAt!,
+    });
+    expect(piracy.status).toBe("not-found");
+
+    // A relit son message : strictement intact (B n'a rien écrasé).
+    const stillA = await gA.messages.getById(msgA.id);
+    expect(stillA?.texte).toBe("message privé de A");
+  });
 });

@@ -55,6 +55,7 @@ export default async function ContactPage({
       texte: m.texte,
       envoyeAt: m.envoyeAt ?? null,
       createdAt: m.createdAt ?? null,
+      updatedAt: m.updatedAt ?? null,
     })),
   );
 

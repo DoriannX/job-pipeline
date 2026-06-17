@@ -15,6 +15,8 @@ import { ColdTag } from "@/components/ui/ColdTag";
 import { Icon } from "@/design/icons";
 import { Plume } from "@/design/illustration/Plume";
 
+import { MessageCardActions } from "@/features/messages/MessageCardActions";
+
 import { ContactDetailActions } from "./ContactDetailActions";
 import { channelChips, type ContactDetailView } from "./contact-detail";
 
@@ -138,9 +140,21 @@ export function ContactDetail({ contact }: ContactDetailProps) {
                     </time>
                   ) : null}
                 </div>
-                <p className="whitespace-pre-line font-body text-body text-ink">
-                  {msg.texte}
-                </p>
+                {/* Texte FIGÉ : READ-ONLY par défaut + Modifier discret (story 3.7). Un
+                    message envoyé avec son jeton de version est rouvrable ; sinon (jeton
+                    absent / non envoyé) il reste un rendu statique non éditable (FR-20). */}
+                {msg.editable && msg.updatedAt !== null ? (
+                  <MessageCardActions
+                    messageId={msg.id}
+                    texte={msg.texte}
+                    updatedAt={msg.updatedAt}
+                    accent={msg.accent}
+                  />
+                ) : (
+                  <p className="whitespace-pre-line font-body text-body text-ink">
+                    {msg.texte}
+                  </p>
+                )}
               </li>
             ))}
           </ul>

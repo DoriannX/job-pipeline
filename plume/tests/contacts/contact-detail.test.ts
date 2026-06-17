@@ -80,15 +80,15 @@ describe("channelChips — mise en forme des canaux renseignés", () => {
 describe("timelineItems — Messages de la timeline « Votre histoire » (story 3.6)", () => {
   it("conserve l'ordre d'entrée (récent → ancien fourni par le serveur)", () => {
     const items = timelineItems([
-      { id: "m2", canal: "linkedin", statut: "envoye", texte: "récent", envoyeAt: 2, createdAt: 2 },
-      { id: "m1", canal: "email", statut: "envoye", texte: "ancien", envoyeAt: 1, createdAt: 1 },
+      { id: "m2", canal: "linkedin", statut: "envoye", texte: "récent", envoyeAt: 2, createdAt: 2, updatedAt: 2 },
+      { id: "m1", canal: "email", statut: "envoye", texte: "ancien", envoyeAt: 1, createdAt: 1, updatedAt: 1 },
     ]);
     expect(items.map((i) => i.id)).toEqual(["m2", "m1"]);
   });
 
   it("marque accent + libellés FR (canal/statut) pour un envoyé", () => {
     const [item] = timelineItems([
-      { id: "m1", canal: "whatsapp", statut: "envoye", texte: "Salut !", envoyeAt: 1700000000000, createdAt: 1699999999000 },
+      { id: "m1", canal: "whatsapp", statut: "envoye", texte: "Salut !", envoyeAt: 1700000000000, createdAt: 1699999999000, updatedAt: 1700000000000 },
     ]);
     expect(item.accent).toBe(true);
     expect(item.canalLabel).toBe("WhatsApp");
@@ -99,14 +99,33 @@ describe("timelineItems — Messages de la timeline « Votre histoire » (story 
     expect(item.at).toBe(1700000000000);
   });
 
+  it("un envoyé AVEC jeton est éditable (Modifier) et porte son updatedAt (story 3.7)", () => {
+    const [item] = timelineItems([
+      { id: "m1", canal: "linkedin", statut: "envoye", texte: "figé", envoyeAt: 5, createdAt: 5, updatedAt: 9 },
+    ]);
+    expect(item.editable).toBe(true);
+    expect(item.updatedAt).toBe(9);
+  });
+
+  it("un envoyé SANS jeton (ancien message) reste read-only, non éditable", () => {
+    const [item] = timelineItems([
+      { id: "m1", canal: "linkedin", statut: "envoye", texte: "ancien figé", envoyeAt: 5, createdAt: 5, updatedAt: null },
+    ]);
+    // Sans `updated_at` fiable, aucun verrou optimiste possible : pas de Modifier.
+    expect(item.editable).toBe(false);
+    expect(item.updatedAt).toBeNull();
+  });
+
   it("retombe sur created_at si envoye_at est null", () => {
     const [item] = timelineItems([
-      { id: "m1", canal: "sms", statut: "brouillon", texte: "wip", envoyeAt: null, createdAt: 42 },
+      { id: "m1", canal: "sms", statut: "brouillon", texte: "wip", envoyeAt: null, createdAt: 42, updatedAt: null },
     ]);
     expect(item.at).toBe(42);
     // Un non-envoyé n'est PAS mis en avant.
     expect(item.accent).toBe(false);
     expect(item.statutLabel).toBe("Brouillon");
+    // Un brouillon n'est jamais éditable via Modifier (réservé aux envoyés).
+    expect(item.editable).toBe(false);
   });
 
   it("liste vide ⇒ aucun item", () => {
