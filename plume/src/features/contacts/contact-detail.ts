@@ -9,6 +9,7 @@
 import type { IconName } from "@/design/icons";
 import type { ColdState } from "@/design/tokens";
 import type { Canal, MessageStatut } from "@/lib/domain/enums";
+import { manualTransitions } from "@/lib/domain/message-status";
 
 import type { ContactHandle } from "./types";
 
@@ -125,13 +126,34 @@ const CANAL_ICON: Record<Canal, IconName> = {
 };
 
 /** Libellé FR de chaque statut (la valeur stockée reste non traduite, clé stable AR-5). */
-const STATUT_LABEL: Record<MessageStatut, string> = {
+export const STATUT_LABEL: Record<MessageStatut, string> = {
   brouillon: "Brouillon",
   envoye: "Envoyé",
   vu: "Vu",
   repondu: "Répondu",
   ignore: "Sans réponse",
 };
+
+/**
+ * Une transition de statut PROPOSABLE dans le mini-sheet (story 3.8) : le statut cible
+ * (clé technique stable, passée à la server action) + son libellé FR (affiché à l'écran).
+ */
+export type StatutOption = {
+  statut: MessageStatut;
+  label: string;
+};
+
+/**
+ * Options manuelles légales depuis `statut`, prêtes à afficher (clé + libellé FR). Vide
+ * pour les statuts TERMINAUX (`repondu`/`ignore`) et pour `brouillon` (rien à changer à
+ * la main avant l'envoi) — une pastille sans option n'ouvre pas le mini-sheet (3.8).
+ */
+export function statutOptions(statut: MessageStatut): StatutOption[] {
+  return manualTransitions(statut).map((to) => ({
+    statut: to,
+    label: STATUT_LABEL[to],
+  }));
+}
 
 /**
  * Un Message de la timeline, prêt à afficher : date d'envoi, canal (icône + libellé),
@@ -144,6 +166,11 @@ export type MessageTimelineItem = {
   canalIcon: IconName;
   statut: MessageStatut;
   statutLabel: string;
+  /**
+   * Transitions de statut MANUELLES légales depuis `statut` (story 3.8), libellées FR.
+   * Vide ⇒ la pastille n'est pas tappable (statut terminal ou brouillon, rien à changer).
+   */
+  statutOptions: StatutOption[];
   texte: string;
   /** Epoch ms de l'envoi (ou de création si non envoyé) ; null si inconnu. */
   at: number | null;
@@ -186,6 +213,7 @@ export function timelineItems(
     canalIcon: CANAL_ICON[m.canal],
     statut: m.statut,
     statutLabel: STATUT_LABEL[m.statut],
+    statutOptions: statutOptions(m.statut),
     texte: m.texte,
     at: m.envoyeAt ?? m.createdAt ?? null,
     accent: m.statut === "envoye",

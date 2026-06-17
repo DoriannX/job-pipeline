@@ -48,4 +48,6 @@ export {
   type MarkSentGeneration,
   type EditSentInput,
   type EditSentResult,
+  type SetStatusInput,
+  type SetStatusResult,
 } from "./message-repositories";

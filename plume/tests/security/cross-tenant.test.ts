@@ -506,4 +506,24 @@ describe("invariant n°1 — tables `messages` / `generation_events` (story 3.6,
     const stillA = await gA.messages.getById(msgA.id);
     expect(stillA?.texte).toBe("message privé de A");
   });
+
+  it("setStatus est scopé : B ne change PAS le statut du message de A (story 3.8, DoD)", async () => {
+    const gA = gate(userA.id);
+    const gB = gate(userB.id);
+    const cA = await gA.contacts.create({ nom: "Contact de A" });
+
+    const msgA = await gA.messages.markSent(
+      makeMarkSent(cA.id, { texte: "message privé de A", generation: null }),
+    );
+    expect(msgA.statut).toBe("envoye");
+
+    // B (qui connaîtrait l'id du message) tente une transition LÉGALE en soi (envoye → vu) :
+    // la porte scopée ne match aucune ligne de B → not-found, aucune écriture chez A.
+    const piracy = await gB.messages.setStatus({ id: msgA.id, statut: "vu" });
+    expect(piracy.status).toBe("not-found");
+
+    // Le statut du message de A est resté 'envoye' (B n'a rien changé).
+    const stillA = await gA.messages.getById(msgA.id);
+    expect(stillA?.statut).toBe("envoye");
+  });
 });
