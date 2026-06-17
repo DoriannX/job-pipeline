@@ -118,3 +118,39 @@ describe("migration 0003 — rétro-compatible (CREATE TABLE only) sur base peup
     expect(String(cands.rows[0].status)).toBe("pending");
   });
 });
+
+describe("migration 0004 — rétro-compatible (CREATE TABLE only) sur base peuplée", () => {
+  it("ajoute seed_voix sans toucher aux contacts existants (story 3.5)", async () => {
+    const client = createClient({ url: "file::memory:?cache=private" });
+    const files = migrationFiles();
+
+    // État 3.4 : on applique tout SAUF 0004 (contacts déjà peuplé, dedup actif).
+    for (const f of files.filter((f) => !f.startsWith("0004"))) {
+      await apply(client, f);
+    }
+    await client.execute(
+      "INSERT INTO users (id, timezone, voix_ton) VALUES ('u1','Europe/Paris','neutre')",
+    );
+    await client.execute(
+      "INSERT INTO contacts (id, user_id, nom, source, dedup_key) VALUES ('c1','u1','Alice','manuel','name:alice|')",
+    );
+
+    // 0004 ne fait qu'un CREATE TABLE : aucune ALTER sur une table peuplée.
+    const m0004 = files.find((f) => f.startsWith("0004"));
+    expect(m0004).toBeDefined();
+    await apply(client, m0004!);
+
+    // Les contacts pré-existants sont intacts.
+    const c = await client.execute("SELECT id, nom FROM contacts");
+    expect(c.rows).toHaveLength(1);
+    expect(String(c.rows[0].nom)).toBe("Alice");
+
+    // La nouvelle table existe et est utilisable (texte sanitizé à l'import = stocké tel quel).
+    await client.execute(
+      "INSERT INTO seed_voix (id, user_id, texte, created_at) VALUES ('s1','u1','Salut, on se cale un cafe ?',1700000000000)",
+    );
+    const seeds = await client.execute("SELECT texte FROM seed_voix");
+    expect(seeds.rows).toHaveLength(1);
+    expect(String(seeds.rows[0].texte)).toBe("Salut, on se cale un cafe ?");
+  });
+});
