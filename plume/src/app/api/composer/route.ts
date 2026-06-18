@@ -29,6 +29,7 @@ import { CANAUX } from "@/lib/domain/enums";
 import { AppError, generateMessage } from "@/lib/claude.server";
 import { buildGenerationEvent } from "@/lib/composer/pipeline.server";
 import { selectFewShot } from "@/lib/composer/voice";
+import { ideaRequired } from "@/features/composer/generation";
 
 // Runtime Node (le SDK Anthropic + l'accès DB visent Node, pas l'edge). Force-dynamic :
 // aucune prérendu, l'env n'est lu qu'à la requête → build sans secret.
@@ -51,7 +52,7 @@ const bodySchema = z
     tone: z.enum(["rapide", "soigne"]),
     mode: z.enum(["generate", "improve"]).default("generate"),
   })
-  .refine((d) => d.mode !== "improve" || d.idea.length >= 1, {
+  .refine((d) => !ideaRequired(d.mode) || d.idea.length >= 1, {
     message: "Rien à retravailler : le champ est vide.",
     path: ["idea"],
   });

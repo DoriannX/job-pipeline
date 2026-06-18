@@ -7,7 +7,7 @@
 // Le repository reçoit un `ScopedDb` INJECTÉ : il reste pur et testable (db en mémoire
 // dans les tests, db serveur en prod). Aucune lecture d'env, aucun `auth()` ici.
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 
 import { contacts, type ContactHandles } from "./schema";
 import type { ScopedDb } from "./scoped";
@@ -35,8 +35,14 @@ export type ContactCreate = {
   legalBasis?: string | null;
 };
 
-/** Champs éditables d'un Contact (tous optionnels). `id`/`userId` jamais modifiables. */
-export type ContactUpdate = Partial<ContactCreate>;
+/**
+ * Champs éditables d'un Contact (tous optionnels). `id`/`userId` jamais modifiables.
+ * `archivedAt` est éditable ici (réactivation lors d'une fusion d'import) ; le geste
+ * normal d'archivage passe néanmoins par `remove()`.
+ */
+export type ContactUpdate = Partial<ContactCreate> & {
+  archivedAt?: number | null;
+};
 
 /** Entrée d'un ajout rapide multiple (story 2.2) : un nom requis, reste optionnel. */
 export type BulkCreateItem = {
@@ -56,7 +62,14 @@ export type ContactsRepository = {
   create: (data: ContactCreate) => Promise<Contact>;
   bulkCreate: (items: BulkCreateItem[]) => Promise<BulkCreateResult>;
   list: () => Promise<Contact[]>;
-  get: (id: string) => Promise<Contact | undefined>;
+  /**
+   * Lit un contact ACTIF par id (les archivés sont invisibles). `includeArchived`
+   * vise aussi un archivé — réservé aux parcours de réactivation/fusion d'import.
+   */
+  get: (
+    id: string,
+    opts?: { includeArchived?: boolean },
+  ) => Promise<Contact | undefined>;
   update: (id: string, data: ContactUpdate) => Promise<Contact | undefined>;
   remove: (id: string) => Promise<boolean>;
 };
@@ -101,23 +114,43 @@ export function contactsRepository(scoped: ScopedDb): ContactsRepository {
       );
       if (inserted) return inserted;
 
-      // Doublon : un contact à cette clé existe déjà chez ce tenant. On NE crée PAS un
-      // second contact (intention : fusionner). On récupère l'existant ; s'il était
-      // ARCHIVÉ, re-l'ajouter le RÉACTIVE (désarchive) — geste naturel, pas une erreur.
+      // Doublon : un contact à cette clé existe déjà chez ce tenant (ACTIF ou ARCHIVÉ).
+      // On NE crée PAS un second contact (intention : fusionner). On le relit en INCLUANT
+      // les archivés (sinon un doublon archivé serait invisible et la fusion impossible).
       const existing = await scoped.findFirst(
         contacts,
         eq(contacts.dedupKey, dedupKey),
+        { includeArchived: true },
       );
-      if (existing && existing.archivedAt != null) {
-        const [revived] = await scoped.update(
-          contacts,
-          { archivedAt: null, updatedAt: ts },
-          eq(contacts.id, existing.id),
+      if (!existing) {
+        // Course rarissime : la ligne en conflit a disparu entre l'insert et la relecture.
+        // On le signale franchement plutôt que de masquer un `undefined` derrière un cast.
+        throw new Error(
+          "Conflit de dédup sans ligne existante (course concurrente).",
         );
-        return revived ?? existing;
       }
-      // Le conflit implique forcément une ligne existante : `existing` est défini.
-      return existing as Contact;
+
+      // FUSION du re-ajout : on applique les champs FOURNIS (sans écraser par du vide —
+      // un re-ajout minimal ne doit pas effacer les notes/handles existants) et, si la
+      // ligne était archivée, on la RÉACTIVE. Les champs qui DÉTERMINENT la clé (nom,
+      // entreprise/email) sont déjà équivalents par construction (même `dedupKey`), donc
+      // la clé reste cohérente — on n'y touche pas.
+      const merge: Record<string, unknown> = { updatedAt: ts };
+      if (data.entreprise != null) merge.entreprise = data.entreprise;
+      if (data.canalPrefere != null) merge.canalPrefere = data.canalPrefere;
+      if (data.handles != null)
+        merge.handles = { ...(existing.handles ?? {}), ...data.handles };
+      if (data.notes != null) merge.notes = data.notes;
+      if (data.dernierContactAt != null)
+        merge.dernierContactAt = data.dernierContactAt;
+      if (existing.archivedAt != null) merge.archivedAt = null; // réactivation
+
+      const [merged] = await scoped.update(
+        contacts,
+        merge,
+        eq(contacts.id, existing.id),
+      );
+      return merged ?? existing;
     },
 
     async bulkCreate(items) {
@@ -161,24 +194,41 @@ export function contactsRepository(scoped: ScopedDb): ContactsRepository {
         rows,
         [contacts.userId, contacts.dedupKey],
       );
-      const created = inserted.length;
-      // « Fusionnés » = tout ce qui n'a pas donné lieu à une création (doublons
-      // intra-lot + collisions avec l'existant). Ton neutre, pas une erreur.
+
+      // RÉACTIVATION (parité avec `create()`) : parmi les clés en conflit (non insérées),
+      // celles qui pointent un contact ARCHIVÉ sont DÉSARCHIVÉES — re-coller/importer un
+      // contact archivé le fait réapparaître (sinon il resterait invisible, en
+      // contradiction avec « tu pourras le retrouver en le ré-ajoutant »).
+      const insertedKeys = new Set(inserted.map((r) => r.dedupKey));
+      const conflictedKeys = [...seen].filter((k) => !insertedKeys.has(k));
+      let revivedCount = 0;
+      if (conflictedKeys.length > 0) {
+        const revived = await scoped.update(
+          contacts,
+          { archivedAt: null, updatedAt: ts },
+          and(
+            inArray(contacts.dedupKey, conflictedKeys),
+            isNotNull(contacts.archivedAt),
+          ),
+        );
+        revivedCount = revived.length;
+      }
+
+      const created = inserted.length + revivedCount;
+      // « Fusionnés » = tout ce qui n'a pas donné lieu à une création/réactivation
+      // (doublons intra-lot + collisions avec un actif). Ton neutre, pas une erreur.
       return { created, merged: requested - created };
     },
 
     async list() {
-      // Soft-delete : seuls les contacts ACTIFS (non archivés) sont listés.
-      return scoped.findMany(contacts, isNull(contacts.archivedAt));
+      // Soft-delete : la PORTE filtre déjà `archived_at IS NULL` pour cette table.
+      return scoped.findMany(contacts);
     },
 
-    async get(id) {
-      // Un contact archivé est traité comme absent (notFound côté page) : il ne fuite
-      // jamais dans les parcours normaux. Sa donnée reste en base (réversible).
-      return scoped.findFirst(
-        contacts,
-        and(eq(contacts.id, id), isNull(contacts.archivedAt)),
-      );
+    async get(id, opts) {
+      // Un contact archivé est traité comme absent (notFound côté page) : la porte le
+      // masque par défaut. `includeArchived` (fusion d'import) lève ce masque.
+      return scoped.findFirst(contacts, eq(contacts.id, id), opts);
     },
 
     async update(id, data) {
@@ -196,16 +246,21 @@ export function contactsRepository(scoped: ScopedDb): ContactsRepository {
       if (data.source !== undefined) set.source = data.source;
       if (data.importedAt !== undefined) set.importedAt = data.importedAt;
       if (data.legalBasis !== undefined) set.legalBasis = data.legalBasis;
+      // Réactivation explicite (fusion d'import) : on autorise `archived_at` dans le set.
+      if (data.archivedAt !== undefined) set.archivedAt = data.archivedAt;
 
       // Si un champ qui DÉTERMINE la clé de dédup change (nom, entreprise, email
       // des handles), on la recalcule à partir de la ligne courante fusionnée avec
-      // les changements, pour garder l'index unique cohérent (AR-9).
+      // les changements, pour garder l'index unique cohérent (AR-9). On lit la ligne
+      // en INCLUANT les archivés (une fusion d'import peut viser un contact archivé).
       const touchesKey =
         data.nom !== undefined ||
         data.entreprise !== undefined ||
         data.handles !== undefined;
       if (touchesKey) {
-        const current = await scoped.findFirst(contacts, eq(contacts.id, id));
+        const current = await scoped.findFirst(contacts, eq(contacts.id, id), {
+          includeArchived: true,
+        });
         if (current) {
           const nom = data.nom ?? current.nom;
           const entreprise =

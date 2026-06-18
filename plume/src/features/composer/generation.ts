@@ -22,6 +22,17 @@ export type Tone = "rapide" | "soigne";
  */
 export type GenerationMode = "generate" | "improve";
 
+/**
+ * RÈGLE UNIQUE « faut-il un texte d'entrée ? » (source de vérité partagée client+serveur) :
+ *   - `improve` EXIGE un texte à retravailler ;
+ *   - `generate` TOLÈRE un champ vide (produit un brouillon de prise de contact).
+ * Le garde UI, le `refine` du schéma serveur et la branche du prompt s'appuient tous
+ * dessus — une seule définition à faire évoluer, pas trois copies divergentes.
+ */
+export function ideaRequired(mode: GenerationMode): boolean {
+  return mode === "improve";
+}
+
 /** Compteur de tokens d'une génération (borne la marge SaaS, archi l.77). */
 export interface GenerationTokens {
   /** Tokens d'entrée (prompt) facturés — hors cache. */

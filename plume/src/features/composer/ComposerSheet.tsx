@@ -30,6 +30,7 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { Icon, type IconName } from "@/design/icons";
+import { BTN_ICON, BTN_PRIMARY } from "@/design/buttons";
 import { Plume } from "@/design/illustration/Plume";
 import { CANAUX, type Canal } from "@/lib/domain/enums";
 import {
@@ -44,7 +45,12 @@ import {
   loadComposerContextAction,
   type ComposerContext,
 } from "./actions";
-import type { GenerationEvent, GenerationMode, Tone } from "./generation";
+import {
+  ideaRequired,
+  type GenerationEvent,
+  type GenerationMode,
+  type Tone,
+} from "./generation";
 import { streamGeneration } from "./stream-client";
 import {
   getDefaultTone,
@@ -83,13 +89,12 @@ const TONES: { value: Tone; label: string; alias: string }[] = [
   { value: "soigne", label: "Soigné", alias: "Opus" },
 ];
 
-// Boutons d'action du composeur — styles partagés pour garder UNE seule ligne (vérifié
-// mobile 375px). Secondaires = boutons-ICÔNES carrés (libellé porté par aria-label/title) ;
-// primaire = chunky mauve avec `whitespace-nowrap` (le libellé n'est jamais coupé ni wrappé).
-const ICON_BTN =
-  "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-button border-[length:--border-width-ink] border-line bg-surface-card text-ink-soft outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-60";
-const PRIMARY_BTN =
-  "inline-flex shrink-0 items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-accent px-5 py-3 font-body text-button font-bold whitespace-nowrap text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-70";
+// Boutons d'action du composeur — primitives partagées (`@/design/buttons`) pour garder
+// UNE seule ligne (vérifié mobile 375px) et éviter de re-typer/diverger les chaînes :
+//   - secondaires = boutons-ICÔNES carrés (libellé porté par aria-label/tooltip) ;
+//   - primaire = chunky mauve avec `whitespace-nowrap` (libellé jamais coupé ni wrappé).
+const ICON_BTN = BTN_ICON;
+const PRIMARY_BTN = BTN_PRIMARY;
 
 /**
  * Bouton d'action SECONDAIRE en icône + TOOLTIP au survol/focus clavier (a11y).
@@ -348,8 +353,8 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
         return;
       }
       // AMÉLIORER exige un texte ; GÉNÉRER accepte un champ vide (brouillon de prise de
-      // contact). On ne bloque donc le champ vide qu'en mode `improve`.
-      if (mode === "improve" && text.trim().length === 0) return;
+      // contact). Règle partagée client/serveur via `ideaRequired` (une seule source).
+      if (ideaRequired(mode) && text.trim().length === 0) return;
 
       // Transparence API one-time (FR-32) : à la 1re sollicitation de l'API seulement
       // (génération OU amélioration — même point de contact).
