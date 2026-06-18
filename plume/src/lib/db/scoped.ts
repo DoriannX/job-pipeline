@@ -147,6 +147,20 @@ export type ScopedDb = {
     values: Omit<T["$inferInsert"], "userId"> | Omit<T["$inferInsert"], "userId">[],
     target: SQLiteColumn | SQLiteColumn[],
   ) => Promise<T["$inferSelect"][]>;
+  /**
+   * UPSERT scopé : `user_id` injecté, et en cas de CONFLIT sur `target` la ligne est
+   * MISE À JOUR via `set` (`ON CONFLICT DO UPDATE`) au lieu d'être ignorée. `set` peut
+   * référencer la ligne proposée par `excluded.<col>`. Renvoie la ligne (insérée OU
+   * fusionnée) en UNE requête — pas de SELECT de relecture. Sert la création idempotente
+   * « insert-ou-fusionne » des contacts (AR-9). `userId` est retiré de `set` (jamais
+   * déplaçable hors tenant), comme pour `update`.
+   */
+  upsert: <T extends SQLiteTable>(
+    table: T,
+    values: Omit<T["$inferInsert"], "userId">,
+    target: SQLiteColumn | SQLiteColumn[],
+    set: Record<string, unknown>,
+  ) => Promise<T["$inferSelect"][]>;
   /** Mise à jour, bornée au tenant. Renvoie la/les ligne(s) modifiée(s). */
   update: <T extends SQLiteTable>(
     table: T,
@@ -228,6 +242,24 @@ export function scopedDb(
         .insert(table)
         .values(scoped as (typeof table)["$inferInsert"][])
         .onConflictDoNothing({ target })
+        .returning() as Promise<(typeof table)["$inferSelect"][]>;
+    },
+
+    async upsert(table, values, target, set) {
+      // Tenant imposé sur la ligne proposée ; jamais déplaçable hors tenant via `set`.
+      const scopedVals = {
+        ...(values as Record<string, unknown>),
+        userId: tenantId,
+      };
+      const safeSet = { ...(set as Record<string, unknown>) };
+      delete safeSet.userId;
+      return db
+        .insert(table)
+        .values(scopedVals as (typeof table)["$inferInsert"])
+        .onConflictDoUpdate({
+          target,
+          set: safeSet as Partial<(typeof table)["$inferInsert"]>,
+        })
         .returning() as Promise<(typeof table)["$inferSelect"][]>;
     },
 

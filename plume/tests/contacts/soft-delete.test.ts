@@ -85,6 +85,26 @@ describe("soft-delete + ré-ajout idempotent (corrections Epic 3)", () => {
     expect(await repo().list()).toHaveLength(1);
   });
 
+  it("re-créer fusionne les handles (json_patch) sans perdre l'existant", async () => {
+    // Même email des deux côtés ⇒ même `dedup_key` (clé = email) ⇒ vrai conflit/fusion.
+    const c = await repo().create({
+      nom: "Michel",
+      handles: { email: "m@exemple.fr", linkedin: "michel-li" },
+    });
+
+    // Ré-ajout avec un AUTRE handle (whatsapp) : on garde linkedin ET on ajoute whatsapp.
+    const merged = await repo().create({
+      nom: "Michel",
+      handles: { email: "m@exemple.fr", whatsapp: "0600000000" },
+    });
+    expect(merged.id).toBe(c.id);
+    expect(merged.handles).toEqual({
+      email: "m@exemple.fr",
+      linkedin: "michel-li",
+      whatsapp: "0600000000",
+    });
+  });
+
   it("bulkCreate réactive un contact archivé (parité avec create)", async () => {
     const c = await repo().create({ nom: "Sophie", entreprise: "Acme" });
     await repo().remove(c.id);

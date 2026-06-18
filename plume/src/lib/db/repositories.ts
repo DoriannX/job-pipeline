@@ -7,7 +7,7 @@
 // Le repository reçoit un `ScopedDb` INJECTÉ : il reste pur et testable (db en mémoire
 // dans les tests, db serveur en prod). Aucune lecture d'env, aucun `auth()` ici.
 
-import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { contacts, type ContactHandles } from "./schema";
 import type { ScopedDb } from "./scoped";
@@ -90,10 +90,18 @@ export function contactsRepository(scoped: ScopedDb): ContactsRepository {
         entreprise: data.entreprise,
         email: data.handles?.email,
       });
-      // Création IDEMPOTENTE (AR-9) : même un ajout UNITAIRE dédup. « Michel » et
-      // « michel » partagent la même `dedup_key` → on ne crée JAMAIS de doublon. Le
-      // conflit sur l'index unique par tenant est silencieux (onConflictDoNothing).
-      const [inserted] = await scoped.insertIgnore(
+      // Création IDEMPOTENTE (AR-9) en UNE requête (UPSERT). « Michel » et « michel »
+      // partagent la même `dedup_key` → jamais de doublon. En cas de conflit (clé déjà
+      // présente, ACTIVE ou ARCHIVÉE), on FUSIONNE plutôt que d'ignorer :
+      //   - `coalesce(excluded.x, contacts.x)` : le re-ajout RENSEIGNE un champ vide mais
+      //     n'ÉCRASE JAMAIS une valeur existante par du vide (pas de perte de saisie) ;
+      //   - handles : fusion JSON (`json_patch`) — les coordonnées entrantes complètent
+      //     les connues sans rien supprimer ;
+      //   - `archived_at` repassé à NULL : re-ajouter un archivé le RÉACTIVE ;
+      //   - les champs qui DÉTERMINENT la clé (nom, entreprise/email) sont équivalents par
+      //     construction (même `dedup_key`) → on n'y touche pas.
+      // `returning()` rend la ligne (insérée OU fusionnée) sans SELECT de relecture.
+      const [row] = await scoped.upsert(
         contacts,
         {
           nom: data.nom,
@@ -111,46 +119,17 @@ export function contactsRepository(scoped: ScopedDb): ContactsRepository {
           updatedAt: ts,
         },
         [contacts.userId, contacts.dedupKey],
+        {
+          entreprise: sql`coalesce(excluded.entreprise, ${contacts.entreprise})`,
+          canalPrefere: sql`coalesce(excluded.canal_prefere, ${contacts.canalPrefere})`,
+          notes: sql`coalesce(excluded.notes, ${contacts.notes})`,
+          dernierContactAt: sql`coalesce(excluded.dernier_contact_at, ${contacts.dernierContactAt})`,
+          handles: sql`case when excluded.handles is null then ${contacts.handles} else json_patch(coalesce(${contacts.handles}, '{}'), excluded.handles) end`,
+          archivedAt: sql`null`,
+          updatedAt: ts,
+        },
       );
-      if (inserted) return inserted;
-
-      // Doublon : un contact à cette clé existe déjà chez ce tenant (ACTIF ou ARCHIVÉ).
-      // On NE crée PAS un second contact (intention : fusionner). On le relit en INCLUANT
-      // les archivés (sinon un doublon archivé serait invisible et la fusion impossible).
-      const existing = await scoped.findFirst(
-        contacts,
-        eq(contacts.dedupKey, dedupKey),
-        { includeArchived: true },
-      );
-      if (!existing) {
-        // Course rarissime : la ligne en conflit a disparu entre l'insert et la relecture.
-        // On le signale franchement plutôt que de masquer un `undefined` derrière un cast.
-        throw new Error(
-          "Conflit de dédup sans ligne existante (course concurrente).",
-        );
-      }
-
-      // FUSION du re-ajout : on applique les champs FOURNIS (sans écraser par du vide —
-      // un re-ajout minimal ne doit pas effacer les notes/handles existants) et, si la
-      // ligne était archivée, on la RÉACTIVE. Les champs qui DÉTERMINENT la clé (nom,
-      // entreprise/email) sont déjà équivalents par construction (même `dedupKey`), donc
-      // la clé reste cohérente — on n'y touche pas.
-      const merge: Record<string, unknown> = { updatedAt: ts };
-      if (data.entreprise != null) merge.entreprise = data.entreprise;
-      if (data.canalPrefere != null) merge.canalPrefere = data.canalPrefere;
-      if (data.handles != null)
-        merge.handles = { ...(existing.handles ?? {}), ...data.handles };
-      if (data.notes != null) merge.notes = data.notes;
-      if (data.dernierContactAt != null)
-        merge.dernierContactAt = data.dernierContactAt;
-      if (existing.archivedAt != null) merge.archivedAt = null; // réactivation
-
-      const [merged] = await scoped.update(
-        contacts,
-        merge,
-        eq(contacts.id, existing.id),
-      );
-      return merged ?? existing;
+      return row;
     },
 
     async bulkCreate(items) {
