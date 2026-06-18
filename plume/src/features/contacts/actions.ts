@@ -44,6 +44,29 @@ async function requireUserId(): Promise<string> {
   return userId;
 }
 
+/**
+ * Détecte une violation d'index UNIQUE (collision de `dedup_key` par tenant). libSQL
+ * EMBALLE l'erreur SQLite (« Failed query: … ») et range le vrai motif « UNIQUE
+ * constraint failed » dans la CHAÎNE de `cause` (ou un code `SQLITE_CONSTRAINT`). On
+ * parcourt donc tout le chaînage `message`/`code`/`cause` pour la reconnaître, et la
+ * traduire en message doux (jamais un 500 brut) côté formulaire.
+ */
+function isUniqueViolation(e: unknown): boolean {
+  const needle = /UNIQUE constraint failed|SQLITE_CONSTRAINT/i;
+  let cur: unknown = e;
+  for (let depth = 0; cur != null && depth < 8; depth += 1) {
+    if (cur instanceof Error) {
+      if (needle.test(cur.message)) return true;
+      const code = (cur as { code?: unknown }).code;
+      if (typeof code === "string" && needle.test(code)) return true;
+      cur = cur.cause;
+    } else {
+      return needle.test(String(cur));
+    }
+  }
+  return false;
+}
+
 /** Construit l'objet `handles` à partir des champs plats du formulaire. */
 function readHandles(formData: FormData) {
   return {
@@ -61,6 +84,7 @@ function parse(formData: FormData):
   const canalRaw = formData.get("canalPrefere");
   const parsed = contactInputSchema.safeParse({
     nom: formData.get("nom") ?? "",
+    entreprise: formData.get("entreprise") ?? undefined,
     canalPrefere: isCanal(canalRaw) ? canalRaw : "",
     handles: readHandles(formData),
     notes: formData.get("notes") ?? undefined,
@@ -97,11 +121,12 @@ export async function createContactAction(
 
   const result = parse(formData);
   if (!result.ok) return result.state;
-  const { nom, canalPrefere, handles, notes } = result.data;
+  const { nom, entreprise, canalPrefere, handles, notes } = result.data;
 
   const db = await forUser(userId);
   await db.contacts.create({
     nom,
+    entreprise: entreprise ?? null,
     canalPrefere: canalPrefere ?? null,
     handles: isHandlesEmpty(handles) ? null : handles,
     notes: notes ?? null,
@@ -179,15 +204,33 @@ export async function updateContactAction(
 
   const result = parse(formData);
   if (!result.ok) return result.state;
-  const { nom, canalPrefere, handles, notes } = result.data;
+  const { nom, entreprise, canalPrefere, handles, notes } = result.data;
 
   const db = await forUser(userId);
-  const updated = await db.contacts.update(id, {
-    nom,
-    canalPrefere: canalPrefere ?? null,
-    handles: isHandlesEmpty(handles) ? null : handles,
-    notes: notes ?? null,
-  });
+  let updated;
+  try {
+    updated = await db.contacts.update(id, {
+      nom,
+      entreprise: entreprise ?? null,
+      canalPrefere: canalPrefere ?? null,
+      handles: isHandlesEmpty(handles) ? null : handles,
+      notes: notes ?? null,
+    });
+  } catch (e) {
+    // Le nouveau nom+entreprise (ou email) recalcule la `dedup_key` ; s'il entre en
+    // collision avec un AUTRE contact du tenant, l'index unique lève. On répond doux,
+    // ciblé sur le champ entreprise (cause la plus probable), au lieu d'un 500.
+    if (isUniqueViolation(e)) {
+      return {
+        ok: false,
+        error: "Un autre contact porte déjà ce nom et cette entreprise.",
+        fieldErrors: {
+          entreprise: "Doublon possible avec un contact existant.",
+        },
+      };
+    }
+    throw e;
+  }
 
   if (!updated) {
     // Borné au tenant : un id d'autrui (ou inexistant) ne renvoie rien.
@@ -199,8 +242,9 @@ export async function updateContactAction(
 }
 
 /**
- * Supprime un Contact (irréversible). Action de formulaire simple (bouton de
- * confirmation) : pas d'état de retour, on rafraîchit la liste.
+ * ARCHIVE un Contact (soft-delete réversible : pose `archived_at`, conserve l'histoire).
+ * Action de formulaire simple (bouton de confirmation) : pas d'état de retour, on
+ * rafraîchit la liste. Re-créer un contact à la même clé le réactive (cf. `create`).
  */
 export async function deleteContactAction(formData: FormData): Promise<void> {
   const userId = await requireUserId();

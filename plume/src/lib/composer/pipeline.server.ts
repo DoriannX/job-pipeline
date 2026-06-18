@@ -69,6 +69,9 @@ export function buildGenerationEvent(input: BuildEventInput): GenerationEvent {
   const generatedText = finalizeText(input.rawText);
   return {
     generatedText,
+    // `rawIntent` = idée brute saisie. CHAÎNE VIDE ⟺ « Générer sans idée » (brouillon de
+    // prise de contact) : c'est le marqueur naturel à exclure des analyses SM-1 d'écart
+    // généré→envoyé, pour ne pas confondre « aucune idée » et une vraie idée utilisateur.
     rawIntent: input.idea,
     canal: input.canal,
     tone: input.tone,

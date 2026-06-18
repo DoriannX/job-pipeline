@@ -50,6 +50,13 @@
       "when": 1781713623661,
       "tag": "0006_whole_pestilence",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1781770188248,
+      "tag": "0007_optimal_thunderbolt",
+      "breakpoints": true
     }
   ]
 }

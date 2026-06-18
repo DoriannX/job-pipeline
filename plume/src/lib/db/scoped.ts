@@ -9,7 +9,7 @@
 //
 // Générique : marche pour toute future table scopée (contacts, messages, ...).
 
-import { and, eq, getTableColumns, type SQL } from "drizzle-orm";
+import { and, eq, getTableColumns, isNull, type SQL } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 
@@ -24,11 +24,29 @@ export type ScopableDb = LibSQLDatabase<Record<string, any>>;
 /** Nom SQL de la colonne de scoping tenant (convention du schéma). */
 const TENANT_COLUMN = "user_id" as const;
 
+/**
+ * Nom SQL de la colonne de SOFT-DELETE (convention du schéma). Toute table qui la
+ * porte voit ses LECTURES filtrer `archived_at IS NULL` par défaut : l'archivage est
+ * une propriété de la PORTE (comme le tenant), pas un filtre à re-écrire dans chaque
+ * repository. Une lecture qui veut quand même voir les archivés passe `includeArchived`.
+ */
+const ARCHIVED_COLUMN = "archived_at" as const;
+
 export type ScopeOptions = {
   /** Identité opaque (cuid2) du tenant courant. */
   tenantId: string;
   /** Horloge injectée (jamais Date.now() en dur). */
   now: Clock;
+};
+
+/** Options d'une LECTURE scopée. */
+export type ReadOptions = {
+  /**
+   * Inclure les lignes ARCHIVÉES (soft-delete). `false` par défaut : un archivé est
+   * invisible. À mettre à `true` UNIQUEMENT pour les parcours qui doivent voir/ressusciter
+   * un archivé (réactivation d'un re-ajout, résolution de fusion d'import).
+   */
+  includeArchived?: boolean;
 };
 
 /**
@@ -49,6 +67,15 @@ function tenantColumn(table: SQLiteTable): SQLiteColumn {
   return match;
 }
 
+/**
+ * Localise la colonne de soft-delete (`archived_at`) si la table en a une, sinon
+ * `undefined`. Générique : aucune table-spécifique n'est codée en dur.
+ */
+function archivedColumn(table: SQLiteTable): SQLiteColumn | undefined {
+  const columns = getTableColumns(table) as Record<string, SQLiteColumn>;
+  return Object.values(columns).find((c) => c.name === ARCHIVED_COLUMN);
+}
+
 /** Combine le filtre de tenant avec un `where` optionnel fourni par l'appelant. */
 function scopedWhere(
   table: SQLiteTable,
@@ -59,21 +86,49 @@ function scopedWhere(
   return where ? and(tenant, where) : tenant;
 }
 
+/**
+ * `where` de LECTURE : tenant + (sauf `includeArchived`) `archived_at IS NULL` pour les
+ * tables soft-deletables, puis le `where` appelant. Centralise l'invariant « un archivé
+ * est invisible » à la porte, pour TOUTES les lectures (AR-2 + soft-delete).
+ */
+function readWhere(
+  table: SQLiteTable,
+  tenantId: string,
+  where: SQL | undefined,
+  includeArchived: boolean,
+): SQL | undefined {
+  const parts: SQL[] = [eq(tenantColumn(table), tenantId)];
+  if (!includeArchived) {
+    const archived = archivedColumn(table);
+    if (archived) parts.push(isNull(archived));
+  }
+  if (where) parts.push(where);
+  return parts.length === 1 ? parts[0] : and(...parts);
+}
+
 export type ScopedDb = {
   /** Identité opaque du tenant servi par cette porte. */
   readonly tenantId: string;
   /** Horloge injectée, ré-exposée pour la logique temporelle appelante. */
   readonly now: Clock;
-  /** Lecture multi-lignes, filtrée par tenant ; tri optionnel (ex. `desc(col)`). */
+  /**
+   * Lecture multi-lignes, filtrée par tenant (et `archived_at IS NULL` pour les tables
+   * soft-deletables) ; tri optionnel. `includeArchived` lève le filtre d'archivage.
+   */
   findMany: <T extends SQLiteTable>(
     table: T,
     where?: SQL,
     orderBy?: SQL | SQL[],
+    opts?: ReadOptions,
   ) => Promise<T["$inferSelect"][]>;
-  /** Lecture d'une ligne (ou undefined), filtrée par tenant. */
+  /**
+   * Lecture d'une ligne (ou undefined), filtrée par tenant (et archivage par défaut).
+   * `includeArchived` permet de viser une ligne archivée (ex. réactivation, fusion).
+   */
   findFirst: <T extends SQLiteTable>(
     table: T,
     where?: SQL,
+    opts?: ReadOptions,
   ) => Promise<T["$inferSelect"] | undefined>;
   /** Insertion : `user_id` injecté automatiquement. Renvoie la/les ligne(s). */
   insert: <T extends SQLiteTable>(
@@ -127,11 +182,11 @@ export function scopedDb(
     tenantId,
     now,
 
-    async findMany(table, where, orderBy) {
+    async findMany(table, where, orderBy, opts) {
       const query = db
         .select()
         .from(table)
-        .where(scopedWhere(table, tenantId, where));
+        .where(readWhere(table, tenantId, where, opts?.includeArchived ?? false));
       // Tri optionnel (ex. `desc(col)` pour « récent → ancien »). Sans tri, l'ordre
       // libSQL n'est pas garanti : on ne l'impose donc qu'à la demande de l'appelant.
       const ordered = orderBy
@@ -140,11 +195,11 @@ export function scopedDb(
       return ordered as Promise<(typeof table)["$inferSelect"][]>;
     },
 
-    async findFirst(table, where) {
+    async findFirst(table, where, opts) {
       const rows = await db
         .select()
         .from(table)
-        .where(scopedWhere(table, tenantId, where))
+        .where(readWhere(table, tenantId, where, opts?.includeArchived ?? false))
         .limit(1);
       return rows[0] as (typeof table)["$inferSelect"] | undefined;
     },

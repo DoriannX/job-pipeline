@@ -30,6 +30,7 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { Icon, type IconName } from "@/design/icons";
+import { BTN_ICON, BTN_PRIMARY } from "@/design/buttons";
 import { Plume } from "@/design/illustration/Plume";
 import { CANAUX, type Canal } from "@/lib/domain/enums";
 import {
@@ -44,7 +45,12 @@ import {
   loadComposerContextAction,
   type ComposerContext,
 } from "./actions";
-import type { GenerationEvent, GenerationMode, Tone } from "./generation";
+import {
+  ideaRequired,
+  type GenerationEvent,
+  type GenerationMode,
+  type Tone,
+} from "./generation";
 import { streamGeneration } from "./stream-client";
 import {
   getDefaultTone,
@@ -82,6 +88,51 @@ const TONES: { value: Tone; label: string; alias: string }[] = [
   { value: "rapide", label: "Rapide", alias: "Haiku" },
   { value: "soigne", label: "Soigné", alias: "Opus" },
 ];
+
+// Boutons d'action du composeur — primitives partagées (`@/design/buttons`) pour garder
+// UNE seule ligne (vérifié mobile 375px) et éviter de re-typer/diverger les chaînes :
+//   - secondaires = boutons-ICÔNES carrés (libellé porté par aria-label/tooltip) ;
+//   - primaire = chunky mauve avec `whitespace-nowrap` (libellé jamais coupé ni wrappé).
+const ICON_BTN = BTN_ICON;
+const PRIMARY_BTN = BTN_PRIMARY;
+
+/**
+ * Bouton d'action SECONDAIRE en icône + TOOLTIP au survol/focus clavier (a11y).
+ * Le libellé est porté par `aria-label` (lecteur d'écran) ET une bulle visible au hover
+ * et au focus. Bulle = encre pleine, offset net (flou=0, règle DA), neutralisée par
+ * Reduce Motion. Position FIXE dans la barre d'actions (le layout ne saute jamais).
+ */
+function IconAction({
+  icon,
+  label,
+  onClick,
+  disabled,
+}: {
+  icon: IconName;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <span className="group relative inline-flex">
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={label}
+        className={ICON_BTN}
+      >
+        <Icon name={icon} size={20} />
+      </button>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border-[length:--border-width-ink] border-ink bg-ink px-2 py-1 font-body text-label font-bold text-surface-card opacity-0 shadow-[var(--shadow-button-secondary)] transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none"
+      >
+        {label}
+      </span>
+    </span>
+  );
+}
 
 /**
  * Lecture du param `?compose=` sous Suspense (exigence `useSearchParams`). Quand il est
@@ -301,7 +352,9 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
         );
         return;
       }
-      if (text.trim().length === 0) return;
+      // AMÉLIORER exige un texte ; GÉNÉRER accepte un champ vide (brouillon de prise de
+      // contact). Règle partagée client/serveur via `ideaRequired` (une seule source).
+      if (ideaRequired(mode) && text.trim().length === 0) return;
 
       // Transparence API one-time (FR-32) : à la 1re sollicitation de l'API seulement
       // (génération OU amélioration — même point de contact).
@@ -315,11 +368,14 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
       const controller = new AbortController();
       abortRef.current = controller;
 
-      // UNDO (AR-12) : en mode `improve`, on SNAPSHOTE le texte d'avant AVANT de toucher
-      // au champ — l'utilisateur pourra restaurer exactement la version précédente. En
-      // mode `generate`, pas d'undo d'amélioration : on purge un éventuel snapshot caduc.
+      // UNDO (AR-12) : en mode `improve`, on SNAPSHOTE le texte d'AVANT amélioration —
+      // mais on GARDE le snapshot le PLUS ANCIEN d'une CHAÎNE d'améliorations (prev ??
+      // input). Ainsi « Annuler l'amélioration » revient à la version ORIGINALE (celle
+      // d'avant la 1ʳᵉ amélioration), pas seulement à l'avant-dernière. Le snapshot est
+      // remis à zéro par une frappe manuelle, une génération, ou l'annulation elle-même.
+      // En mode `generate`, pas d'undo d'amélioration : on purge un snapshot caduc.
       const input = text;
-      setUndoSnapshot(mode === "improve" ? input : null);
+      setUndoSnapshot((prev) => (mode === "improve" ? prev ?? input : null));
 
       setState("generating");
       setSoftError(null);
@@ -419,13 +475,20 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
   const nom = context?.nom ?? "ce contact";
   const generating = state === "generating";
   const champVide = text.trim().length === 0;
-  // Générer/Améliorer grisés : pendant un flux, champ vide, ou hors-ligne.
-  const generateDisabled = generating || champVide || !online;
-  // Bouton INTELLIGENT (UX-DR8) : Améliorer est accessible dès que le champ est NON VIDE
-  // — l'utilisateur peut faire retravailler un texte qu'il a écrit lui-même, sans passer
-  // par une génération. Mêmes gardes que Générer (flux/vide/hors-ligne).
-  const improveDisabled = generateDisabled;
-  const showResultActions = state === "ok" && lastEvent !== null && !champVide;
+  // GÉNÉRER : autorisé même CHAMP VIDE (produit un brouillon de prise de contact dans la
+  // voix). Grisé seulement pendant un flux ou hors-ligne. (Champ vide ≠ blocage.)
+  const generateDisabled = generating || !online;
+  // AMÉLIORER : besoin d'un texte à retravailler — grisé si le champ est vide (en plus
+  // des gardes flux/hors-ligne). C'est la SEULE différence avec Générer.
+  const improveDisabled = generating || champVide || !online;
+  // Pill de tokens : visible après une génération réussie (état ok + event).
+  const showTokenPill = state === "ok" && lastEvent !== null && !champVide;
+  // LAYOUT TOUT-FIXE (choix utilisateur) : « Générer » est le primaire à droite, STATIQUE
+  // (ne bouge jamais, ne se transforme jamais). Les actions secondaires — Améliorer, Copier,
+  // Marquer Envoyé — sont des icônes FIXES à gauche, simplement activées/grisées. « Marquer
+  // Envoyé » est dispo dès que le champ est non vide ⇒ un message TAPÉ MAIN est envoyable
+  // directement, sans passer par une génération.
+  const sendDisabled = champVide || sending;
   // Offre d'undo : un snapshot existe et aucun flux n'est en cours.
   const canUndo = undoSnapshot !== null && !generating;
 
@@ -549,8 +612,15 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
             value={text}
             onChange={(e) => onTextChange(e.target.value)}
             rows={7}
+            // VERROU pendant la génération (item retour 2026) : le champ devient
+            // read-only le temps du flux — le texte streame, l'utilisateur n'écrase pas
+            // les deltas par accident. Il redevient éditable dès la fin (ok/erreur).
+            readOnly={generating}
+            aria-busy={generating}
             placeholder="Écris ton idée, ou touche Générer…"
-            className="w-full resize-none rounded-button border-[length:--border-width-ink] border-ink bg-surface-note px-4 py-3 font-body text-body text-ink caret-accent outline-accent outline-offset-2 placeholder:text-ink-hint focus-visible:outline-2"
+            className={`w-full resize-none rounded-button border-[length:--border-width-ink] border-ink bg-surface-note px-4 py-3 font-body text-body text-ink caret-accent outline-accent outline-offset-2 placeholder:text-ink-hint focus-visible:outline-2 ${
+              generating ? "cursor-not-allowed opacity-90" : ""
+            }`}
           />
           {generating ? (
             <div
@@ -564,6 +634,13 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
             </div>
           ) : null}
         </label>
+
+        {/* Message VISIBLE de génération en cours (verrou du champ). Doux, pas un spinner. */}
+        {generating ? (
+          <p className="font-body text-label font-bold uppercase tracking-[0.12em] text-mint-deep">
+            La plume écrit ton message…
+          </p>
+        ) : null}
 
         {/* — Micro-ligne de transparence API one-time (FR-32, UX-DR21). — */}
         {showApiNotice ? (
@@ -585,7 +662,7 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
         ) : null}
 
         {/* — Pill de TOKENS (tappable → détail input/output). Apparaît après succès. — */}
-        {showResultActions && lastEvent ? (
+        {showTokenPill && lastEvent ? (
           <div className="flex flex-col gap-1">
             <button
               type="button"
@@ -594,7 +671,7 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
               className="inline-flex w-fit items-center gap-1.5 rounded-button border-[length:--border-width-ink] border-line bg-surface-chip px-3 py-1 font-body text-label font-bold text-ink-soft outline-accent outline-offset-2 focus-visible:outline-2"
             >
               <Icon name="sparkle" size={16} />
-              {lastEvent.tokens.input + lastEvent.tokens.output} jetons
+              {lastEvent.tokens.input + lastEvent.tokens.output} tokens
             </button>
             {showTokenDetail ? (
               <p className="font-body text-label text-ink-hint">
@@ -633,101 +710,48 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
             </div>
           ) : null}
 
-          {showResultActions ? (
-            <div className="flex flex-wrap items-center justify-end gap-2">
+          {/* LAYOUT TOUT-FIXE (choix utilisateur) : 3 icônes secondaires à gauche (ordre
+              fixe : Améliorer · Copier · Marquer Envoyé), grisées tant qu'elles ne servent
+              à rien ; « Générer » primaire à droite, STATIQUE. Rien ne bouge ni ne se
+              transforme. « Marquer Envoyé » dispo dès qu'il y a du texte ⇒ tap-main envoyable. */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
               {/* Améliorer : retravaille le texte courant en place (story 3.4). */}
-              <button
-                type="button"
+              <IconAction
+                icon="double-sparkle"
+                label="Améliorer"
                 onClick={ameliorer}
                 disabled={improveDisabled}
-                className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-surface-card px-4 py-3 font-body text-button font-bold text-ink outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-60"
-              >
-                <Icon name="double-sparkle" size={20} />
-                Améliorer
-              </button>
-              {/* Régénérer : relance un appel avec le texte courant comme idée. */}
-              <button
-                type="button"
-                onClick={generer}
-                disabled={generateDisabled}
-                className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-surface-card px-4 py-3 font-body text-button font-bold text-ink outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-60"
-              >
-                <Icon name="sparkle" size={20} />
-                Régénérer
-              </button>
-              <button
-                type="button"
+              />
+              {/* Copier = commit presse-papier (FR-21). */}
+              <IconAction
+                icon="copy"
+                label="Copier"
                 onClick={copier}
                 disabled={champVide}
-                className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-surface-card px-4 py-3 font-body text-button font-bold text-ink outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-60"
-              >
-                <Icon name="copy" size={20} />
-                Copier
-              </button>
-              {/* Marquer Envoyé : commit FINAL (FR-21). Primaire après Copier. Enregistre
-                  le Message + instrumente le moat ; aucun envoi sortant. */}
-              <button
-                type="button"
+              />
+              {/* Marquer Envoyé : commit FINAL (FR-21/FR-18). Dispo dès que le champ est non
+                  vide — un message tapé main est envoyable sans génération préalable. */}
+              <IconAction
+                icon="check"
+                label="Marquer envoyé"
                 onClick={marquerEnvoye}
-                disabled={champVide || sending}
-                className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-accent px-6 py-3 font-body text-button font-bold text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-70"
-              >
-                <Icon name="check" size={20} />
-                {sending ? "Enregistrement…" : "Marquer Envoyé"}
-              </button>
+                disabled={sendDisabled}
+              />
             </div>
-          ) : (
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              {/* Copier reste dispo (commit manuel possible même sans génération). */}
-              <button
-                type="button"
-                onClick={copier}
-                disabled={champVide}
-                className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-line bg-surface-card px-4 py-3 font-body text-button font-bold text-ink-soft outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-60"
-              >
-                <Icon name="copy" size={20} />
-                Copier
-              </button>
-              <div className="flex flex-wrap items-center gap-2">
-                {/* Marquer Envoyé : disponible dès que le champ est NON VIDE (tous canaux,
-                    génération facultative — un texte tapé main est aussi un Message). */}
-                {!champVide ? (
-                  <button
-                    type="button"
-                    onClick={marquerEnvoye}
-                    disabled={champVide || sending}
-                    className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-surface-card px-4 py-3 font-body text-button font-bold text-ink outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-60"
-                  >
-                    <Icon name="check" size={20} />
-                    {sending ? "…" : "Marquer Envoyé"}
-                  </button>
-                ) : null}
-                {/* Bouton INTELLIGENT (UX-DR8) : Améliorer apparaît dès que le champ est
-                    NON VIDE — l'utilisateur fait retravailler son propre texte. */}
-                {!champVide ? (
-                  <button
-                    type="button"
-                    onClick={ameliorer}
-                    disabled={improveDisabled}
-                    className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-surface-card px-4 py-3 font-body text-button font-bold text-ink outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-60"
-                  >
-                    <Icon name="double-sparkle" size={20} />
-                    {generating ? "…" : "Améliorer"}
-                  </button>
-                ) : null}
-                {/* Générer : primaire. Grisé pendant flux / champ vide / hors-ligne. */}
-                <button
-                  type="button"
-                  onClick={generer}
-                  disabled={generateDisabled}
-                  className="inline-flex items-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-accent px-6 py-3 font-body text-button font-bold text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-70"
-                >
-                  <Icon name="sparkle" size={20} />
-                  {generating ? "Génération…" : "Générer"}
-                </button>
-              </div>
-            </div>
-          )}
+            {/* Générer : primaire STATIQUE. Grisé pendant flux / champ vide / hors-ligne. Le
+                feedback « en cours » est porté par le verrou du champ + la ligne
+                « La plume écrit ton message… » (libellé et largeur stables). */}
+            <button
+              type="button"
+              onClick={generer}
+              disabled={generateDisabled}
+              className={PRIMARY_BTN}
+            >
+              <Icon name="sparkle" size={20} />
+              Générer
+            </button>
+          </div>
         </div>
       </div>
     </div>

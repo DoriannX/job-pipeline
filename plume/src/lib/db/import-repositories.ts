@@ -328,7 +328,12 @@ export async function resolveMergeCandidate(
   if (decision === "merge") {
     // Enrichit le contact existant : on FUSIONNE les handles entrants dans les siens
     // (l'email/linkedin entrant complète ceux déjà connus, sans rien écraser d'utile).
-    const existing = await deps.contacts.get(candidate.existingContactId);
+    // On le relit en INCLUANT les archivés : si la cible a été archivée entre la
+    // détection et la résolution, on l'enrichit ET on la RÉACTIVE (la fusion la
+    // ramène dans le réseau) plutôt que de perdre silencieusement les coordonnées.
+    const existing = await deps.contacts.get(candidate.existingContactId, {
+      includeArchived: true,
+    });
     if (existing) {
       const mergedHandles = {
         ...(existing.handles ?? {}),
@@ -337,7 +342,10 @@ export async function resolveMergeCandidate(
           ? { linkedin: candidate.handles.linkedin }
           : {}),
       };
-      await deps.contacts.update(existing.id, { handles: mergedHandles });
+      await deps.contacts.update(existing.id, {
+        handles: mergedHandles,
+        ...(existing.archivedAt != null ? { archivedAt: null } : {}),
+      });
     }
     await deps.mergeCandidates.resolve(candidateId, "merged");
     return true;

@@ -44,6 +44,7 @@ export function ContactDetailActions({ contact }: ContactDetailActionsProps) {
   const defaults: ContactFormDefaults = {
     id: contact.id,
     nom: contact.nom,
+    entreprise: contact.entreprise,
     canalPrefere: contact.canalPrefere,
     handles: contact.handles,
     notes: contact.notes,
@@ -111,7 +112,7 @@ export function ContactDetailActions({ contact }: ContactDetailActionsProps) {
           className="inline-flex items-center gap-2 rounded-button px-4 py-2 font-body text-body font-bold text-ink-soft outline-accent outline-offset-2 focus-visible:outline-2"
         >
           <Icon name="trash" size={20} />
-          Supprimer
+          Archiver
         </button>
       </div>
 
