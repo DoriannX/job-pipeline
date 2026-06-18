@@ -194,9 +194,18 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
         "naturel, et adapte-le au canal (contrainte ci-dessus). Ne change pas le fond, " +
         "ne rallonge pas inutilement.\n\n" +
         `Message à retravailler :\n"""\n${idea}\n"""`
-      : // GÉNÉRER (story 3.3) : mise en forme d'une idée brute.
-        "Idée brute à mettre en forme dans la voix de l'utilisateur :\n" +
-        `"""\n${idea}\n"""`;
+      : idea.trim().length === 0
+        ? // GÉNÉRER SANS IDÉE : brouillon de PRISE DE CONTACT dans la voix. L'utilisateur
+          // a touché « Générer » sur un champ vide — on produit une simple reprise de
+          // contact, sans rien inventer de factuel.
+          "Aucune idée n'a été fournie. Rédige un PREMIER message de prise de contact, " +
+          "bref et naturel, dans la voix de l'utilisateur, adapté au canal (contrainte " +
+          "ci-dessus). Reste chaleureux et générique : n'invente AUCUN fait précis " +
+          "(pas de projet, d'entreprise, de date ni d'événement imaginaires). Une simple " +
+          "reprise de contact qui ouvre la conversation et invite à échanger."
+        : // GÉNÉRER (story 3.3) : mise en forme d'une idée brute.
+          "Idée brute à mettre en forme dans la voix de l'utilisateur :\n" +
+          `"""\n${idea}\n"""`;
 
   const userText = `${contrainteCanal}\n\n${adresse}${consigne}`;
 

@@ -143,6 +143,11 @@ export const contacts = sqliteTable(
     // Horodatages de cycle de vie (epoch ms), posés via l'horloge injectée.
     createdAt: integer("created_at", { mode: "number" }),
     updatedAt: integer("updated_at", { mode: "number" }),
+    // Archivage SOFT (suppression réversible) : epoch ms d'archivage ; NULL = actif.
+    // Le soft-delete PRÉSERVE l'histoire (messages/relances) ; les lectures de la porte
+    // filtrent `archived_at IS NULL`. Re-créer un contact à la même `dedup_key` le
+    // RÉACTIVE (désarchive). ADD COLUMN rétro-compatible (nullable).
+    archivedAt: integer("archived_at", { mode: "number" }),
   },
   (table) => [
     // Unicité PAR TENANT : aucun doublon (AR-9) chez un même user, mais deux users

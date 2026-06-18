@@ -41,12 +41,20 @@ export const dynamic = "force-dynamic";
 // pour les deux (sanitize, streaming, fallback, tokens) — seule l'instruction du prompt
 // diffère. `idea` porte le texte d'entrée dans les deux cas (idée brute OU message à
 // retravailler) ; défaut `generate` pour rester compatible avec les appelants existants.
-const bodySchema = z.object({
-  idea: z.string().trim().min(1, "Idée vide.").max(4000, "Idée trop longue."),
-  canal: z.enum(CANAUX),
-  tone: z.enum(["rapide", "soigne"]),
-  mode: z.enum(["generate", "improve"]).default("generate"),
-});
+const bodySchema = z
+  .object({
+    // `idea` OPTIONNELLE : en mode `generate`, un champ vide est valide (« Générer »
+    // produit alors un brouillon de prise de contact). En mode `improve`, il faut un
+    // texte à retravailler (garde-fou ci-dessous).
+    idea: z.string().trim().max(4000, "Idée trop longue.").default(""),
+    canal: z.enum(CANAUX),
+    tone: z.enum(["rapide", "soigne"]),
+    mode: z.enum(["generate", "improve"]).default("generate"),
+  })
+  .refine((d) => d.mode !== "improve" || d.idea.length >= 1, {
+    message: "Rien à retravailler : le champ est vide.",
+    path: ["idea"],
+  });
 
 const encoder = new TextEncoder();
 

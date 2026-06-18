@@ -7,7 +7,7 @@
 // Le repository reçoit un `ScopedDb` INJECTÉ : il reste pur et testable (db en mémoire
 // dans les tests, db serveur en prod). Aucune lecture d'env, aucun `auth()` ici.
 
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { contacts, type ContactHandles } from "./schema";
 import type { ScopedDb } from "./scoped";
@@ -71,28 +71,53 @@ export function contactsRepository(scoped: ScopedDb): ContactsRepository {
     async create(data) {
       const ts = now(scoped.now);
       // Clé de dédup dérivée (zone neutre) : email du handle s'il existe, sinon
-      // nom + entreprise normalisés. NOT NULL en base — toujours calculable.
+      // nom + entreprise normalisés (casse/accents insensibles). NOT NULL — calculable.
       const dedupKey = computeDedupKey({
         nom: data.nom,
         entreprise: data.entreprise,
         email: data.handles?.email,
       });
-      const [row] = await scoped.insert(contacts, {
-        nom: data.nom,
-        entreprise: data.entreprise ?? null,
-        canalPrefere: data.canalPrefere ?? null,
-        handles: data.handles ?? null,
-        notes: data.notes ?? null,
-        dernierContactAt: data.dernierContactAt ?? null,
-        // `source` garde son défaut SQL ('manuel') si non fourni.
-        ...(data.source ? { source: data.source } : {}),
-        importedAt: data.importedAt ?? null,
-        legalBasis: data.legalBasis ?? null,
-        dedupKey,
-        createdAt: ts,
-        updatedAt: ts,
-      });
-      return row;
+      // Création IDEMPOTENTE (AR-9) : même un ajout UNITAIRE dédup. « Michel » et
+      // « michel » partagent la même `dedup_key` → on ne crée JAMAIS de doublon. Le
+      // conflit sur l'index unique par tenant est silencieux (onConflictDoNothing).
+      const [inserted] = await scoped.insertIgnore(
+        contacts,
+        {
+          nom: data.nom,
+          entreprise: data.entreprise ?? null,
+          canalPrefere: data.canalPrefere ?? null,
+          handles: data.handles ?? null,
+          notes: data.notes ?? null,
+          dernierContactAt: data.dernierContactAt ?? null,
+          // `source` garde son défaut SQL ('manuel') si non fourni.
+          ...(data.source ? { source: data.source } : {}),
+          importedAt: data.importedAt ?? null,
+          legalBasis: data.legalBasis ?? null,
+          dedupKey,
+          createdAt: ts,
+          updatedAt: ts,
+        },
+        [contacts.userId, contacts.dedupKey],
+      );
+      if (inserted) return inserted;
+
+      // Doublon : un contact à cette clé existe déjà chez ce tenant. On NE crée PAS un
+      // second contact (intention : fusionner). On récupère l'existant ; s'il était
+      // ARCHIVÉ, re-l'ajouter le RÉACTIVE (désarchive) — geste naturel, pas une erreur.
+      const existing = await scoped.findFirst(
+        contacts,
+        eq(contacts.dedupKey, dedupKey),
+      );
+      if (existing && existing.archivedAt != null) {
+        const [revived] = await scoped.update(
+          contacts,
+          { archivedAt: null, updatedAt: ts },
+          eq(contacts.id, existing.id),
+        );
+        return revived ?? existing;
+      }
+      // Le conflit implique forcément une ligne existante : `existing` est défini.
+      return existing as Contact;
     },
 
     async bulkCreate(items) {
@@ -143,11 +168,17 @@ export function contactsRepository(scoped: ScopedDb): ContactsRepository {
     },
 
     async list() {
-      return scoped.findMany(contacts);
+      // Soft-delete : seuls les contacts ACTIFS (non archivés) sont listés.
+      return scoped.findMany(contacts, isNull(contacts.archivedAt));
     },
 
     async get(id) {
-      return scoped.findFirst(contacts, eq(contacts.id, id));
+      // Un contact archivé est traité comme absent (notFound côté page) : il ne fuite
+      // jamais dans les parcours normaux. Sa donnée reste en base (réversible).
+      return scoped.findFirst(
+        contacts,
+        and(eq(contacts.id, id), isNull(contacts.archivedAt)),
+      );
     },
 
     async update(id, data) {
@@ -192,8 +223,16 @@ export function contactsRepository(scoped: ScopedDb): ContactsRepository {
     },
 
     async remove(id) {
-      const removed = await scoped.delete(contacts, eq(contacts.id, id));
-      return removed.length > 0;
+      // SOFT-DELETE (archivage) : on ne supprime JAMAIS la ligne — on pose `archived_at`.
+      // L'histoire (messages, relances) est préservée ; le contact disparaît des lectures
+      // (list/get filtrent les archivés). On n'archive qu'un contact ACTIF (idempotent).
+      const ts = now(scoped.now);
+      const [row] = await scoped.update(
+        contacts,
+        { archivedAt: ts, updatedAt: ts },
+        and(eq(contacts.id, id), isNull(contacts.archivedAt)),
+      );
+      return row !== undefined;
     },
   };
 }

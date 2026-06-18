@@ -42,6 +42,7 @@ const CANAL_ICON: Record<Canal, IconName> = {
 export type ContactFormDefaults = {
   id?: string;
   nom?: string;
+  entreprise?: string | null;
   canalPrefere?: Canal | null;
   handles?: Partial<Record<ContactHandle, string>> | null;
   notes?: string | null;
@@ -128,6 +129,35 @@ export function ContactForm({
         {fieldErr.nom ? (
           <span id="err-nom" className="font-body text-label text-accent-deep">
             {fieldErr.nom}
+          </span>
+        ) : null}
+      </div>
+
+      {/* Entreprise (optionnelle) — sert aussi la dédup nom+entreprise. */}
+      <div className="flex flex-col gap-2">
+        <label
+          htmlFor="contact-entreprise"
+          className="font-body text-label font-bold uppercase tracking-[0.12em] text-ink-soft"
+        >
+          Entreprise
+        </label>
+        <input
+          id="contact-entreprise"
+          name="entreprise"
+          type="text"
+          defaultValue={defaults?.entreprise ?? ""}
+          placeholder="Où travaille ce contact"
+          autoComplete="off"
+          aria-invalid={fieldErr.entreprise ? true : undefined}
+          aria-describedby={fieldErr.entreprise ? "err-entreprise" : undefined}
+          className={FIELD_CLASS}
+        />
+        {fieldErr.entreprise ? (
+          <span
+            id="err-entreprise"
+            className="font-body text-label text-accent-deep"
+          >
+            {fieldErr.entreprise}
           </span>
         ) : null}
       </div>

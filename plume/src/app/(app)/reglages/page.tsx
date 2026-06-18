@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { auth } from "@/lib/auth";
+import { auth, signOut } from "@/lib/auth";
 import { forUser } from "@/lib/db";
 import { VoiceSection } from "@/features/voice/VoiceSection";
 import type { VoiceSeedView } from "@/features/voice/actions";
@@ -30,6 +30,13 @@ export default async function ReglagesPage() {
     createdAt: s.createdAt ?? null,
   }));
 
+  // Server Action : `signOut` est server-only (lib/auth.ts). Le clic POST détruit la
+  // session (stratégie database) puis renvoie vers /login.
+  async function logout() {
+    "use server";
+    await signOut({ redirectTo: "/login" });
+  }
+
   return (
     <div className="flex flex-col gap-6 px-margin-mobile py-8">
       <header className="flex flex-col gap-2">
@@ -43,6 +50,15 @@ export default async function ReglagesPage() {
       </header>
 
       <VoiceSection seeds={seeds} />
+
+      <form action={logout} className="mt-2">
+        <button
+          type="submit"
+          className="rounded-button border-[length:--border-width-ink] border-ink bg-surface-card px-6 py-3 font-body text-button font-bold text-ink shadow-[var(--shadow-button-secondary)] outline-accent outline-offset-2 focus-visible:outline-2"
+        >
+          Se déconnecter
+        </button>
+      </form>
     </div>
   );
 }

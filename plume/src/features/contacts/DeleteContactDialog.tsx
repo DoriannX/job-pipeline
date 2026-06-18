@@ -1,8 +1,8 @@
 "use client";
 
-// Confirmation de suppression d'un Contact (story 2.1).
-// Suppression IRRÉVERSIBLE, mais ton DESTRUCTIF SOFT : mauve mesuré, JAMAIS de rouge
-// alarme. On nomme la conséquence avec douceur, on confirme explicitement. Le bouton
+// Confirmation d'ARCHIVAGE d'un Contact (soft-delete).
+// On n'efface JAMAIS : le contact est archivé (réversible), son histoire (messages,
+// relances) est conservée. Ton doux, mauve mesuré, JAMAIS de rouge alarme. Le bouton
 // d'action porte le langage mauve (accent), pas une couleur de danger.
 
 import { useTransition } from "react";
@@ -44,11 +44,11 @@ export function DeleteContactDialog({
           id="del-title"
           className="font-display text-display-title font-semibold tracking-[-0.01em] text-ink"
         >
-          Retirer {contact.nom} ?
+          Archiver {contact.nom} ?
         </h2>
         <p className="mt-3 font-body text-body text-ink-soft">
-          Ce contact et son histoire (messages, relances) seront retirés
-          définitivement. C&apos;est sans retour.
+          Ce contact quitte ton réseau, mais son histoire (messages, relances)
+          est conservée. Tu pourras le retrouver en le ré-ajoutant.
         </p>
 
         <div className="mt-6 flex items-center justify-end gap-3">
@@ -66,7 +66,7 @@ export function DeleteContactDialog({
             disabled={pending}
             className="rounded-button border-[length:--border-width-ink] border-ink bg-accent px-6 py-3 font-body text-button font-bold text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-70"
           >
-            {pending ? "Un instant…" : "Retirer"}
+            {pending ? "Un instant…" : "Archiver"}
           </button>
         </div>
       </div>

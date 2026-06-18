@@ -61,6 +61,7 @@ function parse(formData: FormData):
   const canalRaw = formData.get("canalPrefere");
   const parsed = contactInputSchema.safeParse({
     nom: formData.get("nom") ?? "",
+    entreprise: formData.get("entreprise") ?? undefined,
     canalPrefere: isCanal(canalRaw) ? canalRaw : "",
     handles: readHandles(formData),
     notes: formData.get("notes") ?? undefined,
@@ -97,11 +98,12 @@ export async function createContactAction(
 
   const result = parse(formData);
   if (!result.ok) return result.state;
-  const { nom, canalPrefere, handles, notes } = result.data;
+  const { nom, entreprise, canalPrefere, handles, notes } = result.data;
 
   const db = await forUser(userId);
   await db.contacts.create({
     nom,
+    entreprise: entreprise ?? null,
     canalPrefere: canalPrefere ?? null,
     handles: isHandlesEmpty(handles) ? null : handles,
     notes: notes ?? null,
@@ -179,11 +181,12 @@ export async function updateContactAction(
 
   const result = parse(formData);
   if (!result.ok) return result.state;
-  const { nom, canalPrefere, handles, notes } = result.data;
+  const { nom, entreprise, canalPrefere, handles, notes } = result.data;
 
   const db = await forUser(userId);
   const updated = await db.contacts.update(id, {
     nom,
+    entreprise: entreprise ?? null,
     canalPrefere: canalPrefere ?? null,
     handles: isHandlesEmpty(handles) ? null : handles,
     notes: notes ?? null,

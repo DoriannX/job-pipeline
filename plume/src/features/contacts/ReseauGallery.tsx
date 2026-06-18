@@ -202,7 +202,7 @@ export function ReseauGallery({
                 <button
                   type="button"
                   onClick={() => onDelete(contact)}
-                  aria-label={`Supprimer ${contact.nom}`}
+                  aria-label={`Archiver ${contact.nom}`}
                   className="rounded-md p-1 text-ink-soft outline-accent outline-offset-2 focus-visible:outline-2"
                 >
                   <Icon name="trash" size={18} />

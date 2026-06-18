@@ -31,6 +31,13 @@ export const contactInputSchema = z.object({
     .trim()
     .min(1, "Donne au moins un nom à ce contact.")
     .max(NOM_MAX, "Ce nom est un peu long."),
+  // Entreprise (optionnelle) — où travaille le contact ; alimente la dédup nom+entreprise.
+  entreprise: z
+    .string()
+    .trim()
+    .max(NOM_MAX, "Ce nom d'entreprise est un peu long.")
+    .optional()
+    .transform((v) => (v ? v : undefined)),
   canalPrefere: z
     .enum(CANAUX)
     .optional()
