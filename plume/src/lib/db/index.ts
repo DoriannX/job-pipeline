@@ -44,6 +44,7 @@ export {
   type MessagesRepository,
   type Message,
   type GenerationEventRow,
+  type CreateDraftInput,
   type MarkSentInput,
   type MarkSentGeneration,
   type EditSentInput,

@@ -100,6 +100,22 @@ export type SetStatusResult =
   | { status: "illegal" }
   | { status: "not-found" };
 
+/**
+ * Entrée de `createDraft` (copilote Phase 2 inc.3) — la frontière du repository. Un
+ * BROUILLON rédigé par l'agent : statut `brouillon`, `genere_par_ia=true`, JAMAIS envoyé.
+ * `userId` n'y figure pas (imposé par la porte). À la différence de `markSent`, aucun
+ * `generation_events`, aucun `envoye_at`, aucun `dernier_contact_at` : le contact n'a PAS
+ * été contacté — on ne fait que déposer un texte prêt à copier.
+ */
+export type CreateDraftInput = {
+  /** Contact destinataire (scopé au tenant par la porte). */
+  contactId: string;
+  /** Canal du brouillon. */
+  canal: Canal;
+  /** Texte du brouillon = sortie SANITIZÉE finale du pipeline voix (NOT NULL, AR-5). */
+  texte: string;
+};
+
 /** Entrée de `markSent` — la frontière du repository (jamais `userId`, imposé par la porte). */
 export type MarkSentInput = {
   /** Contact destinataire. */
@@ -117,6 +133,16 @@ export type MarkSentInput = {
 
 /** Contrat exposé par le repository des Messages (auto-scopé par tenant). */
 export type MessagesRepository = {
+  /**
+   * CRÉE un BROUILLON (copilote Phase 2 inc.3) rédigé par l'agent : `statut='brouillon'`,
+   * `genere_par_ia=true`, lié au contact (scopé). JAMAIS d'envoi : `envoye_at` reste NULL,
+   * aucun `generation_events`, `dernier_contact_at` INTACT. Le contact doit appartenir au
+   * tenant ET être actif (sinon refus : pas de brouillon orphelin). L'agent RÉDIGE,
+   * n'ENVOIE jamais — le passage à `'envoye'` reste l'action HUMAINE du parcours UI.
+   * Réversibilité (SPEC inc.3, option a) : par la cascade d'archivage du contact — aucun
+   * hard-delete, aucun changement de schéma (le brouillon n'est visible que via le contact).
+   */
+  createDraft: (input: CreateDraftInput) => Promise<Message>;
   /** Messages d'un contact, ordonnés du plus RÉCENT au plus ancien (timeline). */
   listForContact: (contactId: string) => Promise<Message[]>;
   /**
@@ -164,6 +190,40 @@ export type MessagesRepository = {
  */
 export function messagesRepository(scoped: ScopedDb): MessagesRepository {
   return {
+    async createDraft(input) {
+      const ts = now(scoped.now);
+
+      // GARDE D'INTÉGRITÉ (parité `markSent`) : le contact DOIT appartenir au tenant ET
+      // être ACTIF. `findFirst` est scopé (un autre tenant est invisible) et filtre les
+      // archivés par défaut → on refuse de rattacher un brouillon à un contact absent ou
+      // archivé (pas de brouillon orphelin).
+      const contact = await scoped.findFirst(
+        contacts,
+        eq(contacts.id, input.contactId),
+      );
+      if (!contact) {
+        throw new Error("Contact introuvable pour ce tenant.");
+      }
+
+      // Insertion SIMPLE (pas de transaction : une seule écriture, aucune dérivée). Le
+      // `user_id` est injecté par la porte. `texte_genere = texte` car le brouillon EST la
+      // sortie IA, non encore éditée — si l'humain l'édite puis l'envoie plus tard, la
+      // distance d'édition généré→envoyé (SM-1) reste calculable. JAMAIS d'`envoye_at`,
+      // JAMAIS de `generation_events`, JAMAIS de `dernier_contact_at` (non contacté).
+      const [message] = await scoped.insert(messages, {
+        contactId: input.contactId,
+        canal: input.canal,
+        texte: input.texte,
+        texteGenere: input.texte,
+        statut: "brouillon",
+        genereParIa: true,
+        envoyeAt: null,
+        createdAt: ts,
+        updatedAt: ts,
+      });
+      return message;
+    },
+
     async listForContact(contactId) {
       // Borné au tenant ET au contact ; tri DESC sur `created_at` (récent → ancien).
       return scoped.findMany(

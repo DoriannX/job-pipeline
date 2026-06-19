@@ -11,14 +11,21 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { contactsRepository, forUserDb } from "@/lib/db";
+import { contactsRepository, messagesRepository, forUserDb } from "@/lib/db";
 import type { Clock } from "@/lib/domain/time";
+import type { Canal } from "@/lib/domain/enums";
 
 import {
   queryContacts,
   seedContacts,
+  createContact,
+  importContacts,
+  composeMessage,
   MAX_SEED,
+  MAX_IMPORT,
+  WRITE_TOOL_NAMES,
 } from "@/lib/agent/tools.server";
+import { buildGenerationEvent } from "@/lib/composer/pipeline.server";
 import { selectTrustedTurns } from "@/lib/agent/run.server";
 
 import { makeTestDb, seedUsers, type TestDb } from "../db/harness";
@@ -187,6 +194,210 @@ describe("seedContacts — write-tool tagué + scope + cap + réversibilité (Ph
     // La donnée de test a disparu des lectures ; le vrai contact est intact.
     expect(after).toHaveLength(1);
     expect(after[0]!.nom).toBe("Vrai Contact");
+  });
+});
+
+describe("createContact — vraie donnée 'manuel', dédup, scope (inc.3 CAP-1)", () => {
+  let db: TestDb;
+  const userA = makeUser({ name: "Alice" });
+  const userB = makeUser({ name: "Bob" });
+  const repoA = () => contactsRepository(forUserDb(db, userA.id, now));
+  const repoB = () => contactsRepository(forUserDb(db, userB.id, now));
+
+  beforeEach(async () => {
+    db = await makeTestDb();
+    await seedUsers(db, [userA, userB]);
+  });
+
+  it("crée un VRAI contact source='manuel' (jamais 'seed'), scopé au tenant", async () => {
+    const res = await createContact(repoA(), {
+      nom: "Sophie Martin",
+      entreprise: "Acme",
+    });
+    expect(res.nom).toBe("Sophie Martin");
+
+    const rows = await repoA().list();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.source).toBe("manuel");
+    expect(rows[0]!.source).not.toBe("seed");
+    // Isolement : rien chez l'autre tenant.
+    expect(await repoB().list()).toHaveLength(0);
+  });
+
+  it("dédup par dedupKey : un re-ajout FUSIONNE, ne double pas", async () => {
+    await createContact(repoA(), { nom: "Sophie Martin", entreprise: "Acme" });
+    // Même clé (casse/accents insensibles) → fusion, pas de doublon.
+    await createContact(repoA(), { nom: "sophie martin", entreprise: "ACME" });
+    expect(await repoA().list()).toHaveLength(1);
+  });
+
+  it("réversible par le soft-delete existant (aucun hard-delete)", async () => {
+    const res = await createContact(repoA(), { nom: "Jetable" });
+    expect(await repoA().remove(res.id)).toBe(true);
+    expect(await repoA().list()).toHaveLength(0);
+  });
+});
+
+describe("importContacts — vrac → bulkCreate, dédup, cap, scope (inc.3 CAP-3)", () => {
+  let db: TestDb;
+  const userA = makeUser({ name: "Alice" });
+  const userB = makeUser({ name: "Bob" });
+  const repoA = () => contactsRepository(forUserDb(db, userA.id, now));
+  const repoB = () => contactsRepository(forUserDb(db, userB.id, now));
+
+  beforeEach(async () => {
+    db = await makeTestDb();
+    await seedUsers(db, [userA, userB]);
+  });
+
+  it("crée N vrais contacts source≠'seed' via bulkCreate, dédup intra-lot", async () => {
+    const res = await importContacts(repoA(), {
+      contacts: [
+        { nom: "Anya", entreprise: "Co" },
+        { nom: "Bilal" },
+        { nom: "anya", entreprise: "co" }, // doublon intra-lot de Anya
+      ],
+    });
+    expect(res.created).toBe(2);
+    expect(res.merged).toBe(1);
+
+    const rows = await repoA().list();
+    expect(rows).toHaveLength(2);
+    // VRAIE donnée : jamais 'seed' (provenance 'rapide' posée par bulkCreate).
+    expect(rows.every((c) => c.source === "rapide")).toBe(true);
+    expect(rows.some((c) => c.source === "seed")).toBe(false);
+  });
+
+  it("n'écrit RIEN chez un autre tenant (isolement cross-tenant)", async () => {
+    await importContacts(repoA(), { contacts: [{ nom: "X" }, { nom: "Y" }] });
+    expect(await repoB().list()).toHaveLength(0);
+  });
+
+  it("clampe un lot déraisonnable à MAX_IMPORT (capped), parité MAX_SEED", async () => {
+    expect(MAX_IMPORT).toBe(MAX_SEED);
+    const many = Array.from({ length: MAX_IMPORT + 20 }, (_, i) => ({
+      nom: `Personne ${i}`,
+      email: `p${i}@import.test`,
+    }));
+    const res = await importContacts(repoA(), { contacts: many });
+    expect(res.requested).toBe(MAX_IMPORT + 20);
+    expect(res.created).toBe(MAX_IMPORT);
+    expect(res.capped).toBe(true);
+    expect(await repoA().list()).toHaveLength(MAX_IMPORT);
+  });
+
+  it("réactive un archivé re-importé (parité bulkCreate, réversibilité)", async () => {
+    const r = await createContact(repoA(), { nom: "Zoé", email: "zoe@import.test" });
+    await repoA().remove(r.id); // archivé
+    const res = await importContacts(repoA(), {
+      contacts: [{ nom: "Zoé", email: "zoe@import.test" }],
+    });
+    expect(res.created).toBe(1); // réactivation comptée comme création
+    expect(await repoA().list()).toHaveLength(1);
+  });
+});
+
+describe("composeMessage — BROUILLON dans la voix, JAMAIS envoyé (inc.3 CAP-2)", () => {
+  let db: TestDb;
+  const userA = makeUser({ name: "Alice" });
+  const contactsA = () => contactsRepository(forUserDb(db, userA.id, now));
+  const messagesA = () => messagesRepository(forUserDb(db, userA.id, now));
+
+  beforeEach(async () => {
+    db = await makeTestDb();
+    await seedUsers(db, [userA]);
+  });
+
+  // Pipeline voix INJECTÉ : on passe un texte BRUT (avec des Tells d'IA) par le VRAI
+  // `buildGenerationEvent` — qui applique `sanitize()`. On prouve ainsi la réutilisation
+  // du moat (texte sanitizé) SANS toucher Anthropic.
+  const composeWith =
+    (raw: string) =>
+    async (p: { idea: string; canal: Canal; tone: "rapide" | "soigne" }) => ({
+      event: buildGenerationEvent({
+        rawText: raw,
+        idea: p.idea,
+        canal: p.canal,
+        tone: p.tone,
+        modelId: "test-model",
+        voiceExamplesRef: [],
+        tokens: { input: 0, output: 0 },
+      }),
+    });
+
+  it("persiste un brouillon lié au contact, texte SANITIZÉ, jamais 'envoye'", async () => {
+    const c = await contactsA().create({
+      nom: "Sophie Martin",
+      entreprise: "Acme",
+      canalPrefere: "linkedin",
+    });
+
+    const res = await composeMessage(
+      {
+        contacts: contactsA(),
+        messages: messagesA(),
+        compose: composeWith("Salut Sophie — ravie de te recroiser 😀"),
+      },
+      { contactId: c.id },
+    );
+
+    // Statut brouillon ; texte passé par sanitize() (cadratin + emoji retirés).
+    expect(res.statut).toBe("brouillon");
+    expect(res.text).not.toContain("—");
+    expect(res.text).not.toContain("😀");
+
+    const msgs = await messagesA().listForContact(c.id);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]!.statut).toBe("brouillon");
+    expect(msgs[0]!.genereParIa).toBe(true);
+    expect(msgs[0]!.envoyeAt).toBeNull();
+    // AUCUN message n'a franchi 'envoye' par le chemin agent.
+    expect(msgs.some((m) => m.statut === "envoye")).toBe(false);
+  });
+
+  it("déduit le canal de la préférence du contact si l'argument est absent", async () => {
+    const c = await contactsA().create({ nom: "Léo", canalPrefere: "sms" });
+    const res = await composeMessage(
+      {
+        contacts: contactsA(),
+        messages: messagesA(),
+        compose: composeWith("Coucou Léo, on se capte ?"),
+      },
+      { contactId: c.id },
+    );
+    expect(res.canal).toBe("sms");
+  });
+
+  it("contactId inconnu → AUCUNE génération (borne anti-coût)", async () => {
+    let composed = false;
+    await expect(
+      composeMessage(
+        {
+          contacts: contactsA(),
+          messages: messagesA(),
+          compose: async () => {
+            composed = true;
+            return { event: { generatedText: "ne devrait pas arriver" } };
+          },
+        },
+        { contactId: "contact-fantome" },
+      ),
+    ).rejects.toThrow();
+    expect(composed).toBe(false);
+    // Aucun brouillon n'a été créé.
+    const ghost = await messagesA().listForContact("contact-fantome");
+    expect(ghost).toHaveLength(0);
+  });
+});
+
+describe("WRITE_TOOL_NAMES — les write-tools réels héritent de la sync (inc.3 CAP-4)", () => {
+  it("contient les 3 nouveaux write-tools (seul changement de sync)", () => {
+    // CAP-4 : l'ajout au registre suffit à faire hériter la sync d'inc.2, sans code dédié.
+    expect(WRITE_TOOL_NAMES.has("createContact")).toBe(true);
+    expect(WRITE_TOOL_NAMES.has("composeMessage")).toBe(true);
+    expect(WRITE_TOOL_NAMES.has("importContacts")).toBe(true);
+    // Le read-tool reste hors du registre (pas de refresh sur une lecture).
+    expect(WRITE_TOOL_NAMES.has("queryContacts")).toBe(false);
   });
 });
 

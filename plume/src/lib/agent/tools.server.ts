@@ -19,8 +19,15 @@ import "server-only";
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 
-import { forUser, type ContactsRepository } from "@/lib/db";
+import {
+  forUser,
+  type ContactsRepository,
+  type MessagesRepository,
+  type BulkCreateItem,
+} from "@/lib/db";
 import { CANAUX, type Canal } from "@/lib/domain/enums";
+import type { Tone } from "@/features/composer/generation";
+import { composeInVoice } from "@/lib/composer/pipeline.server";
 
 /** Projection LÉGÈRE d'un contact renvoyée à l'agent (borne les tokens). */
 export type ContactSummary = {
@@ -155,6 +162,183 @@ export async function seedContacts(
   return { created: ids.size, requested, capped: requested > MAX_SEED };
 }
 
+// ===========================================================================
+// Phase 2 inc.3 — WRITE-TOOLS sur VRAIE donnée (advisor → doer). L'agent CRÉE de la
+// vraie donnée et RÉDIGE dans la voix, mais n'ENVOIE JAMAIS (aucun auto-send au MVP).
+// Provenance VRAIE donnée : `source ∈ {"manuel","rapide"}`, JAMAIS `"seed"` (réciproque
+// exacte de `seedContacts`). Tout réversible (soft-delete), aucun accès drizzle sous un
+// tool : on orchestre les repositories via la porte scopée.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// createContact (CAP-1) — ajoute UN vrai contact dicté en langage naturel.
+// ---------------------------------------------------------------------------
+
+/** Projection d'un contact créé, renvoyée à l'agent (borne les tokens). */
+export type CreateContactResult = {
+  id: string;
+  nom: string;
+  entreprise: string | null;
+};
+
+/** Données d'un contact à créer (sans `source`/scope : posés par la couche tool). */
+export type CreateContactInput = {
+  nom: string;
+  entreprise?: string | null;
+  email?: string | null;
+  canalPrefere?: Canal | null;
+};
+
+/**
+ * LOGIQUE PURE de `createContact`, testable hors serveur : reçoit un repository DÉJÀ
+ * scopé au tenant. Délègue au VRAI `contactsRepository.create` (jamais d'insert direct —
+ * Archi #1), en taguant `source="manuel"` (VRAIE donnée, JAMAIS `"seed"`). La dédup par
+ * `dedupKey` du repository fait fusionner une collision au lieu de doubler ; le contact
+ * reste réversible par le soft-delete existant.
+ */
+export async function createContact(
+  contacts: Pick<ContactsRepository, "create">,
+  input: CreateContactInput,
+): Promise<CreateContactResult> {
+  const row = await contacts.create({
+    nom: input.nom,
+    entreprise: input.entreprise ?? null,
+    canalPrefere: input.canalPrefere ?? null,
+    handles: input.email ? { email: input.email } : null,
+    // PROVENANCE VRAIE DONNÉE — saisie unitaire dictée = "manuel" (parité story 2.1).
+    // JAMAIS "seed" : la vraie donnée reste trivialement distinguable du test.
+    source: "manuel",
+  });
+  return { id: row.id, nom: row.nom, entreprise: row.entreprise ?? null };
+}
+
+// ---------------------------------------------------------------------------
+// importContacts (CAP-3) — crée N vrais contacts en bloc depuis un vrac STRUCTURÉ par
+// l'agent. Le tool ne parse PAS de texte libre : il reçoit des contacts déjà structurés.
+// ---------------------------------------------------------------------------
+
+/**
+ * Plafond serveur d'un import vrac EN UN APPEL (SÉCU #6, PARITÉ `seedContacts` MAX_SEED).
+ * Un lot plus grand est CLAMPÉ à cette valeur, jamais honoré tel quel.
+ */
+export const MAX_IMPORT = MAX_SEED;
+
+/** Résultat de `importContacts` renvoyé à l'agent (pour qu'il verbalise l'action). */
+export type ImportContactsResult = {
+  /** Contacts réellement créés (ou réactivés) via `bulkCreate`. */
+  created: number;
+  /** Contacts fusionnés (déjà présents / doublons intra-lot) — ton neutre. */
+  merged: number;
+  /** Nombre d'entrées demandées (avant clamp). */
+  requested: number;
+  /** `true` quand `requested > MAX_IMPORT` : l'excédent a été ignoré. */
+  capped: boolean;
+};
+
+/**
+ * LOGIQUE PURE de `importContacts`, testable hors serveur : reçoit un repository DÉJÀ
+ * scopé au tenant. CLAMPE le lot à `MAX_IMPORT` (SÉCU #6), puis délègue au VRAI
+ * `contactsRepository.bulkCreate` (dédup intra-lot + réactivation des archivés, provenance
+ * `source="rapide"` ≠ `"seed"`). Réversible par soft-delete ; aucun insert direct.
+ */
+export async function importContacts(
+  contacts: Pick<ContactsRepository, "bulkCreate">,
+  input: { contacts: BulkCreateItem[] },
+): Promise<ImportContactsResult> {
+  const requested = input.contacts.length;
+  // CLAMP serveur (« clampé, pas honoré ») : l'excédent au-delà du plafond est ignoré.
+  const items = input.contacts.slice(0, MAX_IMPORT);
+  const { created, merged } = await contacts.bulkCreate(items);
+  return { created, merged, requested, capped: requested > MAX_IMPORT };
+}
+
+// ---------------------------------------------------------------------------
+// composeMessage (CAP-2) — RÉDIGE un brouillon dans la voix, n'ENVOIE JAMAIS.
+// Réutilise le pipeline Composeur partagé (`composeInVoice`) + persiste un BROUILLON.
+// ---------------------------------------------------------------------------
+
+/** Canal par défaut quand ni l'argument ni la préférence du contact ne le fixent. */
+const DEFAULT_CANAL: Canal = "linkedin";
+
+/** Résultat de `composeMessage` : le brouillon persisté (jamais envoyé). */
+export type ComposeMessageResult = {
+  messageId: string;
+  contactId: string;
+  canal: Canal;
+  /** TOUJOURS `"brouillon"` — l'agent ne franchit jamais `"envoye"`. */
+  statut: "brouillon";
+  /** Texte SANITIZÉ du brouillon (sortie du moat voix). */
+  text: string;
+};
+
+/** Arguments validés de `composeMessage` (frontière zod du tool). */
+export type ComposeMessageInput = {
+  contactId: string;
+  canal?: Canal;
+  tone?: Tone;
+  idea?: string;
+};
+
+/** Dépendances injectées de `composeMessage` (repos scopés + pipeline voix). */
+export type ComposeMessageDeps = {
+  contacts: Pick<ContactsRepository, "get">;
+  messages: Pick<MessagesRepository, "createDraft">;
+  /**
+   * Pipeline voix injecté (prod = `composeInVoice` lié au tenant ; test = stub). Renvoie
+   * au moins `event.generatedText` (sortie SANITIZÉE) — c'est ce que le brouillon persiste.
+   */
+  compose: (params: {
+    idea: string;
+    canal: Canal;
+    tone: Tone;
+    contact: { nom?: string | null };
+  }) => Promise<{ event: { generatedText: string } }>;
+};
+
+/**
+ * LOGIQUE de `composeMessage`, testable par injection (repos scopés + pipeline voix). Elle :
+ *   1. résout le contact (scopé) — un id inconnu/hors tenant NE lance AUCUNE génération
+ *      (borne anti-coût : un argument aberrant ne déclenche pas le pipeline) ;
+ *   2. choisit le canal : argument validé > préférence du contact > défaut projet ;
+ *   3. RÉUTILISE le pipeline Composeur (corpus voix + génération + `sanitize()` déterministe) ;
+ *   4. persiste un BROUILLON lié au contact (`statut="brouillon"`, `genereParIa=true`) —
+ *      JAMAIS d'envoi, JAMAIS `"envoye"`, aucun appel de sortie externe.
+ */
+export async function composeMessage(
+  deps: ComposeMessageDeps,
+  input: ComposeMessageInput,
+): Promise<ComposeMessageResult> {
+  const contact = await deps.contacts.get(input.contactId);
+  if (!contact) {
+    // Contact inconnu/hors tenant : on refuse AVANT toute génération (anti-coût + sécu).
+    throw new Error("Contact introuvable pour ce tenant.");
+  }
+
+  const canal: Canal = input.canal ?? contact.canalPrefere ?? DEFAULT_CANAL;
+  const tone: Tone = input.tone ?? "rapide";
+
+  const { event } = await deps.compose({
+    idea: input.idea ?? "",
+    canal,
+    tone,
+    contact: { nom: contact.nom },
+  });
+
+  const message = await deps.messages.createDraft({
+    contactId: input.contactId,
+    canal,
+    texte: event.generatedText,
+  });
+
+  return {
+    messageId: message.id,
+    contactId: input.contactId,
+    canal,
+    statut: "brouillon",
+    text: event.generatedText,
+  };
+}
+
 /**
  * CAP-2 (sync générique, branchée en UN SEUL point) — frontière R/W exprimée comme
  * DONNÉE : l'ensemble des tools qui ÉCRIVENT. Le wrapper serveur (`run.server.ts`)
@@ -167,7 +351,16 @@ export async function seedContacts(
  * ne connaît pas la FORME des mutations (ça ferait fuiter du métier côté front) :
  * juste le FAIT qu'une écriture a eu lieu.
  */
-export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set(["seedContacts"]);
+// CAP-4 (inc.3) — HÉRITAGE de la sync, SANS nouveau code : les trois write-tools réels
+// rejoignent ce registre. Le pont d'invalidation d'inc.2 (un seul `router.refresh()` en
+// fin de stream si `didWrite`) les couvre automatiquement. C'est le SEUL changement lié à
+// la sync — la promesse « un futur write-tool hérite de la sync sans câblage » se réalise.
+export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "seedContacts",
+  "createContact",
+  "composeMessage",
+  "importContacts",
+]);
 
 /**
  * Construit le catalogue de tools pour UN tenant donné. `userId` est clos par la
@@ -246,6 +439,148 @@ export function buildTools(userId: string): ToolSet {
             requested: count,
             capped: false,
             error: "Création de contacts de test momentanément indisponible.",
+          };
+        }
+      },
+    }),
+
+    // --- createContact (CAP-1) : ajoute UN vrai contact (source "manuel", jamais seed). ---
+    createContact: tool({
+      description:
+        "Ajoute UN VRAI contact au réseau de l'utilisateur (ex. « ajoute Sophie Martin, " +
+        "CTO chez Acme »). Crée de la vraie donnée (jamais un contact de test). " +
+        "Dédupliqué automatiquement : un contact déjà présent fusionne au lieu de doubler. " +
+        "N'invente JAMAIS de contact — n'enregistre que ce que l'utilisateur a dicté.",
+      inputSchema: z.object({
+        nom: z
+          .string()
+          .trim()
+          .min(1)
+          .max(200)
+          .describe("Nom complet du contact (requis)."),
+        entreprise: z
+          .string()
+          .trim()
+          .max(200)
+          .optional()
+          .describe("Entreprise du contact (optionnel)."),
+        email: z
+          .string()
+          .trim()
+          .email()
+          .max(320)
+          .optional()
+          .describe("E-mail du contact (optionnel)."),
+        canalPrefere: z
+          .enum(CANAUX)
+          .optional()
+          .describe("Canal de contact préféré (optionnel)."),
+      }),
+      execute: async (args) => {
+        try {
+          const gate = await forUser(userId);
+          return await createContact(gate.contacts, args);
+        } catch (err) {
+          console.error("[agent] createContact a échoué :", err);
+          return {
+            error: "Création du contact momentanément indisponible. Réessaie plus tard.",
+          };
+        }
+      },
+    }),
+
+    // --- importContacts (CAP-3) : crée N vrais contacts en bloc (vrac structuré par l'agent). ---
+    importContacts: tool({
+      description:
+        "Importe PLUSIEURS vrais contacts en bloc, à partir d'une liste que TU structures " +
+        "depuis le texte de l'utilisateur (parse toi-même le vrac en {nom, entreprise?, " +
+        "email?}). Crée de la vraie donnée, dédupliquée (intra-lot ET vs existant). " +
+        `Plafonné à ${MAX_IMPORT} contacts par appel : au-delà, l'excédent est ignoré ` +
+        "(`capped` vaut alors vrai — annonce-le). N'invente AUCUN contact.",
+      inputSchema: z.object({
+        contacts: z
+          .array(
+            z.object({
+              nom: z.string().trim().min(1).max(200),
+              entreprise: z.string().trim().max(200).optional(),
+              email: z.string().trim().email().max(320).optional(),
+            }),
+          )
+          .min(1)
+          // Borne DURE à la frontière (anti-DoS) ; la logique pure CLAMPE ensuite à
+          // MAX_IMPORT (« clampé, pas honoré ») — même patron à deux bornes que seedContacts.
+          .max(500)
+          .describe(
+            `Contacts structurés à créer (plafonné à ${MAX_IMPORT} côté serveur).`,
+          ),
+      }),
+      execute: async (args) => {
+        try {
+          const gate = await forUser(userId);
+          return await importContacts(gate.contacts, { contacts: args.contacts });
+        } catch (err) {
+          console.error("[agent] importContacts a échoué :", err);
+          return {
+            error: "Import des contacts momentanément indisponible. Réessaie plus tard.",
+          };
+        }
+      },
+    }),
+
+    // --- composeMessage (CAP-2) : RÉDIGE un brouillon dans la voix, n'ENVOIE JAMAIS. ---
+    composeMessage: tool({
+      description:
+        "Rédige un BROUILLON de message d'outreach pour un contact, DANS LA VOIX de " +
+        "l'utilisateur (réutilise le Composeur : few-shot de voix + nettoyage anti-IA, " +
+        "longueur adaptée au canal). Le brouillon est PERSISTÉ, lié au contact, prêt à " +
+        "copier — mais JAMAIS envoyé : c'est l'utilisateur qui envoie depuis l'app. " +
+        "Donne `contactId` ; `canal`/`tone` optionnels (canal déduit de la préférence du " +
+        "contact si absent), `idea` = contexte/consigne optionnel pour le message.",
+      inputSchema: z.object({
+        contactId: z
+          .string()
+          .trim()
+          .min(1)
+          .max(64)
+          .describe("Id du contact destinataire (obtenu via queryContacts)."),
+        canal: z
+          .enum(CANAUX)
+          .optional()
+          .describe("Canal du message (défaut : préférence du contact)."),
+        tone: z
+          .enum(["rapide", "soigne"])
+          .optional()
+          .describe("Registre de rédaction (défaut : rapide)."),
+        idea: z
+          .string()
+          .trim()
+          .max(2000)
+          .optional()
+          .describe("Contexte/consigne pour le message (optionnel)."),
+      }),
+      execute: async (args) => {
+        try {
+          const gate = await forUser(userId);
+          return await composeMessage(
+            {
+              contacts: gate.contacts,
+              messages: gate.messages,
+              // Pipeline voix PARTAGÉ avec /api/composer — `gate` clos par closure.
+              compose: (p) =>
+                composeInVoice({
+                  gate,
+                  idea: p.idea,
+                  canal: p.canal,
+                  tone: p.tone,
+                  contact: p.contact,
+                }),
+            },
+            args,
+          );
+        } catch (err) {
+          console.error("[agent] composeMessage a échoué :", err);
+          return {
+            error: "Rédaction du brouillon momentanément indisponible. Réessaie plus tard.",
           };
         }
       },
