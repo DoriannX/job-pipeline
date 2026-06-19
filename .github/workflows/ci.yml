@@ -4,14 +4,17 @@ name: CI (plume)
 # Scopé au sous-projet `plume/` (l'ancien pipeline Python a son propre workflow).
 
 on:
+  # Push : filtré aux chemins plume pour économiser des minutes.
   push:
+    branches: [dev, main]
     paths:
       - "plume/**"
       - ".github/workflows/ci.yml"
+  # PR : PAS de filtre paths -> le job "build" tourne sur CHAQUE PR vers dev/main.
+  # Indispensable car "build" est un status check requis : un check filtré qui ne
+  # tourne jamais bloque la PR ("Expected — Waiting for status to be reported").
   pull_request:
-    paths:
-      - "plume/**"
-      - ".github/workflows/ci.yml"
+    branches: [dev, main]
 
 defaults:
   run:
