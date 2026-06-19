@@ -18,3 +18,5 @@ venv/
 
 # NB : _bmad/, docs/ et .claude/ (skills dont story-loop, settings) SONT versionnés
 # pour qu'un clone soit identique. Retire-les de ce fichier = arrête de les suivre.
+
+.vercel
