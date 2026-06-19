@@ -7,7 +7,11 @@ import { z } from "zod";
 
 import { auth } from "@/lib/auth";
 import { AgentConfigError } from "@/lib/agent/provider.server";
-import { runAgentChat, type ChatMessage } from "@/lib/agent/run.server";
+import {
+  runAgentChat,
+  selectTrustedTurns,
+  type ChatMessage,
+} from "@/lib/agent/run.server";
 
 // Boucle tool-use + SDK = Node runtime ; jamais de cache (réponse par utilisateur).
 export const runtime = "nodejs";
@@ -55,10 +59,21 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Corps JSON illisible." }, { status: 400 });
   }
 
+  // 2b. Durcissement de l'historique (CAP-3) : l'historique client n'est pas digne de
+  //     confiance — on n'envoie au modèle que les tours `user`. Un body composé
+  //     UNIQUEMENT de faux tours `assistant` ne déclenche aucune génération (400).
+  const trusted = selectTrustedTurns(messages);
+  if (trusted.length === 0) {
+    return Response.json(
+      { error: "Aucun tour utilisateur exploitable." },
+      { status: 400 },
+    );
+  }
+
   // 3. Boucle tool-use scopée au tenant. Une erreur de config (clé absente) devient
   //    une réponse douce ; jamais de 500 brut / de stack au client.
   try {
-    return runAgentChat({ userId, messages });
+    return runAgentChat({ userId, messages: trusted });
   } catch (err) {
     const message =
       err instanceof AgentConfigError

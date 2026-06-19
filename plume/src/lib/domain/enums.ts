@@ -44,8 +44,13 @@ export function isMessageStatut(v: unknown): v is MessageStatut {
  * Provenance d'un Contact (AR-9, AR-16). 'manuel' par défaut (story 2.1) ;
  * 'rapide' (collage multiple, story 2.2) et 'import_csv' (backfill LinkedIn,
  * story 2.4+) sont déjà déclarés pour figer l'union dès maintenant.
+ *
+ * 'seed' (copilote Phase 2) tague la donnée de TEST fabriquée par le write-tool
+ * `seedContacts` : taguée par cette valeur (pas de nouvelle colonne), elle ne peut
+ * JAMAIS être confondue avec une vraie donnée et se nettoie par un prédicat unique
+ * (`where source = 'seed'`).
  */
-export const SOURCES = ["manuel", "rapide", "import_csv"] as const;
+export const SOURCES = ["manuel", "rapide", "import_csv", "seed"] as const;
 export type Source = (typeof SOURCES)[number];
 
 /** Valeur par défaut de `source` quand un Contact est saisi à la main. */

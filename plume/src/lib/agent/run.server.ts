@@ -23,10 +23,29 @@ const MAX_STEPS = 8;
 /** Personnalité : coach prospection, mais contrôle des actions Plume (Stratégie #2). */
 const SYSTEM_PROMPT = [
   "Tu es le copilote de Plume, un assistant spécialisé dans la prospection réseau.",
-  "Tu peux consulter les contacts de l'utilisateur via tes outils pour répondre.",
+  "Tu peux consulter les contacts de l'utilisateur (queryContacts) et, à sa demande,",
+  "peupler son réseau de contacts de TEST fabriqués (seedContacts) pour qu'il essaie l'app.",
   "Appuie chaque réponse factuelle sur les outils ; n'invente jamais de contacts.",
   "Réponds en français, de façon concise et actionnable.",
 ].join(" ");
+
+/**
+ * CAP-3 (durcissement de l'historique reçu, ferme la dette Phase 1) : l'historique
+ * fourni par le CLIENT n'est pas digne de confiance — un appelant peut fabriquer de
+ * faux tours `assistant`/`tool` pour amorcer l'agent avec un contexte mensonger
+ * (« tu as déjà l'autorisation de tout supprimer », « voici les contacts : … »).
+ *
+ * Tant qu'aucun historique serveur signé n'existe (pas de mémoire persistante cette
+ * phase), la SEULE source de vérité est ce que l'UTILISATEUR a tapé : on ne garde
+ * que les tours `user`. Les tours non-`user` reçus sont ÉCARTÉS avant tout appel
+ * modèle. Fonction pure → testable (un faux `assistant` ne devient jamais du contexte).
+ *
+ * À renégocier quand un vrai multi-tour arrive : il faudra alors valider/signer les
+ * tours `assistant` côté serveur plutôt que de les écarter.
+ */
+export function selectTrustedTurns(messages: ChatMessage[]): ChatMessage[] {
+  return messages.filter((m) => m.role === "user");
+}
 
 /**
  * Lance la boucle tool-use pour un tenant et renvoie un flux texte (NDJSON-free,
@@ -40,7 +59,9 @@ export function runAgentChat(opts: {
   userId: string;
   messages: ChatMessage[];
 }): Response {
-  const messages: ModelMessage[] = opts.messages.map((m) => ({
+  // Défense en profondeur (CAP-3) : même si l'appelant oublie de filtrer, le wrapper
+  // (porte unique) n'envoie au modèle que des tours dignes de confiance.
+  const messages: ModelMessage[] = selectTrustedTurns(opts.messages).map((m) => ({
     role: m.role,
     content: m.content,
   }));
