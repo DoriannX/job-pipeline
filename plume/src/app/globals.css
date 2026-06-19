@@ -112,6 +112,12 @@ body {
   transform-origin: 50% 80%;
 }
 
+/* Ouverture du popup copilote (style widget SAV) : la carte ÉCLOT depuis le coin de
+   l'icône flottante (origine bas-droite) — léger fondu + montée + échelle. Courte et
+   douce, jamais tape-à-l'œil. Neutralisée par le bloc Reduce Motion ci-dessous. */
+/* (L'animation du popup copilote est pilotée par Motion — ressort `layout` distortion-free
+   dans `CopiloteSheet.tsx` — et n'a plus besoin de keyframes CSS ici.) */
+
 /* Reduce Motion respecté (plancher a11y, UX-DR4) : on coupe les animations. */
 @media (prefers-reduced-motion: reduce) {
   *,

@@ -5,13 +5,30 @@ import "server-only";
 // La clé API ne quitte jamais le serveur. Wrapper analogue à `claude.server.ts`
 // pour le composer : la route passe par CE module, jamais par le SDK IA nu.
 
-import { streamText, stepCountIs, type ModelMessage } from "ai";
+import {
+  streamText,
+  stepCountIs,
+  type LanguageModel,
+  type ModelMessage,
+  type ToolSet,
+  type UIMessage,
+} from "ai";
 
 import { getAgentModel } from "./provider.server";
-import { buildTools } from "./tools.server";
+import { buildTools, WRITE_TOOL_NAMES } from "./tools.server";
 
 /** Message de conversation accepté à la frontière (façade simple pour la route). */
 export type ChatMessage = { role: "user" | "assistant"; content: string };
+
+/**
+ * Métadonnée portée par le flux UI message (CAP-2) : `didWrite` dit si le run a
+ * comporté ≥1 écriture. Le client lit ce SEUL fait en fin de stream pour décider
+ * d'un `router.refresh()` (jamais la forme des mutations — le front reste « bête »).
+ */
+export type CopiloteMetadata = { didWrite: boolean };
+
+/** Forme de message UI typée pour notre métadonnée de sync. */
+type CopiloteUIMessage = UIMessage<CopiloteMetadata>;
 
 /**
  * Plafond de tours de la boucle tool-use (SÉCU #6 : retry-cap / loop-breaker).
@@ -48,16 +65,34 @@ export function selectTrustedTurns(messages: ChatMessage[]): ChatMessage[] {
 }
 
 /**
- * Lance la boucle tool-use pour un tenant et renvoie un flux texte (NDJSON-free,
- * `text/plain` streamé — suffisant pour le test curl du Checkpoint 1).
+ * Message DOUX (jamais de stack/rouge alarme — règle DA) substitué à toute erreur
+ * survenant en plein stream. Le détail technique est journalisé serveur-side ; le
+ * client ne voit qu'une fin de tour terminale et lisible (CAP-3).
+ */
+const STREAM_ERROR_MESSAGE =
+  "Le copilote a rencontré un souci en cours de route. Réessaie dans un instant.";
+
+/**
+ * Lance la boucle tool-use pour un tenant et renvoie un FLUX UI MESSAGE du SDK
+ * (`toUIMessageStreamResponse`). Ce format porte DEUX signaux que `toTextStreamResponse`
+ * ne pouvait pas :
+ *   - CAP-3 : une erreur mid-stream devient une part `error` TERMINALE (via `onError`),
+ *     rendue en teinte douce côté client — plus de flux tronqué pris pour un succès.
+ *   - CAP-2 : la part `finish` porte `messageMetadata.didWrite` — le SEUL fait dont le
+ *     client a besoin pour déclencher UN `router.refresh()` si le run a écrit.
  *
  * `userId` vient de la session next-auth (jamais du client) → tous les tools sont
- * scopés à ce tenant (SÉCU #3). Peut lever `AgentConfigError` (clé absente) à la
- * construction : l'appelant l'attrape et renvoie une erreur douce.
+ * scopés à ce tenant (SÉCU #3). `model`/`tools` sont injectables pour les tests
+ * (défauts = provider réel + catalogue scopé). Peut lever `AgentConfigError` (clé
+ * absente) SYNCHRONEMENT : l'appelant l'attrape et renvoie une erreur douce.
  */
 export function runAgentChat(opts: {
   userId: string;
   messages: ChatMessage[];
+  /** Injection test : modèle mocké. Défaut = provider réel (clé serveur). */
+  model?: LanguageModel;
+  /** Injection test : catalogue de tools. Défaut = tools scopés au tenant. */
+  tools?: ToolSet;
 }): Response {
   // Défense en profondeur (CAP-3) : même si l'appelant oublie de filtrer, le wrapper
   // (porte unique) n'envoie au modèle que des tours dignes de confiance.
@@ -69,23 +104,40 @@ export function runAgentChat(opts: {
   // Résolu AVANT `streamText` : un `AgentConfigError` (clé absente) doit remonter
   // SYNCHRONEMENT pour être attrapé par l'appelant (erreur douce), pas se perdre
   // dans le flux.
-  const model = getAgentModel();
+  const model = opts.model ?? getAgentModel();
+  const tools = opts.tools ?? buildTools(opts.userId);
+
+  // CAP-2 — déterminé CÔTÉ SERVEUR : le run a-t-il appelé ≥1 write-tool ? On lève le
+  // drapeau dès qu'un step contient l'appel d'un tool d'écriture (registre générique
+  // `WRITE_TOOL_NAMES`), et on l'expose UNE seule fois, sur la part `finish`. Jamais
+  // un signal par token ; rien du tout si le run était read-only.
+  let didWrite = false;
 
   const result = streamText({
     model,
     system: SYSTEM_PROMPT,
     messages,
-    tools: buildTools(opts.userId),
+    tools,
     stopWhen: stepCountIs(MAX_STEPS),
-    // Une erreur SURVENANT EN PLEIN STREAM (provider 429/5xx, coupure, tool qui
-    // jette) arrive APRÈS le renvoi de la Response : le try/catch de la route ne
-    // peut plus la voir, et `toTextStreamResponse` ignore les events non-texte.
-    // Sans ce hook, l'échec serait SILENCIEUX (flux tronqué). On le journalise au
-    // minimum (l'erreur in-band côté client viendra avec l'UI / un UIMessageStream).
+    onStepFinish: (step) => {
+      if (step.toolCalls.some((call) => WRITE_TOOL_NAMES.has(call.toolName))) {
+        didWrite = true;
+      }
+    },
+    // Journalisation serveur du détail (le client ne verra que le message doux que
+    // `toUIMessageStreamResponse({ onError })` met dans la part `error` terminale).
     onError: ({ error }) => {
       console.error("[agent] erreur en cours de stream :", error);
     },
   });
 
-  return result.toTextStreamResponse();
+  return result.toUIMessageStreamResponse<CopiloteUIMessage>({
+    // CAP-2 : signal de fin d'écriture, porté UNE fois sur la part `finish`.
+    messageMetadata: ({ part }) =>
+      part.type === "finish" ? { didWrite } : undefined,
+    // CAP-3 : transforme une erreur mid-stream en part `error` terminale lisible.
+    // Détail déjà journalisé par `onError` de `streamText` ; ici on ne renvoie au
+    // client qu'un texte doux (jamais de stack).
+    onError: () => STREAM_ERROR_MESSAGE,
+  });
 }

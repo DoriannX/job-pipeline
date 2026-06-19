@@ -156,6 +156,20 @@ export async function seedContacts(
 }
 
 /**
+ * CAP-2 (sync générique, branchée en UN SEUL point) — frontière R/W exprimée comme
+ * DONNÉE : l'ensemble des tools qui ÉCRIVENT. Le wrapper serveur (`run.server.ts`)
+ * s'en sert pour décider, EN FIN DE RUN, si une mutation a eu lieu et donc s'il faut
+ * signaler au client de se resynchroniser (`router.refresh()`).
+ *
+ * GÉNÉRIQUE par construction : ajouter un futur write-tool (`createContact`,
+ * `composeMessage`, import…) à cet ensemble — une seule ligne — suffit à lui faire
+ * hériter de la sync, sans aucun autre câblage côté serveur NI côté client. La sync
+ * ne connaît pas la FORME des mutations (ça ferait fuiter du métier côté front) :
+ * juste le FAIT qu'une écriture a eu lieu.
+ */
+export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set(["seedContacts"]);
+
+/**
  * Construit le catalogue de tools pour UN tenant donné. `userId` est clos par la
  * closure (jamais un argument que l'agent contrôle — SÉCU #3). Chaque `execute`
  * ouvre la porte scopée et délègue à la logique pure.
