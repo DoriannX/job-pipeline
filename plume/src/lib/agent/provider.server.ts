@@ -23,7 +23,7 @@ export class AgentConfigError extends Error {
 /** Modèle de prod : Sonnet (qualité de tool-calling réelle). */
 const PROD_MODEL = "claude-sonnet-4-6";
 /** Modèle de dev : Gemini Flash, gratuit (plomberie uniquement). */
-const DEV_MODEL = "gemini-2.0-flash";
+const DEV_MODEL = "gemini-2.5-flash";
 
 /**
  * Résout le modèle du copilote selon `AGENT_PROVIDER`. Échoue TÔT et PROPREMENT
