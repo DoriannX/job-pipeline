@@ -361,6 +361,102 @@ export async function composeMessage(
   };
 }
 
+// ===========================================================================
+// ARCHIVE-TOOLS (delete réversible) — l'agent RETIRE de la vraie donnée, TOUJOURS par soft-delete
+// (`archived_at`), JAMAIS de hard-delete. Tout archivage est journalisé sous le `turnId` du run →
+// rewindable d'un geste (l'inverse DÉSARCHIVE). Scope tenant clos sous la couche tool (SÉCU #3) ;
+// aucun accès drizzle sous un tool (on orchestre les repositories via la porte scopée — Archi #1).
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// archiveContact (CAP-DEL-1) — archive UN contact par id (soft-delete réversible).
+// ---------------------------------------------------------------------------
+
+/** Résultat d'`archiveContact` : `archived=false` si l'id est inconnu / déjà archivé (no-op). */
+export type ArchiveContactResult = { archived: boolean };
+
+/**
+ * LOGIQUE PURE d'`archiveContact`, testable hors serveur : reçoit un repository DÉJÀ scopé au
+ * tenant. Délègue au VRAI `contactsRepository.remove` (soft-delete `archived_at`, jamais de
+ * `DELETE`). Idempotent : un id inconnu ou un contact déjà archivé renvoie `archived=false`,
+ * sans écriture ni entrée de journal. Réversible par le rewind (op `archived`).
+ */
+export async function archiveContact(
+  contacts: Pick<ContactsRepository, "remove">,
+  input: { contactId: string },
+  journal?: JournalSink,
+): Promise<ArchiveContactResult> {
+  const archived = await contacts.remove(input.contactId, journal);
+  return { archived };
+}
+
+// ---------------------------------------------------------------------------
+// archiveContacts (CAP-DEL-2) — archive PLUSIEURS contacts en bloc (ex. « supprime tous les
+// contacts de test »). L'agent fournit la liste d'ids (résolus via queryContacts) ; le tool ne
+// devine AUCUN critère. Plafonné serveur (parité seed/import).
+// ---------------------------------------------------------------------------
+
+/**
+ * Plafond serveur d'un archivage en bloc EN UN APPEL (SÉCU #6, PARITÉ `MAX_SEED`/`MAX_IMPORT`).
+ * Au-delà, l'excédent est IGNORÉ (« clampé, pas honoré ») — l'agent ne peut pas amplifier le coût
+ * ni vider tout un réseau d'un appel.
+ */
+export const MAX_ARCHIVE = MAX_SEED;
+
+/** Résultat d'`archiveContacts` renvoyé à l'agent (pour qu'il verbalise l'action). */
+export type ArchiveContactsResult = {
+  /** Contacts réellement archivés (ids inconnus / déjà archivés ne comptent pas). */
+  archived: number;
+  /** Nombre d'ids demandés (avant clamp). */
+  requested: number;
+  /** `true` quand `requested > MAX_ARCHIVE` : l'excédent a été ignoré. */
+  capped: boolean;
+};
+
+/**
+ * LOGIQUE PURE d'`archiveContacts`, testable hors serveur : reçoit un repository DÉJÀ scopé au
+ * tenant. CLAMPE la liste à `MAX_ARCHIVE` (SÉCU #6), puis archive chaque id via le VRAI `remove`
+ * (chacun journalisé sous le même `turnId` → tout le lot rewindable d'un geste, parité
+ * `seedContacts`). Compte les archivages EFFECTIFS (un id inconnu/déjà archivé ne compte pas).
+ */
+export async function archiveContacts(
+  contacts: Pick<ContactsRepository, "remove">,
+  input: { contactIds: string[] },
+  journal?: JournalSink,
+): Promise<ArchiveContactsResult> {
+  const requested = input.contactIds.length;
+  // CLAMP serveur (« clampé, pas honoré ») : l'excédent au-delà du plafond est ignoré.
+  const ids = input.contactIds.slice(0, MAX_ARCHIVE);
+  let archived = 0;
+  for (const id of ids) {
+    if (await contacts.remove(id, journal)) archived += 1;
+  }
+  return { archived, requested, capped: requested > MAX_ARCHIVE };
+}
+
+// ---------------------------------------------------------------------------
+// archiveDraft (CAP-DEL-3) — retire UN brouillon rédigé par l'agent (soft-delete réversible).
+// Ne touche QU'UN message resté `brouillon` (la couche repo refuse un `envoye` — corpus préservé).
+// ---------------------------------------------------------------------------
+
+/** Résultat d'`archiveDraft` : `archived=false` si le message est inconnu / déjà retiré / envoyé. */
+export type ArchiveDraftResult = { archived: boolean };
+
+/**
+ * LOGIQUE PURE d'`archiveDraft` (tool), testable hors serveur : reçoit un repository DÉJÀ scopé au
+ * tenant. Délègue au VRAI `messagesRepository.archiveDraft` (soft-delete `archived_at`, garde
+ * `statut='brouillon'`). Idempotent : un id inconnu, déjà archivé ou promu `envoye` renvoie
+ * `archived=false`, sans écriture. Réversible par le rewind (op `archived` → `restoreDraft`).
+ */
+export async function archiveDraftTool(
+  messages: Pick<MessagesRepository, "archiveDraft">,
+  input: { messageId: string },
+  journal?: JournalSink,
+): Promise<ArchiveDraftResult> {
+  const archived = await messages.archiveDraft(input.messageId, journal);
+  return { archived };
+}
+
 /**
  * CAP-2 (sync générique, branchée en UN SEUL point) — frontière R/W exprimée comme
  * DONNÉE : l'ensemble des tools qui ÉCRIVENT. Le wrapper serveur (`run.server.ts`)
@@ -382,6 +478,11 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "createContact",
   "composeMessage",
   "importContacts",
+  // ARCHIVE-tools (delete réversible) : héritent de la sync (router.refresh) par leur seule
+  // présence ici — la galerie Réseau relit la vérité serveur après un archivage.
+  "archiveContact",
+  "archiveContacts",
+  "archiveDraft",
 ]);
 
 /**
@@ -640,6 +741,111 @@ export function buildTools(userId: string, turnId: string): ToolSet {
           console.error("[agent] composeMessage a échoué :", err);
           return {
             error: "Rédaction du brouillon momentanément indisponible. Réessaie plus tard.",
+          };
+        }
+      },
+    }),
+
+    // --- archiveContact (CAP-DEL-1) : archive UN contact (soft-delete réversible par rewind). ---
+    archiveContact: tool({
+      description:
+        "Archive (retire) UN contact du réseau de l'utilisateur. C'est un SOFT-DELETE réversible " +
+        "(jamais une suppression définitive) : l'humain peut annuler le tour. " +
+        "CONFIRME D'ABORD LA CIBLE : avant d'appeler, retrouve le contact via queryContacts et " +
+        "annonce à l'utilisateur le NOM (et l'entreprise) du contact que tu vas archiver, en " +
+        "demandant son accord — n'archive jamais sur une demande ambiguë ni un id que tu n'as pas " +
+        "résolu toi-même. `archived` vaut faux si l'id est inconnu ou déjà archivé (dis-le).",
+      inputSchema: z.object({
+        contactId: z
+          .string()
+          .trim()
+          .min(1)
+          .max(64)
+          .describe("Id du contact à archiver (obtenu via queryContacts)."),
+      }),
+      execute: async (args) => {
+        try {
+          const gate = await forUser(userId);
+          return await archiveContact(
+            gate.contacts,
+            args,
+            makeJournal("archiveContact"),
+          );
+        } catch (err) {
+          console.error("[agent] archiveContact a échoué :", err);
+          return {
+            error: "Archivage du contact momentanément indisponible. Réessaie plus tard.",
+          };
+        }
+      },
+    }),
+
+    // --- archiveContacts (CAP-DEL-2) : archive PLUSIEURS contacts en bloc, plafonné serveur. ---
+    archiveContacts: tool({
+      description:
+        "Archive PLUSIEURS contacts en bloc (ex. « supprime tous les contacts de test »). " +
+        "SOFT-DELETE réversible, jamais définitif. Tu dois fournir la liste d'ids EXACTE — " +
+        "résous-la d'abord via queryContacts (n'invente aucun id, ne devine aucun critère côté " +
+        "serveur). CONFIRME D'ABORD : annonce COMBIEN de contacts et lesquels (noms) tu vas " +
+        `archiver, et demande l'accord de l'utilisateur. Plafonné à ${MAX_ARCHIVE} par appel : ` +
+        "au-delà, l'excédent est ignoré (`capped` vaut alors vrai — annonce-le). `archived` est " +
+        "le nombre réellement retiré (les ids inconnus/déjà archivés ne comptent pas).",
+      inputSchema: z.object({
+        contactIds: z
+          .array(z.string().trim().min(1).max(64))
+          .min(1)
+          // Borne DURE à la frontière (anti-DoS) ; la logique pure CLAMPE ensuite à MAX_ARCHIVE
+          // (« clampé, pas honoré ») — même patron à deux bornes que seedContacts/importContacts.
+          .max(500)
+          .describe(
+            `Ids des contacts à archiver (plafonné à ${MAX_ARCHIVE} côté serveur).`,
+          ),
+      }),
+      execute: async (args) => {
+        try {
+          const gate = await forUser(userId);
+          return await archiveContacts(
+            gate.contacts,
+            { contactIds: args.contactIds },
+            makeJournal("archiveContacts"),
+          );
+        } catch (err) {
+          console.error("[agent] archiveContacts a échoué :", err);
+          return {
+            error: "Archivage en bloc momentanément indisponible. Réessaie plus tard.",
+          };
+        }
+      },
+    }),
+
+    // --- archiveDraft (CAP-DEL-3) : retire UN brouillon rédigé par l'agent (soft, réversible). ---
+    archiveDraft: tool({
+      description:
+        "Retire (archive) UN BROUILLON de message précédemment rédigé. SOFT-DELETE réversible. " +
+        "Ne fonctionne QUE sur un message resté au statut brouillon : un message que l'utilisateur " +
+        "a déjà envoyé ne peut PAS être retiré (`archived` vaut alors faux — annonce-le). " +
+        "CONFIRME D'ABORD la cible (de quel contact / quel brouillon il s'agit) avant d'appeler. " +
+        "Obtiens le `messageId` depuis le contexte de la fiche du contact, jamais inventé.",
+      inputSchema: z.object({
+        messageId: z
+          .string()
+          .trim()
+          .min(1)
+          .max(64)
+          .describe("Id du brouillon à retirer."),
+      }),
+      execute: async (args) => {
+        try {
+          const gate = await forUser(userId);
+          return await archiveDraftTool(
+            gate.messages,
+            args,
+            makeJournal("archiveDraft"),
+          );
+        } catch (err) {
+          console.error("[agent] archiveDraft a échoué :", err);
+          return {
+            error: "Retrait du brouillon momentanément indisponible. Réessaie plus tard.",
           };
         }
       },

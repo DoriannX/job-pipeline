@@ -21,7 +21,13 @@ import {
   messagesRepository,
   type JournalSink,
 } from "@/lib/db";
-import { createContact, importContacts } from "@/lib/agent/tools.server";
+import {
+  archiveContact,
+  archiveContacts,
+  archiveDraftTool,
+  createContact,
+  importContacts,
+} from "@/lib/agent/tools.server";
 import { replayRewind } from "@/features/copilote/rewind";
 import type { Clock } from "@/lib/domain/time";
 
@@ -217,6 +223,64 @@ describe("rewind — undo exact, soft, journalisé (CAP-2/CAP-3)", () => {
     const second = await replayRewind(deps(), "t1");
     expect(second.reversed).toBe(0); // tour déjà annulé → rien à inverser
     expect(second.turnIds).toEqual([]);
+  });
+
+  it("ARCHIVE contact : rewind DÉSARCHIVE le contact (l'inverse d'archiveContact restaure l'actif)", async () => {
+    // Un contact ACTIF préexistant (créé hors tour journalisé). t1 l'archive.
+    const c = await createContact(contactsRepo(), { nom: "Sophie", email: "s@x.test" });
+    expect(await contactsRepo().get(c.id)).toBeDefined();
+
+    await archiveContact(
+      contactsRepo(),
+      { contactId: c.id },
+      journal("t1", "archiveContact"),
+    );
+    // Archivé : invisible aux lectures.
+    expect(await contactsRepo().get(c.id)).toBeUndefined();
+
+    await replayRewind(deps(), "t1");
+    // DÉSARCHIVÉ : le contact retrouve son état actif (archivedAt remis à null).
+    const restored = await contactsRepo().get(c.id);
+    expect(restored).toBeDefined();
+    expect(restored!.archivedAt).toBeNull();
+  });
+
+  it("ARCHIVE en bloc : rewind désarchive TOUS les contacts du lot (réversibilité de masse)", async () => {
+    const a = await createContact(contactsRepo(), { nom: "A", email: "a@x.test" });
+    const b = await createContact(contactsRepo(), { nom: "B", email: "b@x.test" });
+    const res = await archiveContacts(
+      contactsRepo(),
+      { contactIds: [a.id, b.id] },
+      journal("t1", "archiveContacts"),
+    );
+    expect(res.archived).toBe(2);
+    expect(await contactsRepo().list()).toHaveLength(0);
+
+    await replayRewind(deps(), "t1");
+    // Les deux réapparaissent (chaque archivage du lot était journalisé sous t1).
+    expect(await contactsRepo().list()).toHaveLength(2);
+  });
+
+  it("ARCHIVE brouillon : rewind RESTAURE le brouillon retiré (inverse d'archiveDraft)", async () => {
+    const c = await createContact(contactsRepo(), { nom: "Sophie", email: "s@x.test" });
+    const draft = await messagesRepo().createDraft({
+      contactId: c.id,
+      canal: "linkedin",
+      texte: "Brouillon à retirer puis restaurer",
+    });
+    await archiveDraftTool(
+      messagesRepo(),
+      { messageId: draft.id },
+      journal("t1", "archiveDraft"),
+    );
+    expect(await messagesRepo().listForContact(c.id)).toHaveLength(0);
+
+    await replayRewind(deps(), "t1");
+    // Le brouillon réapparaît dans la timeline du contact.
+    const msgs = await messagesRepo().listForContact(c.id);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]!.statut).toBe("brouillon");
+    expect(msgs[0]!.archivedAt).toBeNull();
   });
 
   it("FUSION sans champ écrasé : rewind est un no-op exact (le préexistant reste intact)", async () => {

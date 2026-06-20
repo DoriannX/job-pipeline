@@ -13,12 +13,14 @@ import type { ActionLogPrevState } from "./schema";
 import type { ScopedDb } from "./scoped";
 
 /** Opérations de MUTATION journalisables (l'entrée d'audit `rewind` n'en est pas une). */
-export type JournaledOp = "created" | "merged" | "reactivated";
+export type JournaledOp = "created" | "merged" | "reactivated" | "archived";
 
 /**
  * Description NEUTRE d'une mutation à journaliser, produite par le repository (lui seul connaît
- * l'`op` réelle — `created` vs `merged` vs `reactivated` — et l'état antérieur). `prevState` est
- * REQUIS pour `merged`/`reactivated` (champs à restaurer au rewind), omis pour `created`.
+ * l'`op` réelle — `created` vs `merged` vs `reactivated` vs `archived` — et l'état antérieur).
+ * `prevState` est REQUIS pour `merged`/`reactivated` (champs à restaurer au rewind) ET pour
+ * `archived` (où il vaut `{ archivedAt: null }` : l'inverse DÉSARCHIVE, restaure l'actif) ; il est
+ * omis pour `created` (dont l'inverse est l'archivage, sans état à restaurer).
  */
 export type MutationRecord = {
   entityType: "contact" | "message";

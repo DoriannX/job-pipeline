@@ -368,9 +368,10 @@ export const actionLog = sqliteTable("action_log", {
   entityId: text("entity_id").notNull(),
   // Opération journalisée — DÉTERMINE l'inverse rejoué au rewind (voir action-inverse-map.md) :
   //   `created`    → re-archivage ; `merged`/`reactivated` → restauration de `prev_state` ;
+  //   `archived`   → désarchivage (restaure l'actif via `prev_state = {archivedAt: null}`) ;
   //   `rewind`     → entrée d'audit terminale, non ré-inversable (pas de redo, cf. Non-goals).
   op: text("op")
-    .$type<"created" | "merged" | "reactivated" | "rewind">()
+    .$type<"created" | "merged" | "reactivated" | "archived" | "rewind">()
     .notNull(),
   // État antérieur capturé — REQUIS pour `merged`/`reactivated` (champs à restaurer), liste des
   // `turnId` annulés pour `rewind`, OMIS (NULL) pour `created` (l'inverse est l'archivage).

@@ -82,7 +82,15 @@ export type ContactsRepository = {
     opts?: { includeArchived?: boolean },
   ) => Promise<Contact | undefined>;
   update: (id: string, data: ContactUpdate) => Promise<Contact | undefined>;
-  remove: (id: string) => Promise<boolean>;
+  /**
+   * SOFT-DELETE (archivage) d'un contact ACTIF : pose `archived_at`, jamais de `DELETE`.
+   * `journal` (copilote — archiveContact) est une SINK optionnelle : fournie, l'archivage
+   * s'exécute dans UNE transaction et l'entrée `action_log` (op `archived`, `prevState =
+   * {archivedAt: null}`) y est écrite ATOMIQUEMENT → l'archivage devient rewindable (l'inverse
+   * DÉSARCHIVE). Absente ⇒ chemin hérité non journalisé (UI manuelle, inverse de `created` au
+   * rewind). Idempotent : un contact déjà archivé ⇒ `false`, aucune écriture, aucune entrée.
+   */
+  remove: (id: string, journal?: JournalSink) => Promise<boolean>;
 };
 
 /**
@@ -380,17 +388,34 @@ export function contactsRepository(scoped: ScopedDb): ContactsRepository {
       return row;
     },
 
-    async remove(id) {
+    async remove(id, journal) {
       // SOFT-DELETE (archivage) : on ne supprime JAMAIS la ligne — on pose `archived_at`.
       // L'histoire (messages, relances) est préservée ; le contact disparaît des lectures
       // (list/get filtrent les archivés). On n'archive qu'un contact ACTIF (idempotent).
-      const ts = now(scoped.now);
-      const [row] = await scoped.update(
-        contacts,
-        { archivedAt: ts, updatedAt: ts },
-        and(eq(contacts.id, id), isNull(contacts.archivedAt)),
-      );
-      return row !== undefined;
+      //
+      // `db` = porte scopée, OU handle transactionnel (`tx`) quand on journalise — pour rendre
+      // l'archivage ET son entrée `action_log` atomiques (parité `createDraft`/`create`).
+      const run = async (db: ScopedDb) => {
+        const ts = now(db.now);
+        const [row] = await db.update(
+          contacts,
+          { archivedAt: ts, updatedAt: ts },
+          and(eq(contacts.id, id), isNull(contacts.archivedAt)),
+        );
+        // Journal (op `archived`) UNIQUEMENT si une ligne ACTIVE a bien été archivée : un no-op
+        // (déjà archivé) ne doit RIEN journaliser, sinon le rewind « désarchiverait » à tort.
+        // `prevState = {archivedAt: null}` = l'état AVANT (actif) → l'inverse restaure l'actif.
+        if (row && journal) {
+          await journal(db, {
+            entityType: "contact",
+            entityId: row.id,
+            op: "archived",
+            prevState: { archivedAt: null },
+          });
+        }
+        return row !== undefined;
+      };
+      return journal ? scoped.transaction(run) : run(scoped);
     },
   };
 }
