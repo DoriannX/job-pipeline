@@ -27,6 +27,7 @@ import { Plume } from "@/design/illustration/Plume";
 import { colors } from "@/design/tokens";
 
 import { streamCopilote, type CopiloteTurn } from "./stream-client";
+import { rewindTurnAction } from "./rewind.actions";
 import { CopiloteMarkdown } from "./CopiloteMarkdown";
 
 // Libellés FR des outils, affichés en petit (façon Claude) quand l'agent agit. Le front
@@ -51,12 +52,18 @@ type Status = "idle" | "streaming";
 // Un message affiché dans le chat. `kind` distingue la bulle d'erreur douce (CAP-3) des
 // bulles de conversation. `pending` marque la bulle assistant qui reçoit le flux en direct.
 type ToolStatus = "running" | "done" | "error";
+// État de l'affordance de rewind (inc.4) : au repos, en cours, annulé, RIEN à annuler (no-op
+// honnête — ex. un write-tool qui a échoué/n'a rien commis, ou un tour déjà annulé), ou échec.
+type RewindStatus = "idle" | "running" | "done" | "noop" | "error";
 type ChatItem =
   | { id: number; kind: "user"; content: string }
   | { id: number; kind: "assistant"; content: string; pending?: boolean }
   | { id: number; kind: "error"; content: string }
   // Chip d'outil (façon Claude) : `toolCallId` corrèle début ↔ fin du flux.
-  | { id: number; kind: "tool"; toolCallId: string; name: string; status: ToolStatus };
+  | { id: number; kind: "tool"; toolCallId: string; name: string; status: ToolStatus }
+  // Affordance de REWIND (inc.4) : posée en fin d'un tour AYANT ÉCRIT ; porte le `turnId`
+  // rewindable (retenu en-session). « Annuler ce tour » = action humaine → mauve.
+  | { id: number; kind: "rewind"; turnId: string; status: RewindStatus };
 
 export function CopiloteSheet() {
   const router = useRouter();
@@ -148,6 +155,50 @@ export function CopiloteSheet() {
     setStatus("idle");
     inputRef.current?.focus();
   }, []);
+
+  // REWIND d'un tour (inc.4) : affordance HUMAINE (jamais un tool d'agent). On appelle la server
+  // action `rewindTurnAction(turnId)` qui rejoue les inverses (soft, jamais hard-delete) puis
+  // hérite de la sync d'inc.2 (`revalidatePath`) ; côté client on refait UN `router.refresh()`
+  // (même levier que `onWrite`) — AUCUN nouveau mécanisme de sync.
+  const rewindTurn = useCallback(
+    (turnId: string, itemId: number) => {
+      setItems((prev) =>
+        prev.map((it) =>
+          it.kind === "rewind" && it.id === itemId
+            ? { ...it, status: "running" }
+            : it,
+        ),
+      );
+      void rewindTurnAction(turnId)
+        .then((res) => {
+          // Retour HONNÊTE : si l'action a réussi mais n'a RIEN inversé (run qui n'a finalement
+          // rien commis, ou tour déjà annulé), on n'affiche pas un faux « Tour annulé » et on
+          // ne déclenche pas de refresh inutile.
+          const reversed = res.ok && res.summary.reversed > 0;
+          setItems((prev) =>
+            prev.map((it) =>
+              it.kind === "rewind" && it.id === itemId
+                ? {
+                    ...it,
+                    status: res.ok ? (reversed ? "done" : "noop") : "error",
+                  }
+                : it,
+            ),
+          );
+          if (reversed) router.refresh();
+        })
+        .catch(() => {
+          setItems((prev) =>
+            prev.map((it) =>
+              it.kind === "rewind" && it.id === itemId
+                ? { ...it, status: "error" }
+                : it,
+            ),
+          );
+        });
+    },
+    [router],
+  );
 
   // Démontage : on coupe un flux éventuellement en cours + le timer de phase.
   useEffect(() => {
@@ -309,9 +360,17 @@ export function CopiloteSheet() {
         // CAP-2 : UN SEUL refresh, déclenché en fin de tour si le run a écrit (succès OU
         // erreur). La page server-component relit la vérité serveur → l'UI reflète la
         // mutation sans reload. `aborted` (démontage) ⇒ on ne touche plus au routeur.
-        onWrite: () => {
+        // inc.4 : ce tour a écrit → on pose l'affordance de rewind (porte le `turnId` retenu
+        // en-session), pour que l'humain puisse annuler exactement ce tour.
+        onWrite: (turnId) => {
           if (controller.signal.aborted) return;
           router.refresh();
+          if (turnId) {
+            setItems((prev) => [
+              ...prev,
+              { id: newId(), kind: "rewind", turnId, status: "idle" },
+            ]);
+          }
         },
       },
       controller.signal,
@@ -462,7 +521,17 @@ export function CopiloteSheet() {
                   essayer l&apos;app.
                 </p>
               ) : (
-                items.map((it) => <Bubble key={it.id} item={it} />)
+                items.map((it) =>
+                  it.kind === "rewind" ? (
+                    <RewindAffordance
+                      key={it.id}
+                      item={it}
+                      onRewind={() => rewindTurn(it.turnId, it.id)}
+                    />
+                  ) : (
+                    <Bubble key={it.id} item={it} />
+                  ),
+                )
               )}
 
               {/* Ligne d'attente DOUCE (jamais un spinner) tant qu'aucun texte n'arrive pour
@@ -512,7 +581,7 @@ export function CopiloteSheet() {
 }
 
 /** Une bulle du fil. Assistant à gauche (mascotte, markdown), user à droite, chip d'outil, erreur douce. */
-function Bubble({ item }: { item: ChatItem }) {
+function Bubble({ item }: { item: Exclude<ChatItem, { kind: "rewind" }> }) {
   if (item.kind === "tool") {
     return <ToolChip item={item} />;
   }
@@ -547,6 +616,55 @@ function Bubble({ item }: { item: ChatItem }) {
       <div className="max-w-[80%] rounded-button border-[length:--border-width-ink] border-line bg-surface-note px-4 py-2">
         <CopiloteMarkdown content={item.content} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * Affordance de REWIND (inc.4) — « Annuler ce tour ». Geste HUMAIN (jamais un tool d'agent) qui
+ * annule exactement les mutations du tour. Le rewind peut défaire des effets lourds : l'affordance
+ * est LISIBLE et DÉLIBÉRÉE (un bouton plein, pas un clic accidentel), mauve (= action), erreur en
+ * teinte DOUCE (jamais rouge alarme), conforme `project-context.md`.
+ */
+function RewindAffordance({
+  item,
+  onRewind,
+}: {
+  item: Extract<ChatItem, { kind: "rewind" }>;
+  onRewind: () => void;
+}) {
+  const done = item.status === "done";
+  const running = item.status === "running";
+  const noop = item.status === "noop";
+  const error = item.status === "error";
+  const label = done
+    ? "Tour annulé"
+    : noop
+      ? "Rien à annuler"
+      : running
+        ? "Annulation…"
+        : "Annuler ce tour";
+  return (
+    <div className="flex flex-col gap-1 self-start">
+      <button
+        type="button"
+        onClick={onRewind}
+        disabled={running || done || noop}
+        aria-label="Annuler ce tour"
+        className="flex items-center gap-2 self-start rounded-button border-[length:--border-width-ink] border-ink bg-surface-note px-3 py-1.5 font-body text-label font-bold uppercase tracking-[0.12em] text-accent outline-accent outline-offset-2 focus-visible:outline-2 disabled:cursor-default disabled:border-line disabled:text-ink-hint"
+      >
+        <Icon name={done || noop ? "check" : "arrow-left"} size={14} />
+        {label}
+      </button>
+      {error ? (
+        <span
+          role="status"
+          aria-live="polite"
+          className="font-body text-label text-ink-soft"
+        >
+          L&apos;annulation a échoué. Réessaie.
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -20,10 +20,12 @@ import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 
 import {
+  actionLogRepository,
   forUser,
   type ContactsRepository,
   type MessagesRepository,
   type BulkCreateItem,
+  type JournalSink,
 } from "@/lib/db";
 import { CANAUX, type Canal } from "@/lib/domain/enums";
 import type { Tone } from "@/features/composer/generation";
@@ -146,17 +148,23 @@ export async function seedContacts(
   contacts: Pick<ContactsRepository, "create">,
   input: { count: number },
   generate: (index: number) => FakeContact = defaultFakeContact,
+  journal?: JournalSink,
 ): Promise<SeedContactsResult> {
   const requested = input.count;
   const n = Math.min(Math.max(0, Math.floor(requested)), MAX_SEED);
   const ids = new Set<string>();
   for (let i = 0; i < n; i++) {
     const { email, ...rest } = generate(i);
-    const row = await contacts.create({
-      ...rest,
-      handles: { email },
-      source: "seed",
-    });
+    // `journal` (inc.4) : chaque création est journalisée atomiquement sous le `turnId` du run
+    // (toute mutation du copilote au journal — même un seed, qui devient ainsi rewindable).
+    const row = await contacts.create(
+      {
+        ...rest,
+        handles: { email },
+        source: "seed",
+      },
+      journal,
+    );
     ids.add(row.id);
   }
   return { created: ids.size, requested, capped: requested > MAX_SEED };
@@ -199,16 +207,22 @@ export type CreateContactInput = {
 export async function createContact(
   contacts: Pick<ContactsRepository, "create">,
   input: CreateContactInput,
+  journal?: JournalSink,
 ): Promise<CreateContactResult> {
-  const row = await contacts.create({
-    nom: input.nom,
-    entreprise: input.entreprise ?? null,
-    canalPrefere: input.canalPrefere ?? null,
-    handles: input.email ? { email: input.email } : null,
-    // PROVENANCE VRAIE DONNÉE — saisie unitaire dictée = "manuel" (parité story 2.1).
-    // JAMAIS "seed" : la vraie donnée reste trivialement distinguable du test.
-    source: "manuel",
-  });
+  const row = await contacts.create(
+    {
+      nom: input.nom,
+      entreprise: input.entreprise ?? null,
+      canalPrefere: input.canalPrefere ?? null,
+      handles: input.email ? { email: input.email } : null,
+      // PROVENANCE VRAIE DONNÉE — saisie unitaire dictée = "manuel" (parité story 2.1).
+      // JAMAIS "seed" : la vraie donnée reste trivialement distinguable du test.
+      source: "manuel",
+    },
+    // `journal` (inc.4) : la création (ou fusion/réactivation par dédup) est journalisée
+    // atomiquement sous le `turnId` du run → rewindable.
+    journal,
+  );
   return { id: row.id, nom: row.nom, entreprise: row.entreprise ?? null };
 }
 
@@ -244,11 +258,14 @@ export type ImportContactsResult = {
 export async function importContacts(
   contacts: Pick<ContactsRepository, "bulkCreate">,
   input: { contacts: BulkCreateItem[] },
+  journal?: JournalSink,
 ): Promise<ImportContactsResult> {
   const requested = input.contacts.length;
   // CLAMP serveur (« clampé, pas honoré ») : l'excédent au-delà du plafond est ignoré.
   const items = input.contacts.slice(0, MAX_IMPORT);
-  const { created, merged } = await contacts.bulkCreate(items);
+  // `journal` (inc.4) : le lot entier est journalisé DANS UNE transaction (une entrée par
+  // contact créé/réactivé), sous le `turnId` du run → tout le lot rewindable d'un geste.
+  const { created, merged } = await contacts.bulkCreate(items, journal);
   return { created, merged, requested, capped: requested > MAX_IMPORT };
 }
 
@@ -293,6 +310,8 @@ export type ComposeMessageDeps = {
     tone: Tone;
     contact: { nom?: string | null };
   }) => Promise<{ event: { generatedText: string } }>;
+  /** `journal` (inc.4) : journalise le brouillon atomiquement sous le `turnId` du run. */
+  journal?: JournalSink;
 };
 
 /**
@@ -324,11 +343,14 @@ export async function composeMessage(
     contact: { nom: contact.nom },
   });
 
-  const message = await deps.messages.createDraft({
-    contactId: input.contactId,
-    canal,
-    texte: event.generatedText,
-  });
+  const message = await deps.messages.createDraft(
+    {
+      contactId: input.contactId,
+      canal,
+      texte: event.generatedText,
+    },
+    deps.journal,
+  );
 
   return {
     messageId: message.id,
@@ -363,11 +385,34 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Construit le catalogue de tools pour UN tenant donné. `userId` est clos par la
- * closure (jamais un argument que l'agent contrôle — SÉCU #3). Chaque `execute`
- * ouvre la porte scopée et délègue à la logique pure.
+ * Construit le catalogue de tools pour UN tenant donné. `userId` ET `turnId` sont clos par la
+ * closure (jamais des arguments que l'agent contrôle — SÉCU #3, Constraint SPEC inc.4). `turnId`
+ * est généré côté serveur dans `runAgentChat` (un par run) : l'agent ne le reçoit ni ne le
+ * contrôle, il ne peut donc ni réécrire ni cibler le journal.
+ *
+ * Chaque `execute` ouvre la porte scopée et délègue à la logique pure. Les WRITE-tools reçoivent
+ * une SINK de journalisation `makeJournal(toolName)` : la mutation et son entrée `action_log`
+ * s'écrivent ATOMIQUEMENT dans la MÊME transaction (le repository invoque la sink avec son handle
+ * `tx`), sous ce `turnId`. La sink est le SEUL endroit qui connaît `turnId`+`toolName` ; le
+ * repository, lui, ignore tout du journal (couplage évité — voir `journal.ts`).
  */
-export function buildTools(userId: string): ToolSet {
+export function buildTools(userId: string, turnId: string): ToolSet {
+  // Fabrique une sink liée au `turnId` du run et au `toolName` courant. Le repository l'appelle
+  // DANS sa transaction (handle `tx`), de sorte que `actionLogRepository(tx).record(...)` écrit
+  // l'entrée atomiquement avec la mutation — jamais un log async ratable (parité `markSent`).
+  const makeJournal =
+    (toolName: string): JournalSink =>
+    async (tx, record) => {
+      await actionLogRepository(tx).record({
+        turnId,
+        toolName,
+        entityType: record.entityType,
+        entityId: record.entityId,
+        op: record.op,
+        prevState: record.prevState,
+      });
+    };
+
   return {
     queryContacts: tool({
       description:
@@ -431,7 +476,12 @@ export function buildTools(userId: string): ToolSet {
         // verbaliser, plutôt que de tuer le flux.
         try {
           const gate = await forUser(userId);
-          return await seedContacts(gate.contacts, { count });
+          return await seedContacts(
+            gate.contacts,
+            { count },
+            undefined,
+            makeJournal("seedContacts"),
+          );
         } catch (err) {
           console.error("[agent] seedContacts a échoué :", err);
           return {
@@ -479,7 +529,11 @@ export function buildTools(userId: string): ToolSet {
       execute: async (args) => {
         try {
           const gate = await forUser(userId);
-          return await createContact(gate.contacts, args);
+          return await createContact(
+            gate.contacts,
+            args,
+            makeJournal("createContact"),
+          );
         } catch (err) {
           console.error("[agent] createContact a échoué :", err);
           return {
@@ -517,7 +571,11 @@ export function buildTools(userId: string): ToolSet {
       execute: async (args) => {
         try {
           const gate = await forUser(userId);
-          return await importContacts(gate.contacts, { contacts: args.contacts });
+          return await importContacts(
+            gate.contacts,
+            { contacts: args.contacts },
+            makeJournal("importContacts"),
+          );
         } catch (err) {
           console.error("[agent] importContacts a échoué :", err);
           return {
@@ -574,6 +632,7 @@ export function buildTools(userId: string): ToolSet {
                   tone: p.tone,
                   contact: p.contact,
                 }),
+              journal: makeJournal("composeMessage"),
             },
             args,
           );

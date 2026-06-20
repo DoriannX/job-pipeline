@@ -12,6 +12,10 @@ import "server-only";
 // `userId` est fourni par l'appelant (résolu via `auth()` dans chaque action) : on ne lit
 // PAS la session ici, pour garder ce module pur vis-à-vis du framework et testable au besoin.
 
+import {
+  actionLogRepository,
+  type ActionLogRepository,
+} from "./action-log-repositories";
 import { getServerDb } from "./client";
 import {
   importJobsRepository,
@@ -24,21 +28,46 @@ import {
   type MessagesRepository,
 } from "./message-repositories";
 import { contactsRepository, type ContactsRepository } from "./repositories";
-import { scopedDb } from "./scoped";
+import { scopedDb, type ScopedDb } from "./scoped";
 import {
   seedVoixRepository,
   type SeedVoixRepository,
 } from "./voice-repositories";
 import { systemClock } from "../domain/time";
 
-/** Surface de données scopée exposée aux features (un repo par entité). */
-export type UserGate = {
+/** Repositories scopés (un par entité) — la surface commune à la porte et à ses transactions. */
+export type ScopedRepositories = {
   contacts: ContactsRepository;
   importJobs: ImportJobsRepository;
   mergeCandidates: MergeCandidatesRepository;
   seedVoix: SeedVoixRepository;
   messages: MessagesRepository;
+  /** Journal d'actions du copilote (inc.4) : écriture atomique + lecture pour le rewind. */
+  actionLog: ActionLogRepository;
 };
+
+/** Surface de données scopée exposée aux features (repos + transaction scopée). */
+export type UserGate = ScopedRepositories & {
+  /**
+   * Exécute `fn` dans UNE transaction scopée au MÊME tenant, en lui passant des repositories
+   * re-scopés sur le handle transactionnel. Tout réussit ENSEMBLE ou rien (rollback total).
+   * Socle de l'atomicité du REWIND (inc.4) : tous les inverses + l'entrée d'audit `rewind`
+   * vivent dans une seule transaction (parité avec l'écriture atomique du journal côté mutation).
+   */
+  transaction: <T>(fn: (tx: ScopedRepositories) => Promise<T>) => Promise<T>;
+};
+
+/** Câble les repositories d'entités au-dessus d'une porte scopée (db serveur OU handle tx). */
+function buildRepositories(scoped: ScopedDb): ScopedRepositories {
+  return {
+    contacts: contactsRepository(scoped),
+    importJobs: importJobsRepository(scoped),
+    mergeCandidates: mergeCandidatesRepository(scoped),
+    seedVoix: seedVoixRepository(scoped),
+    messages: messagesRepository(scoped),
+    actionLog: actionLogRepository(scoped),
+  };
+}
 
 /**
  * Porte scopée serveur pour un tenant donné. Async pour figer une signature stable
@@ -53,10 +82,9 @@ export async function forUser(userId: string): Promise<UserGate> {
     now: systemClock,
   });
   return {
-    contacts: contactsRepository(scoped),
-    importJobs: importJobsRepository(scoped),
-    mergeCandidates: mergeCandidatesRepository(scoped),
-    seedVoix: seedVoixRepository(scoped),
-    messages: messagesRepository(scoped),
+    ...buildRepositories(scoped),
+    // La transaction re-scope la porte au même tenant (AR-8) et câble des repos sur le handle tx.
+    transaction: (fn) =>
+      scoped.transaction((tx) => fn(buildRepositories(tx))),
   };
 }

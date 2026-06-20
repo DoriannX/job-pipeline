@@ -12,12 +12,13 @@
 //   (c) met à jour `contacts.dernier_contact_at` → la froideur (Epic 2) devient vivante.
 // Si une seule de ces écritures échoue, la transaction est ANNULÉE (rollback total).
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 
 import { normalizedLevenshtein } from "../domain/edit-distance";
 import type { Canal, MessageStatut } from "../domain/enums";
 import { canTransition } from "../domain/message-status";
 import { now } from "../domain/time";
+import type { JournalSink } from "./journal";
 import { contacts, generationEvents, messages } from "./schema";
 import type { ScopedDb } from "./scoped";
 
@@ -142,7 +143,15 @@ export type MessagesRepository = {
    * Réversibilité (SPEC inc.3, option a) : par la cascade d'archivage du contact — aucun
    * hard-delete, aucun changement de schéma (le brouillon n'est visible que via le contact).
    */
-  createDraft: (input: CreateDraftInput) => Promise<Message>;
+  createDraft: (input: CreateDraftInput, journal?: JournalSink) => Promise<Message>;
+  /**
+   * RETRAIT SOFT d'un brouillon (copilote inc.4, inverse de `composeMessage` au rewind). Pose
+   * `archived_at` (la porte filtre alors le brouillon des lectures) — JAMAIS de `DELETE`. On ne
+   * retire qu'un message ACTIF (idempotent : déjà archivé ⇒ `false`, aucune écriture). Renvoie
+   * `true` si une ligne a été archivée. Réservé au rewind ; les brouillons UI normaux ne sont
+   * pas concernés.
+   */
+  archiveDraft: (id: string) => Promise<boolean>;
   /** Messages d'un contact, ordonnés du plus RÉCENT au plus ancien (timeline). */
   listForContact: (contactId: string) => Promise<Message[]>;
   /**
@@ -190,38 +199,76 @@ export type MessagesRepository = {
  */
 export function messagesRepository(scoped: ScopedDb): MessagesRepository {
   return {
-    async createDraft(input) {
+    async createDraft(input, journal) {
+      // `db` = porte scopée, OU handle transactionnel (`tx`) quand on journalise — pour rendre
+      // l'insertion du brouillon ET son entrée `action_log` atomiques (CAP-1).
+      const run = async (db: ScopedDb) => {
+        const ts = now(db.now);
+
+        // GARDE D'INTÉGRITÉ (parité `markSent`) : le contact DOIT appartenir au tenant ET
+        // être ACTIF. `findFirst` est scopé (un autre tenant est invisible) et filtre les
+        // archivés par défaut → on refuse de rattacher un brouillon à un contact absent ou
+        // archivé (pas de brouillon orphelin).
+        const contact = await db.findFirst(
+          contacts,
+          eq(contacts.id, input.contactId),
+        );
+        if (!contact) {
+          throw new Error("Contact introuvable pour ce tenant.");
+        }
+
+        // Le `user_id` est injecté par la porte. `texte_genere = texte` car le brouillon EST la
+        // sortie IA, non encore éditée — si l'humain l'édite puis l'envoie plus tard, la
+        // distance d'édition généré→envoyé (SM-1) reste calculable. JAMAIS d'`envoye_at`,
+        // JAMAIS de `generation_events`, JAMAIS de `dernier_contact_at` (non contacté).
+        const [message] = await db.insert(messages, {
+          contactId: input.contactId,
+          canal: input.canal,
+          texte: input.texte,
+          texteGenere: input.texte,
+          statut: "brouillon",
+          genereParIa: true,
+          envoyeAt: null,
+          createdAt: ts,
+          updatedAt: ts,
+        });
+
+        // Journal (inc.4) : op `created` sur l'entité `message`, sans `prevState` (l'inverse
+        // est le retrait soft via `archiveDraft`). Écrit dans la MÊME transaction.
+        if (journal) {
+          await journal(db, {
+            entityType: "message",
+            entityId: message.id,
+            op: "created",
+          });
+        }
+        return message;
+      };
+
+      return journal ? scoped.transaction(run) : run(scoped);
+    },
+
+    async archiveDraft(id) {
+      // RETRAIT SOFT (inverse de `composeMessage`) : pose `archived_at` sur un message ACTIF
+      // ENCORE AU STATUT `brouillon`, JAMAIS de `DELETE`. La porte filtrera alors le brouillon
+      // des lectures (listForContact, corpus de voix). Idempotent : un message déjà archivé
+      // matche 0 ligne → `false`.
+      //
+      // GARDE `statut = 'brouillon'` (défense) : si l'humain a, entre-temps, ÉDITÉ/ENVOYÉ ce
+      // message (passage à `envoye` via le parcours UI), il a quitté la sphère « brouillon que
+      // l'agent a rédigé » — le rewind NE DOIT PAS le retirer (sinon on effacerait un vrai
+      // envoyé du corpus de voix et de la timeline). On ne retire donc qu'un brouillon resté tel.
       const ts = now(scoped.now);
-
-      // GARDE D'INTÉGRITÉ (parité `markSent`) : le contact DOIT appartenir au tenant ET
-      // être ACTIF. `findFirst` est scopé (un autre tenant est invisible) et filtre les
-      // archivés par défaut → on refuse de rattacher un brouillon à un contact absent ou
-      // archivé (pas de brouillon orphelin).
-      const contact = await scoped.findFirst(
-        contacts,
-        eq(contacts.id, input.contactId),
+      const [row] = await scoped.update(
+        messages,
+        { archivedAt: ts, updatedAt: ts },
+        and(
+          eq(messages.id, id),
+          eq(messages.statut, "brouillon"),
+          isNull(messages.archivedAt),
+        ),
       );
-      if (!contact) {
-        throw new Error("Contact introuvable pour ce tenant.");
-      }
-
-      // Insertion SIMPLE (pas de transaction : une seule écriture, aucune dérivée). Le
-      // `user_id` est injecté par la porte. `texte_genere = texte` car le brouillon EST la
-      // sortie IA, non encore éditée — si l'humain l'édite puis l'envoie plus tard, la
-      // distance d'édition généré→envoyé (SM-1) reste calculable. JAMAIS d'`envoye_at`,
-      // JAMAIS de `generation_events`, JAMAIS de `dernier_contact_at` (non contacté).
-      const [message] = await scoped.insert(messages, {
-        contactId: input.contactId,
-        canal: input.canal,
-        texte: input.texte,
-        texteGenere: input.texte,
-        statut: "brouillon",
-        genereParIa: true,
-        envoyeAt: null,
-        createdAt: ts,
-        updatedAt: ts,
-      });
-      return message;
+      return row !== undefined;
     },
 
     async listForContact(contactId) {

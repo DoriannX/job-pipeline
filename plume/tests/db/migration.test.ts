@@ -251,3 +251,63 @@ describe("migration 0006 — ADD COLUMN nullable rétro-compatible (story 3.7)",
     expect(Number(after.rows[0].updated_at)).toBe(1700000001000);
   });
 });
+
+describe("migration 0008 — journal d'actions + soft-delete des messages (inc.4)", () => {
+  it("ajoute action_log (CREATE) + messages.archived_at (ADD COLUMN) sur base PEUPLÉE, sans casse", async () => {
+    const client = createClient({ url: "file::memory:?cache=private" });
+    const files = migrationFiles();
+
+    // État inc.3 : tout ce qui PRÉCÈDE 0008 (messages déjà peuplé, sans archived_at).
+    for (const f of files.filter((f) => f < "0008")) {
+      await apply(client, f);
+    }
+    await client.execute(
+      "INSERT INTO users (id, timezone, voix_ton) VALUES ('u1','Europe/Paris','neutre')",
+    );
+    await client.execute(
+      "INSERT INTO contacts (id, user_id, nom, source, dedup_key) VALUES ('c1','u1','Alice','manuel','name:alice|')",
+    );
+    // Un brouillon PRÉ-EXISTANT (avant la migration) : pas d'archived_at encore.
+    await client.execute(
+      "INSERT INTO messages (id, user_id, contact_id, canal, texte, statut, created_at) VALUES ('m1','u1','c1','linkedin','Brouillon',  'brouillon',1700000000000)",
+    );
+
+    const m0008 = files.find((f) => f.startsWith("0008"));
+    expect(m0008).toBeDefined();
+    await apply(client, m0008!);
+
+    // ADD COLUMN nullable : la ligne pré-existante est intacte, archived_at NULL.
+    const msg = await client.execute(
+      "SELECT texte, archived_at FROM messages WHERE id = 'm1'",
+    );
+    expect(msg.rows).toHaveLength(1);
+    expect(String(msg.rows[0].texte)).toBe("Brouillon");
+    expect(msg.rows[0].archived_at).toBeNull();
+    // Le retrait soft (rewind) peut poser archived_at.
+    await client.execute(
+      "UPDATE messages SET archived_at = 1700000005000 WHERE id = 'm1'",
+    );
+    const archived = await client.execute(
+      "SELECT archived_at FROM messages WHERE id = 'm1'",
+    );
+    expect(Number(archived.rows[0].archived_at)).toBe(1700000005000);
+
+    // action_log : nouvelle table scopée utilisable (entrée de journal + entrée rewind).
+    await client.execute(
+      `INSERT INTO action_log (id, user_id, turn_id, tool_name, entity_type, entity_id, op, prev_state, created_at)
+       VALUES ('a1','u1','t1','createContact','contact','c1','created',NULL,1700000000000)`,
+    );
+    await client.execute(
+      `INSERT INTO action_log (id, user_id, turn_id, tool_name, entity_type, entity_id, op, prev_state, created_at)
+       VALUES ('a2','u1','t1','rewind','turn','t1','rewind','{"turnIds":["t1"]}',1700000006000)`,
+    );
+    const log = await client.execute(
+      "SELECT op, prev_state FROM action_log ORDER BY created_at",
+    );
+    expect(log.rows).toHaveLength(2);
+    expect(String(log.rows[0].op)).toBe("created");
+    expect(String(log.rows[1].op)).toBe("rewind");
+    // prev_state JSON stocké tel quel pour l'entrée rewind.
+    expect(JSON.parse(String(log.rows[1].prev_state))).toEqual({ turnIds: ["t1"] });
+  });
+});

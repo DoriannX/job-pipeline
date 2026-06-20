@@ -50,8 +50,11 @@ export interface CopiloteCallbacks {
    * CAP-2 : le run a comporté ≥1 écriture. Appelé AU PLUS UNE FOIS, en fin de tour, que
    * celui-ci finisse normalement OU sur une erreur — le composant déclenche alors UN SEUL
    * `router.refresh()`. Absent ⇒ run read-only, aucune sync.
+   *
+   * inc.4 : reçoit le `turnId` du run (porté in-band à côté de `didWrite`) quand le serveur le
+   * fournit — le popup le RETIENT en-session pour offrir le rewind humain sur ce tour.
    */
-  onWrite?: () => void;
+  onWrite?: (turnId?: string) => void;
 }
 
 const GENERIC_ERROR =
@@ -66,7 +69,7 @@ type StreamPart = {
   errorText?: unknown;
   toolCallId?: unknown;
   toolName?: unknown;
-  messageMetadata?: { didWrite?: unknown } | null;
+  messageMetadata?: { didWrite?: unknown; turnId?: unknown } | null;
 };
 
 /**
@@ -105,6 +108,9 @@ export async function streamCopilote(
   const decoder = new TextDecoder();
   let buffer = "";
   let didWrite = false;
+  // inc.4 : `turnId` du run, porté in-band à côté de `didWrite` (présent seulement si le run a
+  // écrit). On le retient pour le passer à `onWrite` en fin de tour.
+  let turnId: string | undefined;
   // Une part TERMINALE (error/abort) a-t-elle clos le tour ? (CAP-3) → pas de `onDone`.
   let sawTerminalError = false;
 
@@ -174,6 +180,8 @@ export async function streamCopilote(
       case "message-metadata": {
         const flag = part.messageMetadata?.didWrite;
         if (typeof flag === "boolean" && flag) didWrite = true;
+        const tid = part.messageMetadata?.turnId;
+        if (typeof tid === "string" && tid.length > 0) turnId = tid;
         break;
       }
       default:
@@ -200,8 +208,9 @@ export async function streamCopilote(
   }
 
   // CAP-2 : une écriture commise se reflète même si le tour s'est clos sur une erreur —
-  // la part `finish` porte `didWrite` y compris quand `finishReason` vaut "error".
-  if (didWrite) callbacks.onWrite?.();
+  // la part `finish` porte `didWrite` y compris quand `finishReason` vaut "error". inc.4 : on
+  // transmet le `turnId` retenu pour que le popup offre le rewind sur ce tour.
+  if (didWrite) callbacks.onWrite?.(turnId);
   // Fin NORMALE : seulement si aucune erreur/interruption terminale n'a clos le tour.
   if (!sawTerminalError) callbacks.onDone();
 }

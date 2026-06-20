@@ -52,3 +52,11 @@ export {
   type SetStatusInput,
   type SetStatusResult,
 } from "./message-repositories";
+export {
+  actionLogRepository,
+  type ActionLogRepository,
+  type ActionLogEntry,
+  type RecordActionInput,
+} from "./action-log-repositories";
+export type { JournalSink, MutationRecord, JournaledOp } from "./journal";
+export type { ActionLogPrevState } from "./schema";

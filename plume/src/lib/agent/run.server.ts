@@ -5,6 +5,7 @@ import "server-only";
 // La clé API ne quitte jamais le serveur. Wrapper analogue à `claude.server.ts`
 // pour le composer : la route passe par CE module, jamais par le SDK IA nu.
 
+import { createId } from "@paralleldrive/cuid2";
 import {
   streamText,
   stepCountIs,
@@ -21,11 +22,15 @@ import { buildTools, WRITE_TOOL_NAMES } from "./tools.server";
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 
 /**
- * Métadonnée portée par le flux UI message (CAP-2) : `didWrite` dit si le run a
- * comporté ≥1 écriture. Le client lit ce SEUL fait en fin de stream pour décider
- * d'un `router.refresh()` (jamais la forme des mutations — le front reste « bête »).
+ * Métadonnée portée par le flux UI message :
+ *   - CAP-2 (inc.2) : `didWrite` dit si le run a comporté ≥1 écriture → le client décide d'un
+ *     `router.refresh()` (jamais la forme des mutations — le front reste « bête ») ;
+ *   - inc.4 : `turnId` voyage IN-BAND (à côté de `didWrite`) UNIQUEMENT pour un run qui a écrit.
+ *     Le popup retient en-session le couple (tour affiché ↔ `turnId`) et n'offre le rewind que
+ *     sur les tours ayant écrit. Le `turnId` est généré côté serveur (clos par closure) ; le
+ *     client ne fait que le RETENIR puis le RENVOYER à la server action de rewind.
  */
-export type CopiloteMetadata = { didWrite: boolean };
+export type CopiloteMetadata = { didWrite: boolean; turnId?: string };
 
 /** Forme de message UI typée pour notre métadonnée de sync. */
 type CopiloteUIMessage = UIMessage<CopiloteMetadata>;
@@ -128,7 +133,11 @@ export function runAgentChat(opts: {
   // SYNCHRONEMENT pour être attrapé par l'appelant (erreur douce), pas se perdre
   // dans le flux.
   const model = opts.model ?? getAgentModel();
-  const tools = opts.tools ?? buildTools(opts.userId);
+  // `turnId` du run (inc.4) : généré CÔTÉ SERVEUR, un par run, clos par la closure de
+  // `buildTools` — l'agent ne le voit ni ne le contrôle (parité `userId`, SÉCU #3). Il groupe
+  // toutes les mutations du run au journal et sert de cible au rewind humain.
+  const turnId = createId();
+  const tools = opts.tools ?? buildTools(opts.userId, turnId);
 
   // CAP-2 — déterminé CÔTÉ SERVEUR : le run a-t-il appelé ≥1 write-tool ? On lève le
   // drapeau dès qu'un step contient l'appel d'un tool d'écriture (registre générique
@@ -155,9 +164,14 @@ export function runAgentChat(opts: {
   });
 
   return result.toUIMessageStreamResponse<CopiloteUIMessage>({
-    // CAP-2 : signal de fin d'écriture, porté UNE fois sur la part `finish`.
+    // CAP-2 : signal de fin d'écriture, porté UNE fois sur la part `finish`. inc.4 : on y joint
+    // le `turnId` UNIQUEMENT si le run a écrit (un tour read-only n'offre pas de rewind).
     messageMetadata: ({ part }) =>
-      part.type === "finish" ? { didWrite } : undefined,
+      part.type === "finish"
+        ? didWrite
+          ? { didWrite, turnId }
+          : { didWrite }
+        : undefined,
     // CAP-3 : transforme une erreur mid-stream en part `error` terminale lisible.
     // Détail déjà journalisé par `onError` de `streamText` ; ici on ne renvoie au
     // client qu'un texte doux (jamais de stack).

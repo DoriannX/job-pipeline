@@ -306,6 +306,78 @@ export const messages = sqliteTable("messages", {
   // (jeton périmé) matche 0 ligne → CONFLIT (409), aucune écriture. Nullable : ADD COLUMN
   // rétro-compatible sur la table `messages` peuplée (jamais NOT NULL nu, cf. migration).
   updatedAt: integer("updated_at", { mode: "number" }),
+  // Archivage SOFT du Message (copilote Phase 2 inc.4) : epoch ms d'archivage ; NULL = actif.
+  // ASSUMPTION TRANCHÉE (SPEC inc.4, option a) : on GÉNÉRALISE le soft-delete des contacts aux
+  // messages plutôt qu'un statut terminal `"annule"` — c'est l'option « la plus cohérente avec
+  // la porte générique » (la porte `db.forUser` filtre déjà `archived_at IS NULL` pour TOUTE
+  // table portant la colonne, donc un brouillon rewindé disparaît des lectures sans une ligne
+  // de filtre en plus). L'inverse de `composeMessage` (rewind) pose ce champ — JAMAIS de DELETE.
+  // ADD COLUMN nullable → rétro-compatible sur la table `messages` peuplée.
+  archivedAt: integer("archived_at", { mode: "number" }),
+});
+
+// --- action_log : journal d'actions du copilote (Phase 2 inc.4) -------------
+// Table SCOPÉE par tenant (colonne `user_id` → scoping AUTOMATIQUE par la porte db.forUser,
+// comme toute table scopée). C'est le JOURNAL D'ACTIONS qui rend le rewind possible ET, par
+// construction, un JOURNAL D'AUDIT durable (qui a fait quoi, quand, annulable) — l'actif
+// réutilisé tel quel au passage SaaS.
+//
+// POURQUOI une table DÉDIÉE et PAS `generation_events` (Constraint SPEC) : `generation_events`
+// est l'observabilité du MOAT (distance d'édition SM-1, tokens), écrite UNIQUEMENT à l'envoi et
+// seulement pour une génération — mauvaise forme et mauvais déclencheur pour un journal transverse
+// qui doit couvrir `createContact`/`importContacts` (sans envoi). On ne la pollue pas.
+//
+// ATOMICITÉ (Constraint SPEC, parité `markSent`+`generation_events`) : une entrée est écrite dans
+// la MÊME transaction que la mutation qu'elle journalise (jamais un log async ratable). Une
+// mutation persistée sans son entrée est un état INTERDIT.
+//
+// Le journal n'est JAMAIS purgé par le rewind : un rewind AJOUTE une entrée `op = "rewind"`, il
+// n'efface pas les entrées annulées — le récit d'audit reste complet.
+
+/**
+ * État antérieur capturé par une entrée `action_log`, pour rendre l'inverse exact (CAP-3).
+ *   - mutation `merged`/`reactivated` : les champs touchés AVANT la mutation (forme partielle
+ *     d'un `ContactUpdate` : `entreprise`, `canalPrefere`, `handles`, `notes`, `dernierContactAt`,
+ *     `archivedAt`…) — le rewind les RESTAURE (jamais un re-archivage aveugle qui détruirait du
+ *     préexistant) ;
+ *   - entrée `rewind` : la liste des `turnId` annulés (`{ turnIds }`) — entrée d'audit terminale.
+ * `created` pur n'a pas de `prevState` (l'inverse est l'archivage).
+ */
+export type ActionLogPrevState = Record<string, unknown>;
+
+export const actionLog = sqliteTable("action_log", {
+  // PK opaque cuid2 — généré côté app.
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  // Frontière tenant : NOT NULL, référence users (cascade quand le user disparaît).
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  // Tour d'agent : un run `runAgentChat` = un `turnId` (clos par closure, jamais argument agent).
+  // Groupe TOUTES les mutations d'un même run ; le rewind cible un tour par ce champ.
+  turnId: text("turn_id").notNull(),
+  // Tool ayant déclenché la mutation (`createContact`, `composeMessage`, `importContacts`,
+  // `seedContacts`) ; `"rewind"` pour l'entrée d'audit du rewind lui-même.
+  toolName: text("tool_name").notNull(),
+  // Type d'entité touchée : `contact` | `message` | `turn` (le dernier pour l'entrée `rewind`).
+  entityType: text("entity_type")
+    .$type<"contact" | "message" | "turn">()
+    .notNull(),
+  // Ligne touchée (id du contact/message ; pour `rewind`, l'id du tour ciblé).
+  entityId: text("entity_id").notNull(),
+  // Opération journalisée — DÉTERMINE l'inverse rejoué au rewind (voir action-inverse-map.md) :
+  //   `created`    → re-archivage ; `merged`/`reactivated` → restauration de `prev_state` ;
+  //   `rewind`     → entrée d'audit terminale, non ré-inversable (pas de redo, cf. Non-goals).
+  op: text("op")
+    .$type<"created" | "merged" | "reactivated" | "rewind">()
+    .notNull(),
+  // État antérieur capturé — REQUIS pour `merged`/`reactivated` (champs à restaurer), liste des
+  // `turnId` annulés pour `rewind`, OMIS (NULL) pour `created` (l'inverse est l'archivage).
+  prevState: text("prev_state", { mode: "json" }).$type<ActionLogPrevState>(),
+  // Horodatage (epoch ms) posé via l'horloge injectée — porte l'ordre LIFO du rewind (rejeu des
+  // inverses en ordre chronologique inverse). Jamais Date.now() en dur.
+  createdAt: integer("created_at", { mode: "number" }),
 });
 
 // --- generation_events : observabilité du moat (SM-1, archi l.80-84) --------
