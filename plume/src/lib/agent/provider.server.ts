@@ -8,9 +8,19 @@ import "server-only";
 //   - dev (défaut) : Gemini Flash, tier gratuit — on valide la PLOMBERIE de la boucle.
 //   - prod (AGENT_PROVIDER=prod) : Claude Sonnet — qualité de raisonnement réelle.
 
-import { anthropic } from "@ai-sdk/anthropic";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
 import type { LanguageModel } from "ai";
+
+/**
+ * Endpoint Anthropic CANONIQUE (avec `/v1`). Le provider Vercel (`@ai-sdk/anthropic`)
+ * construit l'URL comme `${baseURL}/messages` — contrairement au SDK Anthropic nu qui
+ * ajoute lui-même `/v1/messages`. Or la variable d'env machine `ANTHROPIC_BASE_URL` peut
+ * valoir `https://api.anthropic.com` (sans `/v1`) ; le provider taperait alors
+ * `…/messages` → 404 Not Found en plein stream. On FIXE donc le baseURL ici (les options
+ * priment sur l'env) pour rester correct quelle que soit la valeur d'env de la machine.
+ */
+const ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1";
 
 /** Échec de configuration du copilote (clé absente, etc.). Message déjà « doux ». */
 export class AgentConfigError extends Error {
@@ -44,6 +54,8 @@ export function getAgentModel(): LanguageModel {
         "Copilote indisponible : clé API absente (ANTHROPIC_API_KEY).",
       );
     }
+    // baseURL FIXÉ (cf. ANTHROPIC_BASE_URL ci-dessus) ; `apiKey` lu dans l'env par défaut.
+    const anthropic = createAnthropic({ baseURL: ANTHROPIC_BASE_URL });
     return anthropic(PROD_MODEL);
   }
 

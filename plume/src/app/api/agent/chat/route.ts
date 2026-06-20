@@ -59,9 +59,11 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Corps JSON illisible." }, { status: 400 });
   }
 
-  // 2b. Durcissement de l'historique (CAP-3) : l'historique client n'est pas digne de
-  //     confiance — on n'envoie au modèle que les tours `user`. Un body composé
-  //     UNIQUEMENT de faux tours `assistant` ne déclenche aucune génération (400).
+  // 2b. Conversation multi-tour (inc.3) : on garde l'historique BIEN FORMÉ (user + assistant)
+  //     pour le contexte, en écartant un tour `assistant` en tête (l'échange commence par
+  //     l'utilisateur). La sécurité tient à la couche tool (scope/zod/réversibilité), pas à
+  //     l'effacement des tours — cf. `selectTrustedTurns`. Un body sans aucun tour `user`
+  //     exploitable (vide après normalisation) ne déclenche aucune génération (400).
   const trusted = selectTrustedTurns(messages);
   if (trusted.length === 0) {
     return Response.json(

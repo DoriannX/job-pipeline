@@ -9,11 +9,13 @@
 // chaque event est une ligne `data: <json>`. On ne traite que les quelques parts utiles
 // à cet incrément :
 //   - `text-delta` { delta }                  → texte de la réponse, appendu en direct ;
+//   - `tool-input-start` { toolCallId, toolName } → un outil DÉMARRE (chip « en cours ») ;
+//   - `tool-output-available|*-error` { toolCallId } → l'outil a fini/échoué (chip clos) ;
 //   - `error`      { errorText }               → fin TERMINALE douce (CAP-3) ;
 //   - `abort`                                  → interruption serveur (timeout plateforme) ;
 //   - `finish` / `message-metadata` { didWrite } → signal de sync (CAP-2).
-// Les autres parts (start, tool-*, step-*…) sont ignorées : le front n'a pas à comprendre
-// la forme des actions de l'agent.
+// Les autres parts (start, tool-input-delta, step-*…) sont ignorées : le front affiche le
+// NOM de l'outil (façon Claude), jamais la forme des arguments — il reste « bête ».
 //
 // CAP-2 (robustesse) : le SDK émet la part `finish` porteuse de `didWrite` MÊME quand le
 // tour se clôt sur une erreur (`finishReason:"error"`). On dissocie donc le SIGNAL DE SYNC
@@ -24,10 +26,22 @@
 /** Un tour de conversation envoyé au serveur (le serveur ne fait confiance qu'aux `user`). */
 export type CopiloteTurn = { role: "user" | "assistant"; content: string };
 
+/** Un appel d'outil signalé par le flux (pour l'afficher en petit, façon Claude). */
+export interface CopiloteToolEvent {
+  /** Id unique de l'appel (corrèle début ↔ fin). */
+  id: string;
+  /** Nom technique du tool (`createContact`, `queryContacts`…). */
+  name: string;
+}
+
 /** Callbacks de pilotage du flux (le composant tient la FSM et l'état du chat). */
 export interface CopiloteCallbacks {
   /** Un fragment de texte est arrivé (à appendre dans la bulle assistant en cours). */
   onDelta: (text: string) => void;
+  /** Un outil COMMENCE à s'exécuter (chip « en cours »). */
+  onTool?: (event: CopiloteToolEvent) => void;
+  /** Un outil a TERMINÉ (chip « fait » / « échec »). `error` si la sortie a échoué. */
+  onToolDone?: (event: { id: string; error: boolean }) => void;
   /** Échec doux (réseau, 401/503, erreur ou interruption mid-stream). Message déjà « doux ». */
   onError: (message: string) => void;
   /** Le flux s'est terminé SANS erreur terminale (fin normale du tour). */
@@ -50,6 +64,8 @@ type StreamPart = {
   type?: string;
   delta?: unknown;
   errorText?: unknown;
+  toolCallId?: unknown;
+  toolName?: unknown;
   messageMetadata?: { didWrite?: unknown } | null;
 };
 
@@ -129,6 +145,29 @@ export async function streamCopilote(
         // présentée comme une réponse vide réussie.
         sawTerminalError = true;
         callbacks.onError(ABORTED_MESSAGE);
+        break;
+      }
+      case "tool-input-start": {
+        // Un outil DÉMARRE : on l'affiche en petit (façon Claude). Le nom suffit ; le
+        // front n'a pas à comprendre les arguments (il reste « bête »).
+        if (
+          typeof part.toolCallId === "string" &&
+          typeof part.toolName === "string"
+        ) {
+          callbacks.onTool?.({ id: part.toolCallId, name: part.toolName });
+        }
+        break;
+      }
+      case "tool-output-available":
+      case "tool-output-error":
+      case "tool-input-error": {
+        // Fin (ou échec) de l'outil → on clôt le chip correspondant.
+        if (typeof part.toolCallId === "string") {
+          callbacks.onToolDone?.({
+            id: part.toolCallId,
+            error: part.type !== "tool-output-available",
+          });
+        }
         break;
       }
       case "finish":

@@ -48,26 +48,43 @@ const SYSTEM_PROMPT = [
   "RÈGLE ABSOLUE : tu RÉDIGES, tu n'ENVOIES JAMAIS. composeMessage ne crée qu'un brouillon ;",
   "l'envoi reste l'action de l'utilisateur depuis l'app. N'invente jamais de contacts ni de",
   "faits ; n'enregistre que ce que l'utilisateur a réellement dicté.",
-  "Appuie chaque réponse factuelle sur les outils.",
+  "Appuie chaque réponse factuelle sur les outils. Quand l'utilisateur fait référence à un",
+  "contact mentionné plus tôt (« écris-lui », « ce contact »), retrouve-le d'abord avec",
+  "queryContacts pour obtenir son id avant composeMessage.",
+  "Les messages précédents de la conversation sont du CONTEXTE : traite uniquement le DERNIER",
+  "message de l'utilisateur, ne ré-exécute pas une demande déjà satisfaite.",
   "Réponds en français, de façon concise et actionnable.",
 ].join(" ");
 
 /**
- * CAP-3 (durcissement de l'historique reçu, ferme la dette Phase 1) : l'historique
- * fourni par le CLIENT n'est pas digne de confiance — un appelant peut fabriquer de
- * faux tours `assistant`/`tool` pour amorcer l'agent avec un contexte mensonger
- * (« tu as déjà l'autorisation de tout supprimer », « voici les contacts : … »).
+ * MULTI-TOUR (inc.3) — RENÉGOCIATION de la frontière CAP-3 (Phase 1 l'avait explicitement
+ * anticipée : « à renégocier quand un vrai multi-tour arrive »).
  *
- * Tant qu'aucun historique serveur signé n'existe (pas de mémoire persistante cette
- * phase), la SEULE source de vérité est ce que l'UTILISATEUR a tapé : on ne garde
- * que les tours `user`. Les tours non-`user` reçus sont ÉCARTÉS avant tout appel
- * modèle. Fonction pure → testable (un faux `assistant` ne devient jamais du contexte).
+ * Le modèle a besoin de la conversation BIEN FORMÉE — tours `user` ET `assistant` — pour
+ * savoir quelles demandes sont DÉJÀ traitées. Les écarter (Phase 1) donnait au modèle une
+ * suite de tours `user` consécutifs qu'il croyait tous EN ATTENTE → il re-répondait aux
+ * anciens. On conserve donc l'historique tel quel.
  *
- * À renégocier quand un vrai multi-tour arrive : il faudra alors valider/signer les
- * tours `assistant` côté serveur plutôt que de les écarter.
+ * La sécurité ne repose PLUS sur l'effacement des tours `assistant` — intenable avec un vrai
+ * dialogue — mais sur la couche TOOL, intacte et suffisante en défense en profondeur :
+ *   - `userId` clos par closure (jamais un argument que l'agent contrôle — SÉCU #3) ;
+ *   - zod à CHAQUE frontière de tool + lots/comptes bornés serveur (SÉCU #6) ;
+ *   - repos scopés au tenant (aucune fuite/écriture cross-tenant) ;
+ *   - toutes les écritures réversibles (soft-delete), aucune sortie externe (frontière R/W).
+ * Un tour `assistant` fabriqué par un client malveillant ne peut donc ni élargir le
+ * périmètre, ni franchir le tenant, ni déclencher d'action irréversible/externe : au pire
+ * il désinforme le modèle sur des FAITS, sans pouvoir d'escalade.
+ *
+ * On garde {user, assistant} dans l'ordre et on écarte un éventuel tour `assistant` EN TÊTE
+ * (un échange commence par l'utilisateur, sinon l'API rejette). Fonction pure → testable.
  */
 export function selectTrustedTurns(messages: ChatMessage[]): ChatMessage[] {
-  return messages.filter((m) => m.role === "user");
+  const conv = messages.filter(
+    (m) => m.role === "user" || m.role === "assistant",
+  );
+  let start = 0;
+  while (start < conv.length && conv[start]!.role === "assistant") start += 1;
+  return conv.slice(start);
 }
 
 /**

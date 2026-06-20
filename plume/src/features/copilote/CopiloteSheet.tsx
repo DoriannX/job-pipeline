@@ -27,6 +27,18 @@ import { Plume } from "@/design/illustration/Plume";
 import { colors } from "@/design/tokens";
 
 import { streamCopilote, type CopiloteTurn } from "./stream-client";
+import { CopiloteMarkdown } from "./CopiloteMarkdown";
+
+// Libellés FR des outils, affichés en petit (façon Claude) quand l'agent agit. Le front
+// montre le NOM lisible, jamais les arguments (il reste « bête »). Un tool inconnu retombe
+// sur son nom technique.
+const TOOL_LABELS: Record<string, string> = {
+  queryContacts: "Recherche dans le réseau",
+  createContact: "Ajout d'un contact",
+  importContacts: "Import de contacts",
+  composeMessage: "Rédaction d'un brouillon",
+  seedContacts: "Création de contacts de test",
+};
 
 // Géométrie partagée icône ↔ panneau (la même boîte qui morphe). Largeur = pleine
 // largeur mobile (marges 24px) plafonnée ; hauteur plafonnée → fenêtre de chat.
@@ -38,10 +50,13 @@ type Status = "idle" | "streaming";
 
 // Un message affiché dans le chat. `kind` distingue la bulle d'erreur douce (CAP-3) des
 // bulles de conversation. `pending` marque la bulle assistant qui reçoit le flux en direct.
+type ToolStatus = "running" | "done" | "error";
 type ChatItem =
   | { id: number; kind: "user"; content: string }
   | { id: number; kind: "assistant"; content: string; pending?: boolean }
-  | { id: number; kind: "error"; content: string };
+  | { id: number; kind: "error"; content: string }
+  // Chip d'outil (façon Claude) : `toolCallId` corrèle début ↔ fin du flux.
+  | { id: number; kind: "tool"; toolCallId: string; name: string; status: ToolStatus };
 
 export function CopiloteSheet() {
   const router = useRouter();
@@ -112,6 +127,12 @@ export function CopiloteSheet() {
   // asynchrone), donc deux `send()` dans le même tick la liraient tous deux à « idle ».
   // Ce drapeau bloque un second envoi (double-frappe Entrée) avant le re-render.
   const streamingRef = useRef(false);
+  // Segment assistant COURANT : la bulle qui reçoit les deltas. Remis à `null` à chaque
+  // outil → le texte qui SUIT l'outil ouvre une NOUVELLE bulle, intercalée au point réel
+  // d'utilisation (timeline : texte → action → texte, comme l'app Claude).
+  const currentAssistantIdRef = useRef<number | null>(null);
+  // A-t-on produit au moins une bulle assistant ce tour ? (sinon : note douce en fin).
+  const producedAssistantRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -120,6 +141,8 @@ export function CopiloteSheet() {
   const newConversation = useCallback(() => {
     abortRef.current?.abort();
     streamingRef.current = false;
+    currentAssistantIdRef.current = null;
+    producedAssistantRef.current = false;
     setItems([]);
     setDraft("");
     setStatus("idle");
@@ -164,23 +187,34 @@ export function CopiloteSheet() {
     abortRef.current = controller;
 
     const userItem: ChatItem = { id: newId(), kind: "user", content };
-    const assistantId = newId();
-    const assistantItem: ChatItem = {
-      id: assistantId,
-      kind: "assistant",
-      content: "",
-      pending: true,
+
+    // MULTI-TOUR (inc.3) : on envoie l'HISTORIQUE de la conversation en-session pour donner
+    // au copilote le CONTEXTE des tours précédents (« écris-LUI un message » réfère au contact
+    // nommé au tour d'avant). On inclut les tours assistant pour former une conversation BIEN
+    // FORMÉE (alternance user/assistant) lisible par le modèle — mais le serveur ne fait
+    // TOUJOURS confiance qu'aux tours `user` (`selectTrustedTurns`, CAP-3 préservé) : les tours
+    // assistant ne portent jamais d'autorité, ils ne servent qu'à situer la demande courante.
+    // Une réponse peut s'être découpée en PLUSIEURS bulles assistant (texte → outil → texte) :
+    // on COALESCE les segments assistant consécutifs en un seul tour (les outils sont UI-only,
+    // jamais renvoyés au modèle). On exclut bulles d'erreur et chips d'outil.
+    const history: CopiloteTurn[] = [];
+    const pushTurn = (role: CopiloteTurn["role"], text: string) => {
+      const last = history[history.length - 1];
+      if (last && last.role === role) last.content += `\n\n${text}`;
+      else history.push({ role, content: text });
     };
+    for (const it of items) {
+      if (it.kind === "user") pushTurn("user", it.content);
+      else if (it.kind === "assistant" && it.content.length > 0)
+        pushTurn("assistant", it.content);
+    }
+    pushTurn("user", content);
 
-    // MONO-TOUR : on n'envoie QUE le message courant. Le serveur ne fait de toute façon
-    // confiance qu'aux tours `user` (`selectTrustedTurns`, non négocié) et n'a aucune mémoire
-    // serveur (non-goal). Renvoyer tous les anciens tours `user` (sans les réponses assistant
-    // qui les "closent") faisait croire au modèle qu'ils étaient TOUS encore en attente → il
-    // re-répondait aux précédents. Un seul tour `user` = il ne traite que la demande courante.
-    // (Le vrai multi-tour avec contexte = incrément futur : historique signé côté serveur.)
-    const history: CopiloteTurn[] = [{ role: "user", content }];
+    // Nouveau tour : aucune bulle assistant encore ouverte, rien de produit.
+    currentAssistantIdRef.current = null;
+    producedAssistantRef.current = false;
 
-    setItems((prev) => [...prev, userItem, assistantItem]);
+    setItems((prev) => [...prev, userItem]);
     setDraft("");
     setStatus("streaming");
 
@@ -194,24 +228,57 @@ export function CopiloteSheet() {
       {
         onDelta: (text) => {
           if (controller.signal.aborted) return;
+          // Pas de segment ouvert (début de tour, ou juste après un outil) → on OUVRE une
+          // nouvelle bulle assistant. Sinon on appende au segment courant.
+          if (currentAssistantIdRef.current === null) {
+            const id = newId();
+            currentAssistantIdRef.current = id;
+            producedAssistantRef.current = true;
+            setItems((prev) => [
+              ...prev,
+              { id, kind: "assistant", content: text, pending: true },
+            ]);
+          } else {
+            const id = currentAssistantIdRef.current;
+            setItems((prev) =>
+              prev.map((it) =>
+                it.id === id && it.kind === "assistant"
+                  ? { ...it, content: it.content + text }
+                  : it,
+              ),
+            );
+          }
+        },
+        // Outil qui DÉMARRE : chip « en cours » AJOUTÉ À LA FIN (au point réel d'utilisation),
+        // puis on FERME le segment assistant courant → le texte qui suit ouvrira une nouvelle
+        // bulle SOUS le chip (timeline : texte → action → texte, comme l'app Claude).
+        onTool: ({ id: toolCallId, name }) => {
+          if (controller.signal.aborted) return;
+          const id = newId();
+          setItems((prev) => [
+            ...prev,
+            { id, kind: "tool", toolCallId, name, status: "running" },
+          ]);
+          currentAssistantIdRef.current = null;
+        },
+        // Outil TERMINÉ/échoué : on clôt le chip correspondant (par `toolCallId`).
+        onToolDone: ({ id: toolCallId, error }) => {
+          if (controller.signal.aborted) return;
           setItems((prev) =>
             prev.map((it) =>
-              it.id === assistantId && it.kind === "assistant"
-                ? { ...it, content: it.content + text }
+              it.kind === "tool" && it.toolCallId === toolCallId
+                ? { ...it, status: error ? "error" : "done" }
                 : it,
             ),
           );
         },
         onError: (message) => {
           if (controller.signal.aborted) return;
-          // CAP-3 : on clôt la bulle assistant (en gardant un éventuel texte partiel
-          // déjà streamé) et on pose une bulle d'erreur DOUCE à la suite — le tour est
-          // clairement terminé sur une erreur, jamais figé sur une bulle tronquée.
+          // CAP-3 : on clôt les bulles assistant (texte partiel conservé) et on pose une
+          // bulle d'erreur DOUCE à la suite — tour clairement terminé, jamais figé.
           setItems((prev) => [
             ...prev.map((it) =>
-              it.id === assistantId && it.kind === "assistant"
-                ? { ...it, pending: false }
-                : it,
+              it.kind === "assistant" ? { ...it, pending: false } : it,
             ),
             { id: newId(), kind: "error", content: message },
           ]);
@@ -219,21 +286,24 @@ export function CopiloteSheet() {
         },
         onDone: () => {
           if (controller.signal.aborted) return;
-          // Cas rare : aucun texte n'est revenu — bulle douce plutôt qu'un blanc muet.
+          // Clôt les bulles assistant en cours. Si AUCUN texte n'est revenu (que des outils,
+          // ou rien), on pose une note douce plutôt qu'un blanc muet.
           setItems((prev) =>
             prev.map((it) =>
-              it.id === assistantId && it.kind === "assistant"
-                ? {
-                    ...it,
-                    pending: false,
-                    content:
-                      it.content.length === 0
-                        ? "(Aucune réponse cette fois. Réessaie ?)"
-                        : it.content,
-                  }
-                : it,
+              it.kind === "assistant" ? { ...it, pending: false } : it,
             ),
           );
+          if (!producedAssistantRef.current) {
+            const id = newId();
+            setItems((prev) => [
+              ...prev,
+              {
+                id,
+                kind: "assistant",
+                content: "(Aucune réponse cette fois. Réessaie ?)",
+              },
+            ]);
+          }
           finishTurn();
         },
         // CAP-2 : UN SEUL refresh, déclenché en fin de tour si le run a écrit (succès OU
@@ -246,7 +316,7 @@ export function CopiloteSheet() {
       },
       controller.signal,
     );
-  }, [draft, router]);
+  }, [draft, items, router]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Entrée = envoyer ; Maj+Entrée = nouvelle ligne.
@@ -392,18 +462,15 @@ export function CopiloteSheet() {
                   essayer l&apos;app.
                 </p>
               ) : (
-                items
-                  // La bulle assistant en attente (vide) n'apparaît pas : son état est
-                  // porté par la ligne « La plume réfléchit… » ci-dessous (pas de boîte vide).
-                  .filter(
-                    (it) => !(it.kind === "assistant" && it.content.length === 0),
-                  )
-                  .map((it) => <Bubble key={it.id} item={it} />)
+                items.map((it) => <Bubble key={it.id} item={it} />)
               )}
 
-              {/* Ligne d'attente DOUCE (jamais un spinner) tant qu'aucun delta n'arrive. */}
+              {/* Ligne d'attente DOUCE (jamais un spinner) tant qu'aucun texte n'arrive pour
+                  le segment courant : au tout début, ou JUSTE APRÈS un outil (le dernier item
+                  n'est pas une bulle assistant en train de grossir). */}
               {streaming &&
-              items.some((it) => it.kind === "assistant" && it.content.length === 0) ? (
+              items.length > 0 &&
+              items[items.length - 1]?.kind !== "assistant" ? (
                 <p
                   role="status"
                   aria-live="polite"
@@ -444,8 +511,12 @@ export function CopiloteSheet() {
   );
 }
 
-/** Une bulle du fil. Assistant à gauche (mascotte), user à droite, erreur DOUCE pleine largeur. */
+/** Une bulle du fil. Assistant à gauche (mascotte, markdown), user à droite, chip d'outil, erreur douce. */
 function Bubble({ item }: { item: ChatItem }) {
+  if (item.kind === "tool") {
+    return <ToolChip item={item} />;
+  }
+
   if (item.kind === "error") {
     // CAP-3 : erreur en teinte DOUCE de la famille (jamais rouge alarme), bien terminale.
     return (
@@ -469,12 +540,40 @@ function Bubble({ item }: { item: ChatItem }) {
     );
   }
 
+  // Assistant : mascotte + bulle markdown (l'agent structure ses réponses en markdown).
   return (
     <div className="flex items-start gap-2">
       <Plume name="feather" size={24} className="mt-1 shrink-0" />
-      <p className="max-w-[80%] whitespace-pre-wrap rounded-button border-[length:--border-width-ink] border-line bg-surface-note px-4 py-2 font-body text-body text-ink">
-        {item.content}
-      </p>
+      <div className="max-w-[80%] rounded-button border-[length:--border-width-ink] border-line bg-surface-note px-4 py-2">
+        <CopiloteMarkdown content={item.content} />
+      </div>
+    </div>
+  );
+}
+
+/** Chip d'OUTIL — petit, discret, façon Claude : icône d'état + libellé FR de l'action. */
+function ToolChip({
+  item,
+}: {
+  item: Extract<ChatItem, { kind: "tool" }>;
+}) {
+  const label = TOOL_LABELS[item.name] ?? item.name;
+  return (
+    <div className="flex items-center gap-2 self-start rounded-button border-[length:--border-width-ink] border-line bg-surface-note px-3 py-1.5">
+      {item.status === "running" ? (
+        // En cours : mascotte qui « écrit » (jamais un spinner générique).
+        <Plume name="feather" size={16} className="plume-ecrit shrink-0" />
+      ) : (
+        <Icon
+          name="double-sparkle"
+          size={14}
+          className={item.status === "error" ? "text-ink-hint" : "text-mint-deep"}
+        />
+      )}
+      <span className="font-body text-label font-bold uppercase tracking-[0.12em] text-ink-soft">
+        {label}
+        {item.status === "running" ? "…" : ""}
+      </span>
     </div>
   );
 }
