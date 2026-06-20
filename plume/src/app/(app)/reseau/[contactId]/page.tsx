@@ -39,8 +39,18 @@ export default async function ContactPage({
   const db = await forUser(userId);
   const contact = await db.contacts.get(contactId);
 
-  // Inexistant OU contact d'autrui : `get` renvoie undefined (scopé). Aucune fuite.
+  // `get` (scopé) renvoie undefined pour : (1) un contact d'AUTRUI / INEXISTANT, ou (2) un
+  // contact à MOI mais ARCHIVÉ (la porte filtre `archived_at IS NULL` par défaut). On
+  // distingue les deux SANS jamais fuiter : on relit en INCLUANT les archivés.
   if (!contact) {
+    const archived = await db.contacts.get(contactId, { includeArchived: true });
+    if (archived) {
+      // Contact à MOI, archivé (ex. après « Annuler ce tour » du copilote pendant que je suis
+      // sur sa fiche, ou un archivage depuis un autre onglet) : on revient à la galerie plutôt
+      // que d'afficher un 404 brutal. La fiche d'un archivé n'a pas de sens (il a quitté le réseau).
+      redirect("/reseau");
+    }
+    // Inexistant OU contact d'autrui : indistinct, aucune fuite → 404 (jamais de 500/détail).
     notFound();
   }
 
