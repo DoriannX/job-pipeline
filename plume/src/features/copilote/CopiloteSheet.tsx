@@ -47,6 +47,14 @@ const TOOL_LABELS: Record<string, string> = {
 const PANEL_W = "min(calc(100vw - 3rem), 24rem)";
 const PANEL_H = "min(70dvh, 34rem)";
 
+// Bornes du resize (inc. resize, en-session). Min = en-tête + champ restent utilisables.
+// Max = viewport moins les marges d'ancrage (le panneau est fixé `right:24`/`bottom:96`).
+const PANEL_MIN_W = 288; // 18rem
+const PANEL_MIN_H = 320; // 20rem
+const ANCHOR_MARGIN_X = 48; // 24 (marge gauche) + 24 (ancrage droite)
+const ANCHOR_MARGIN_Y = 120; // 96 (ancrage bas) + 24 (marge haut)
+const RESIZE_STEP_PX = 24; // pas du resize clavier (échelle d'espacement figée)
+
 // FSM minimale : au repos, ou un tour en cours (le champ se verrouille, plume « réfléchit »).
 type Status = "idle" | "streaming";
 
@@ -82,6 +90,35 @@ export function CopiloteSheet() {
   const [status, setStatus] = useState<Status>("idle");
   const [draft, setDraft] = useState("");
   const [items, setItems] = useState<ChatItem[]>([]);
+
+  // Taille EN-SESSION du panneau ouvert, en pixels. `null` = taille par défaut figée
+  // (`PANEL_W`/`PANEL_H` sont des chaînes CSS `min()/calc()` non interpolables). Dès le 1er
+  // resize on bascule en pixels : la taille survit aux fermetures/réouvertures de la session,
+  // mais PAS au reload (aucune persistance — cohérent avec la conversation en-session).
+  const [panelSize, setPanelSize] = useState<{ w: number; h: number } | null>(null);
+  // Pendant un resize (drag ou flèches) on neutralise le ressort `layout` (sinon la boîte
+  // « rattrape » le pointeur avec retard) ; restauré au relâchement.
+  const [dragging, setDragging] = useState(false);
+  // Réf vers la boîte qui morphe → mesurer la taille rendue pour semer le 1er resize.
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Origine du geste de resize (px pointeur + taille au départ). `null` = pas de drag en cours.
+  const resizeStartRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
+
+  // Clampe une taille candidate entre le min lisible et le viewport (marges d'ancrage gardées).
+  const clampSize = useCallback((w: number, h: number) => {
+    const maxW =
+      typeof window !== "undefined"
+        ? Math.max(PANEL_MIN_W, window.innerWidth - ANCHOR_MARGIN_X)
+        : w;
+    const maxH =
+      typeof window !== "undefined"
+        ? Math.max(PANEL_MIN_H, window.innerHeight - ANCHOR_MARGIN_Y)
+        : h;
+    return {
+      w: Math.min(Math.max(w, PANEL_MIN_W), maxW),
+      h: Math.min(Math.max(h, PANEL_MIN_H), maxH),
+    };
+  }, []);
 
   // Reduce Motion (plancher a11y, UX-DR4) : on coupe le ressort ET on saute la phase
   // intermédiaire (ouverture/fermeture nettes, instantanées).
@@ -124,6 +161,74 @@ export function CopiloteSheet() {
   // États dérivés : `expanded` = au moins déplié (≠ icône) ; `isOpen` = pleinement ouvert.
   const expanded = phase !== "closed";
   const isOpen = phase === "open";
+
+  // — RESIZE (drag coin haut-gauche) — actif SEULEMENT panneau pleinement ouvert. Ancrage
+  // bas-droite : tirer vers le haut-gauche AGRANDIT (delta inversé). Gestion par Pointer
+  // Events (souris + tactile) avec capture du pointeur le temps du geste.
+  const onResizePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLElement>) => {
+      if (phase !== "open") return;
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = panelRef.current?.getBoundingClientRect();
+      const w = panelSize?.w ?? rect?.width ?? PANEL_MIN_W;
+      const h = panelSize?.h ?? rect?.height ?? PANEL_MIN_H;
+      resizeStartRef.current = { x: e.clientX, y: e.clientY, w, h };
+      setDragging(true);
+      e.currentTarget.setPointerCapture(e.pointerId);
+    },
+    [phase, panelSize],
+  );
+  const onResizePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLElement>) => {
+      const start = resizeStartRef.current;
+      if (!start) return;
+      setPanelSize(
+        clampSize(start.w + (start.x - e.clientX), start.h + (start.y - e.clientY)),
+      );
+    },
+    [clampSize],
+  );
+  const onResizePointerUp = useCallback((e: React.PointerEvent<HTMLElement>) => {
+    if (!resizeStartRef.current) return;
+    resizeStartRef.current = null;
+    setDragging(false);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // capture déjà relâchée (pointercancel) — sans gravité.
+    }
+  }, []);
+  // Resize au CLAVIER (plancher a11y) : flèches → pas fixe, même clamp. Cohérent avec
+  // l'ancrage bas-droite (← = plus large, ↑ = plus haut).
+  const onResizeKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLElement>) => {
+      if (phase !== "open") return; // pas de resize pendant un morph (fermeture en cours)
+      const deltas: Record<string, [number, number]> = {
+        ArrowLeft: [RESIZE_STEP_PX, 0],
+        ArrowRight: [-RESIZE_STEP_PX, 0],
+        ArrowUp: [0, RESIZE_STEP_PX],
+        ArrowDown: [0, -RESIZE_STEP_PX],
+      };
+      const d = deltas[e.key];
+      if (!d) return;
+      e.preventDefault();
+      const rect = panelRef.current?.getBoundingClientRect();
+      const w = panelSize?.w ?? rect?.width ?? PANEL_MIN_W;
+      const h = panelSize?.h ?? rect?.height ?? PANEL_MIN_H;
+      setPanelSize(clampSize(w + d[0], h + d[1]));
+    },
+    [phase, panelSize, clampSize],
+  );
+
+  // Le viewport rétrécit (redim. fenêtre, rotation) APRÈS un resize manuel : on re-clampe la
+  // taille retenue pour qu'elle ne déborde jamais hors écran (clampSize ne tourne sinon que
+  // pendant un geste). No-op tant qu'aucune taille custom n'a été posée (`panelSize` null).
+  useEffect(() => {
+    const onResize = () => setPanelSize((s) => (s ? clampSize(s.w, s.h) : s));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [clampSize]);
 
   // Identifiants stables et croissants (pas de Date.now/random → pas de souci d'hydratation).
   const nextId = useRef(1);
@@ -409,17 +514,22 @@ export function CopiloteSheet() {
   const streaming = status === "streaming";
   const sendDisabled = draft.trim().length === 0 || streaming;
 
+  // Taille du panneau OUVERT : taille resizée en-session (px) si présente, sinon défaut figé.
+  const openW = panelSize ? `${panelSize.w}px` : PANEL_W;
+  const openH = panelSize ? `${panelSize.h}px` : PANEL_H;
   // Taille de la boîte PAR PHASE (Motion `layout` mesure ces px et anime le passage) :
   //   closed = icône (56px) · wide = pleine largeur, hauteur d'icône · open = pleine carte.
   const SIZE: Record<Phase, { width: string; height: string }> = {
     closed: { width: "3.5rem", height: "3.5rem" },
-    wide: { width: PANEL_W, height: "3.5rem" },
-    open: { width: PANEL_W, height: PANEL_H },
+    wide: { width: openW, height: "3.5rem" },
+    open: { width: openW, height: openH },
   };
   // Ressort « gluant » appliqué à CHAQUE FLIP de phase (rebond doux). Reduce Motion → net.
-  const layoutTransition = reduceMotion
-    ? { duration: 0 }
-    : ({ type: "spring", visualDuration: 0.32, bounce: 0.32 } as const);
+  // Pendant un resize, on coupe le ressort → la boîte suit le pointeur sans retard.
+  const layoutTransition =
+    reduceMotion || dragging
+      ? { duration: 0 }
+      : ({ type: "spring", visualDuration: 0.32, bounce: 0.32 } as const);
   // Mascotte : visible seulement à l'état `closed` (fond doux à l'étirement). Contenu :
   // visible seulement `open` ; il APPARAÎT en fondu court (après la 2ᵉ phase) et DISPARAÎT
   // NET (durée 0) → plus de flash du bouton Envoyer quand la boîte se replie sur son coin.
@@ -432,6 +542,7 @@ export function CopiloteSheet() {
 
   return (
     <motion.div
+      ref={panelRef}
       layout
       initial={false}
       transition={layoutTransition}
@@ -486,11 +597,42 @@ export function CopiloteSheet() {
       <motion.div
         animate={{ opacity: isOpen ? 1 : 0 }}
         transition={contentTransition}
-        style={{ width: PANEL_W, height: PANEL_H }}
+        style={{ width: openW, height: openH }}
         className="absolute bottom-0 right-0 flex flex-col"
         aria-hidden={!isOpen}
         inert={!isOpen}
       >
+            {/* — Poignée de RESIZE (coin haut-gauche). Affordance de CHROME, pas une action
+                métier → contour/encre, JAMAIS mauve. Drag = largeur+hauteur ; flèches au
+                clavier (plancher a11y, project-context « doublage obligatoire »). — */}
+            <button
+              type="button"
+              aria-label="Redimensionner le copilote"
+              tabIndex={isOpen ? 0 : -1}
+              onPointerDown={onResizePointerDown}
+              onPointerMove={onResizePointerMove}
+              onPointerUp={onResizePointerUp}
+              onPointerCancel={onResizePointerUp}
+              onKeyDown={onResizeKeyDown}
+              className="absolute left-0 top-0 z-10 flex h-7 w-7 cursor-nwse-resize touch-none items-center justify-center rounded-tl-[16px] text-ink-soft outline-accent outline-offset-2 focus-visible:outline-2"
+            >
+              <svg
+                aria-hidden
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+                fill="none"
+                className="pointer-events-none"
+              >
+                <path
+                  d="M2 6 L6 2 M2 10 L10 2"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+
             {/* — En-tête : mascotte + titre + fermeture. — */}
             <header className="flex items-center justify-between gap-3 px-margin-mobile pb-3 pt-4">
               <div className="flex items-center gap-3">
