@@ -58,6 +58,18 @@ export {
   type ActionLogEntry,
   type RecordActionInput,
 } from "./action-log-repositories";
+export {
+  conversationsRepository,
+  chatMessagesRepository,
+  deriveTitre,
+  MAX_CONTEXT_TURNS,
+  TITRE_MAX_LENGTH,
+  type ConversationsRepository,
+  type ChatMessagesRepository,
+  type Conversation,
+  type ChatMessageRow,
+  type AppendChatMessage,
+} from "./conversation-repositories";
 export type { JournalSink, MutationRecord, JournaledOp } from "./journal";
 export type { ActionLogPrevState } from "./schema";
 // Dev-only : création de session sans Google (cf. src/lib/auth-dev.ts). Server-only.

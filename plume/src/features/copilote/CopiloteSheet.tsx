@@ -5,7 +5,9 @@
 // POINT DE MONTAGE UNIQUE : monté UNE seule fois dans `(app)/layout.tsx`, à côté du
 // ComposerSheet → présent sur les 3 onglets (Aujourd'hui · Réseau · Réglages) sans être
 // un onglet (UX #1 « partout, jamais intrusif »). Icône flottante (mascotte plume) →
-// popup chat. Conversation EN-SESSION seulement (aucune persistance — non-goal).
+// popup chat. PHASE 3 : la conversation est PERSISTÉE côté serveur — au montage, le popup
+// réhydrate le fil actif depuis la DB (bootstrap) ; le `conversationId` est retenu en state et
+// renvoyé à chaque tour (le serveur reste la source de vérité du contexte, CAP-2/3).
 //
 // FRONT « BÊTE » (brainstorm Archi #3) : ce composant POST vers `/api/agent/chat`, rend
 // le flux, et applique le SIGNAL de sync. Zéro logique métier, zéro accès DB/scope tenant,
@@ -26,8 +28,9 @@ import { BTN_PRIMARY } from "@/design/buttons";
 import { Plume } from "@/design/illustration/Plume";
 import { colors } from "@/design/tokens";
 
-import { streamCopilote, type CopiloteTurn } from "./stream-client";
+import { streamCopilote } from "./stream-client";
 import { rewindTurnAction } from "./rewind.actions";
+import { bootstrapCopiloteAction } from "./bootstrap.actions";
 import { CopiloteMarkdown } from "./CopiloteMarkdown";
 
 // Libellés FR des outils, affichés en petit (façon Claude) quand l'agent agit. Le front
@@ -90,6 +93,11 @@ export function CopiloteSheet() {
   const [status, setStatus] = useState<Status>("idle");
   const [draft, setDraft] = useState("");
   const [items, setItems] = useState<ChatItem[]>([]);
+  // PHASE 3 : id du fil persisté courant. `null` = fil neuf (le serveur le crée au 1er message et
+  // renvoie l'id in-band → on le retient ici, puis on le RENVOIE aux tours suivants). Une réf
+  // (pas un state : aucune UI n'en dépend en 3-A) évite une capture périmée dans la closure de
+  // `send` (parité `streamingRef`).
+  const conversationIdRef = useRef<string | null>(null);
 
   // Taille EN-SESSION du panneau ouvert, en pixels. `null` = taille par défaut figée
   // (`PANEL_W`/`PANEL_H` sont des chaînes CSS `min()/calc()` non interpolables). Dès le 1er
@@ -253,14 +261,19 @@ export function CopiloteSheet() {
   // en bas (le bug : chaque delta forçait un scroll). Remis à `true` quand il renvoie un message
   // ou repart manuellement au bas. Réf (pas un state) → pas de re-render à chaque scroll.
   const stickBottomRef = useRef(true);
+  // PHASE 3 : la réhydratation du fil actif (bootstrap) ne court qu'UNE fois, au 1er dépliage du
+  // popup (inutile de charger tant qu'il n'est pas ouvert ; jamais deux fois).
+  const bootstrappedRef = useRef(false);
 
-  // Nouvelle conversation : vide l'historique en-session (aucune persistance de toute façon),
-  // coupe un flux en cours et réinitialise la saisie. Le popup reste ouvert.
+  // Nouvelle conversation (CAP-2/4) : oublie le fil courant (conversationId → null), vide le popup,
+  // coupe un flux en cours et réinitialise la saisie. La création PARESSEUSE pose un fil neuf au
+  // 1er message (le serveur renvoie son id in-band) ; l'ancien fil reste INTACT en base.
   const newConversation = useCallback(() => {
     abortRef.current?.abort();
     streamingRef.current = false;
     currentAssistantIdRef.current = null;
     producedAssistantRef.current = false;
+    conversationIdRef.current = null;
     setItems([]);
     setDraft("");
     setStatus("idle");
@@ -318,6 +331,53 @@ export function CopiloteSheet() {
       if (phaseTimerRef.current) clearTimeout(phaseTimerRef.current);
     };
   }, []);
+
+  // RÉHYDRATATION (CAP-2/5) : au 1er dépliage, on recharge le fil ACTIF depuis le serveur
+  // (bootstrap scopé tenant) et on réaffiche ses tours — texte FINAL uniquement (les chips
+  // tool-use NE sont PAS réhydratées, Non-goal). Pour chaque tour `assistant` porteur d'un
+  // `turnId` (run ayant écrit), on repose l'affordance « annuler ce tour » (CAP-5). Le
+  // `conversationId` est retenu pour les tours suivants. Le bootstrap est doux : un échec laisse
+  // simplement un popup vide (jamais d'alarme). On NE remplace PAS un fil déjà entamé en-session.
+  useEffect(() => {
+    if (!expanded || bootstrappedRef.current) return;
+    bootstrappedRef.current = true;
+    let cancelled = false;
+    void bootstrapCopiloteAction()
+      .then((res) => {
+        // Si l'utilisateur a déjà tapé/envoyé pendant le chargement, on ne piétine pas son fil.
+        if (cancelled || conversationIdRef.current !== null) return;
+        if (!res.conversationId || res.turns.length === 0) return;
+        conversationIdRef.current = res.conversationId;
+        const rehydrated: ChatItem[] = [];
+        for (const turn of res.turns) {
+          if (turn.role === "user") {
+            rehydrated.push({ id: newId(), kind: "user", content: turn.content });
+          } else {
+            rehydrated.push({
+              id: newId(),
+              kind: "assistant",
+              content: turn.content,
+            });
+            // CAP-5 : un tour `assistant` ayant écrit (turnId persisté) rouvre le rewind.
+            if (turn.turnId) {
+              rehydrated.push({
+                id: newId(),
+                kind: "rewind",
+                turnId: turn.turnId,
+                status: "idle",
+              });
+            }
+          }
+        }
+        setItems(rehydrated);
+      })
+      .catch(() => {
+        // Échec doux : popup vide, l'utilisateur démarre un nouveau fil.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded]);
 
   // Suit l'intention de l'utilisateur : s'il est à ≤ 48px du bas, on « colle » (auto-scroll) ;
   // dès qu'il remonte au-delà, on lâche (il lit tranquillement, le flux ne le rappelle plus).
@@ -378,27 +438,10 @@ export function CopiloteSheet() {
 
     const userItem: ChatItem = { id: newId(), kind: "user", content };
 
-    // MULTI-TOUR (inc.3) : on envoie l'HISTORIQUE de la conversation en-session pour donner
-    // au copilote le CONTEXTE des tours précédents (« écris-LUI un message » réfère au contact
-    // nommé au tour d'avant). On inclut les tours assistant pour former une conversation BIEN
-    // FORMÉE (alternance user/assistant) lisible par le modèle — mais le serveur ne fait
-    // TOUJOURS confiance qu'aux tours `user` (`selectTrustedTurns`, CAP-3 préservé) : les tours
-    // assistant ne portent jamais d'autorité, ils ne servent qu'à situer la demande courante.
-    // Une réponse peut s'être découpée en PLUSIEURS bulles assistant (texte → outil → texte) :
-    // on COALESCE les segments assistant consécutifs en un seul tour (les outils sont UI-only,
-    // jamais renvoyés au modèle). On exclut bulles d'erreur et chips d'outil.
-    const history: CopiloteTurn[] = [];
-    const pushTurn = (role: CopiloteTurn["role"], text: string) => {
-      const last = history[history.length - 1];
-      if (last && last.role === role) last.content += `\n\n${text}`;
-      else history.push({ role, content: text });
-    };
-    for (const it of items) {
-      if (it.kind === "user") pushTurn("user", it.content);
-      else if (it.kind === "assistant" && it.content.length > 0)
-        pushTurn("assistant", it.content);
-    }
-    pushTurn("user", content);
+    // PHASE 3 (CAP-3) : le client n'envoie PLUS l'historique — le serveur est la source de vérité
+    // du contexte (il recharge le fil persisté, scopé tenant). On n'envoie que le NOUVEAU message
+    // `user` + l'id du fil retenu (`null` au 1er message d'un fil neuf → le serveur le crée et
+    // renvoie son id in-band via `onConversation`).
 
     // Nouveau tour : aucune bulle assistant encore ouverte, rien de produit.
     currentAssistantIdRef.current = null;
@@ -414,7 +457,7 @@ export function CopiloteSheet() {
     };
 
     void streamCopilote(
-      history,
+      { conversationId: conversationIdRef.current, message: content },
       {
         onDelta: (text) => {
           if (controller.signal.aborted) return;
@@ -511,10 +554,16 @@ export function CopiloteSheet() {
             ]);
           }
         },
+        // PHASE 3 (CAP-2/3) : le serveur renvoie l'id du fil in-band. Au 1er message d'un fil neuf,
+        // c'est ainsi qu'on apprend le `conversationId` à RETENIR et RENVOYER aux tours suivants
+        // (le serveur le valide à chaque appel). Idempotent pour un fil déjà connu.
+        onConversation: (id) => {
+          conversationIdRef.current = id;
+        },
       },
       controller.signal,
     );
-  }, [draft, items, router]);
+  }, [draft, router]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Entrée = envoyer ; Maj+Entrée = nouvelle ligne.

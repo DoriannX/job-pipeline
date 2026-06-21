@@ -47,7 +47,7 @@ describe("streamCopilote — parseur du flux UI message (copilote inc.2)", () =>
     const onError = vi.fn();
     const onDone = vi.fn();
     const onWrite = vi.fn();
-    await streamCopilote([{ role: "user", content: "salut" }], {
+    await streamCopilote({ conversationId: null, message: "salut" }, {
       onDelta,
       onError,
       onDone,
@@ -76,7 +76,7 @@ describe("streamCopilote — parseur du flux UI message (copilote inc.2)", () =>
     const onError = vi.fn();
     const onDone = vi.fn();
     const onWrite = vi.fn();
-    await streamCopilote([{ role: "user", content: "crée 3 contacts" }], {
+    await streamCopilote({ conversationId: "c1", message: "crée 3 contacts" }, {
       onDelta: vi.fn(),
       onError,
       onDone,
@@ -105,7 +105,7 @@ describe("streamCopilote — parseur du flux UI message (copilote inc.2)", () =>
     const onError = vi.fn();
     const onDone = vi.fn();
     const onWrite = vi.fn();
-    await streamCopilote([{ role: "user", content: "crée 3 contacts" }], {
+    await streamCopilote({ conversationId: "c1", message: "crée 3 contacts" }, {
       onDelta: vi.fn(),
       onError,
       onDone,
@@ -131,7 +131,7 @@ describe("streamCopilote — parseur du flux UI message (copilote inc.2)", () =>
 
     const onDone = vi.fn();
     const onWrite = vi.fn();
-    await streamCopilote([{ role: "user", content: "combien ?" }], {
+    await streamCopilote({ conversationId: "c1", message: "combien ?" }, {
       onDelta: vi.fn(),
       onError: vi.fn(),
       onDone,
@@ -140,6 +140,57 @@ describe("streamCopilote — parseur du flux UI message (copilote inc.2)", () =>
 
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(onWrite).not.toHaveBeenCalled();
+  });
+
+  it("Phase 3 : le conversationId in-band (part `finish`) remonte via onConversation", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        sseResponse([
+          sse({ type: "text-delta", id: "1", delta: "Bonjour." }),
+          sse({
+            type: "finish",
+            messageMetadata: { didWrite: false, conversationId: "conv-neuf-1" },
+          }),
+        ]),
+      ),
+    );
+
+    const onConversation = vi.fn();
+    await streamCopilote(
+      { conversationId: null, message: "salut" },
+      {
+        onDelta: vi.fn(),
+        onError: vi.fn(),
+        onDone: vi.fn(),
+        onWrite: vi.fn(),
+        onConversation,
+      },
+    );
+
+    expect(onConversation).toHaveBeenCalledWith("conv-neuf-1");
+  });
+
+  it("Phase 3 : un fil neuf (conversationId null) n'envoie PAS de conversationId au serveur", async () => {
+    const fetchMock = vi.fn(async () =>
+      sseResponse([
+        sse({
+          type: "finish",
+          messageMetadata: { didWrite: false, conversationId: "c-new" },
+        }),
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await streamCopilote(
+      { conversationId: null, message: "premier" },
+      { onDelta: vi.fn(), onError: vi.fn(), onDone: vi.fn() },
+    );
+
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(call[1].body as string) as Record<string, unknown>;
+    expect(body).toEqual({ message: "premier" });
+    expect("conversationId" in body).toBe(false);
   });
 
   it("part `abort` (interruption serveur) → message doux terminal, pas onDone", async () => {
@@ -155,7 +206,7 @@ describe("streamCopilote — parseur du flux UI message (copilote inc.2)", () =>
 
     const onError = vi.fn();
     const onDone = vi.fn();
-    await streamCopilote([{ role: "user", content: "salut" }], {
+    await streamCopilote({ conversationId: null, message: "salut" }, {
       onDelta: vi.fn(),
       onError,
       onDone,
@@ -176,7 +227,7 @@ describe("streamCopilote — parseur du flux UI message (copilote inc.2)", () =>
 
     const onError = vi.fn();
     const onDone = vi.fn();
-    await streamCopilote([{ role: "user", content: "salut" }], {
+    await streamCopilote({ conversationId: null, message: "salut" }, {
       onDelta: vi.fn(),
       onError,
       onDone,

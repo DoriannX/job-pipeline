@@ -15,6 +15,13 @@ import {
   type UIMessage,
 } from "ai";
 
+import {
+  forUser,
+  MAX_CONTEXT_TURNS,
+  type ChatMessagesRepository,
+  type ConversationsRepository,
+} from "@/lib/db";
+
 import { getAgentModel } from "./provider.server";
 import { buildTools, WRITE_TOOL_NAMES } from "./tools.server";
 
@@ -30,7 +37,17 @@ export type ChatMessage = { role: "user" | "assistant"; content: string };
  *     sur les tours ayant écrit. Le `turnId` est généré côté serveur (clos par closure) ; le
  *     client ne fait que le RETENIR puis le RENVOYER à la server action de rewind.
  */
-export type CopiloteMetadata = { didWrite: boolean; turnId?: string };
+export type CopiloteMetadata = {
+  didWrite: boolean;
+  turnId?: string;
+  /**
+   * Phase 3 (CAP-3) : id du fil persisté, porté IN-BAND sur la part `finish`. Pour un fil neuf
+   * (création paresseuse au 1er message), c'est le SEUL canal qui rend le nouveau `conversationId`
+   * au client — qui le RETIENT puis le RENVOIE aux tours suivants (le serveur le valide à chaque
+   * appel). Toujours présent (le serveur connaît l'id avant même de streamer).
+   */
+  conversationId?: string;
+};
 
 /** Forme de message UI typée pour notre métadonnée de sync. */
 type CopiloteUIMessage = UIMessage<CopiloteMetadata>;
@@ -74,26 +91,12 @@ const SYSTEM_PROMPT = [
 ].join(" ");
 
 /**
- * MULTI-TOUR (inc.3) — RENÉGOCIATION de la frontière CAP-3 (Phase 1 l'avait explicitement
- * anticipée : « à renégocier quand un vrai multi-tour arrive »).
- *
- * Le modèle a besoin de la conversation BIEN FORMÉE — tours `user` ET `assistant` — pour
- * savoir quelles demandes sont DÉJÀ traitées. Les écarter (Phase 1) donnait au modèle une
- * suite de tours `user` consécutifs qu'il croyait tous EN ATTENTE → il re-répondait aux
- * anciens. On conserve donc l'historique tel quel.
- *
- * La sécurité ne repose PLUS sur l'effacement des tours `assistant` — intenable avec un vrai
- * dialogue — mais sur la couche TOOL, intacte et suffisante en défense en profondeur :
- *   - `userId` clos par closure (jamais un argument que l'agent contrôle — SÉCU #3) ;
- *   - zod à CHAQUE frontière de tool + lots/comptes bornés serveur (SÉCU #6) ;
- *   - repos scopés au tenant (aucune fuite/écriture cross-tenant) ;
- *   - toutes les écritures réversibles (soft-delete), aucune sortie externe (frontière R/W).
- * Un tour `assistant` fabriqué par un client malveillant ne peut donc ni élargir le
- * périmètre, ni franchir le tenant, ni déclencher d'action irréversible/externe : au pire
- * il désinforme le modèle sur des FAITS, sans pouvoir d'escalade.
- *
- * On garde {user, assistant} dans l'ordre et on écarte un éventuel tour `assistant` EN TÊTE
- * (un échange commence par l'utilisateur, sinon l'API rejette). Fonction pure → testable.
+ * DÉFENSE RÉSIDUELLE NON CÂBLÉE (Phase 3, CAP-3) — anciennement le filtre du contexte multi-tour
+ * reconstruit depuis le body client (inc.3). Le serveur est DÉSORMAIS la source de vérité du
+ * contexte (chargé depuis le fil persisté, scopé tenant), donc le body ne porte plus l'historique
+ * `assistant` : `runAgentChat` n'appelle PLUS cette fonction. On la conserve, pure et testée,
+ * comme défense résiduelle (forme bien formée d'une conversation), mais on ne RECRÉE JAMAIS une
+ * dépendance au passé `assistant` fourni par le client (Constraint SPEC). Fonction pure → testable.
  */
 export function selectTrustedTurns(messages: ChatMessage[]): ChatMessage[] {
   const conv = messages.filter(
@@ -112,39 +115,85 @@ export function selectTrustedTurns(messages: ChatMessage[]): ChatMessage[] {
 const STREAM_ERROR_MESSAGE =
   "Le copilote a rencontré un souci en cours de route. Réessaie dans un instant.";
 
+/** Repositories de persistance injectés dans `runAgentChat` (défaut = porte `forUser`). */
+export type RunAgentChatRepos = {
+  conversations: ConversationsRepository;
+  chatMessages: ChatMessagesRepository;
+};
+
 /**
  * Lance la boucle tool-use pour un tenant et renvoie un FLUX UI MESSAGE du SDK
- * (`toUIMessageStreamResponse`). Ce format porte DEUX signaux que `toTextStreamResponse`
+ * (`toUIMessageStreamResponse`). Ce format porte les signaux de sync que `toTextStreamResponse`
  * ne pouvait pas :
- *   - CAP-3 : une erreur mid-stream devient une part `error` TERMINALE (via `onError`),
+ *   - CAP-3 (inc.2) : une erreur mid-stream devient une part `error` TERMINALE (via `onError`),
  *     rendue en teinte douce côté client — plus de flux tronqué pris pour un succès.
- *   - CAP-2 : la part `finish` porte `messageMetadata.didWrite` — le SEUL fait dont le
- *     client a besoin pour déclencher UN `router.refresh()` si le run a écrit.
+ *   - CAP-2 (inc.2) : la part `finish` porte `messageMetadata.didWrite` — le SEUL fait dont le
+ *     client a besoin pour déclencher UN `router.refresh()` si le run a écrit ; + `turnId` (inc.4)
+ *     si le run a écrit (réhydrate le rewind) ; + `conversationId` (Phase 3, in-band).
  *
- * `userId` vient de la session next-auth (jamais du client) → tous les tools sont
- * scopés à ce tenant (SÉCU #3). `model`/`tools` sont injectables pour les tests
- * (défauts = provider réel + catalogue scopé). Peut lever `AgentConfigError` (clé
- * absente) SYNCHRONEMENT : l'appelant l'attrape et renvoie une erreur douce.
+ * PHASE 3 — le SERVEUR est la source de vérité du contexte multi-tour (CAP-1/2/3) :
+ *   - le contexte envoyé au modèle est CHARGÉ depuis le fil persisté (porte scopée, borné à
+ *     `MAX_CONTEXT_TURNS`), JAMAIS depuis le body client ;
+ *   - le tour `user` est persisté AVANT `streamText`, le texte `assistant` FINAL en fin de run
+ *     (`onFinish`), tous deux rattachés au même `conversationId`, scopés tenant ;
+ *   - `conversationId === null` ⇒ création PARESSEUSE d'un fil neuf (titre = troncature du 1er
+ *     message `user`) ; son id voyage in-band pour que le client le retienne.
+ *
+ * `userId` vient de la session next-auth (jamais du client) → tools ET persistance scopés à ce
+ * tenant (SÉCU #3). L'APPARTENANCE d'un `conversationId` FOURNI est vérifiée PAR LA ROUTE avant
+ * cet appel (404 sinon) ; ici on ne reçoit qu'un id validé ou `null`. `model`/`tools`/`repos` sont
+ * injectables pour les tests. Peut rejeter avec `AgentConfigError` (clé absente) : l'appelant
+ * l'attrape (erreur douce). Async : le chargement/la persistance du contexte sont des I/O.
  */
-export function runAgentChat(opts: {
+export async function runAgentChat(opts: {
   userId: string;
-  messages: ChatMessage[];
+  /** Fil ciblé (validé par la route) ou `null` = créer un fil neuf au 1er message. */
+  conversationId: string | null;
+  /** NOUVEAU message `user` (le SEUL contenu venant du client — jamais l'historique). */
+  message: string;
   /** Injection test : modèle mocké. Défaut = provider réel (clé serveur). */
   model?: LanguageModel;
   /** Injection test : catalogue de tools. Défaut = tools scopés au tenant. */
   tools?: ToolSet;
-}): Response {
-  // Défense en profondeur (CAP-3) : même si l'appelant oublie de filtrer, le wrapper
-  // (porte unique) n'envoie au modèle que des tours dignes de confiance.
-  const messages: ModelMessage[] = selectTrustedTurns(opts.messages).map((m) => ({
+  /** Injection test : repos de persistance. Défaut = porte `forUser(userId)`. */
+  repos?: RunAgentChatRepos;
+}): Promise<Response> {
+  // Résolu AVANT `streamText` : un `AgentConfigError` (clé absente) doit remonter pour être
+  // attrapé par l'appelant (erreur douce), pas se perdre dans le flux. Async ⇒ rejet de la
+  // promesse, attrapé par le `await` de la route.
+  const model = opts.model ?? getAgentModel();
+
+  // Porte de persistance scopée au tenant (source de vérité du contexte). En prod = `forUser`
+  // (un seul gate sert conversations + chatMessages) ; en test = repos en mémoire injectés.
+  const repos = opts.repos ?? (await forUser(opts.userId));
+  const { conversations, chatMessages } = repos;
+
+  // Création PARESSEUSE d'un fil neuf (CAP-2/4) : au 1er message sans `conversationId`, le serveur
+  // pose le fil (titre = troncature déterministe du 1er message `user`, AUCUN appel IA) et en
+  // retient l'id — porté in-band pour que le client le RETIENNE et le RENVOIE ensuite.
+  const conversationId =
+    opts.conversationId ??
+    (await conversations.create({ firstUserMessage: opts.message })).id;
+
+  // Persistance du tour `user` AVANT la génération (CAP-1), rattaché au fil, scopé tenant.
+  await chatMessages.append({
+    conversationId,
+    role: "user",
+    content: opts.message,
+  });
+
+  // CONTEXTE = SOURCE DE VÉRITÉ SERVEUR (CAP-3) : on charge la fenêtre BORNÉE des tours récents
+  // du fil DEPUIS LA DB scopée (jamais le body) — y compris le tour `user` qu'on vient d'écrire,
+  // en dernière position. Un faux passé `assistant` fabriqué dans un body client ne peut donc plus
+  // entrer dans le contexte.
+  const history = await chatMessages.listForConversation(conversationId, {
+    limit: MAX_CONTEXT_TURNS,
+  });
+  const messages: ModelMessage[] = history.map((m) => ({
     role: m.role,
     content: m.content,
   }));
 
-  // Résolu AVANT `streamText` : un `AgentConfigError` (clé absente) doit remonter
-  // SYNCHRONEMENT pour être attrapé par l'appelant (erreur douce), pas se perdre
-  // dans le flux.
-  const model = opts.model ?? getAgentModel();
   // `turnId` du run (inc.4) : généré CÔTÉ SERVEUR, un par run, clos par la closure de
   // `buildTools` — l'agent ne le voit ni ne le contrôle (parité `userId`, SÉCU #3). Il groupe
   // toutes les mutations du run au journal et sert de cible au rewind humain.
@@ -168,6 +217,24 @@ export function runAgentChat(opts: {
         didWrite = true;
       }
     },
+    // PERSISTANCE du tour `assistant` FINAL (CAP-1) : le texte agrégé est connu en fin de run.
+    // On rattache le `turnId` UNIQUEMENT si le run a écrit (LIEN rewind, CAP-5) ; un tour read-only
+    // le laisse NULL. Puis on bumpe `updated_at` du fil (reprise « dernier fil actif », CAP-2). Le
+    // SDK AWAIT ce callback avant de clore le flux → la persistance est garantie terminée à la fin
+    // du tour. Une persistance qui échouerait ne doit pas tuer le flux déjà rendu : on la protège.
+    onFinish: async ({ text }) => {
+      try {
+        await chatMessages.append({
+          conversationId,
+          role: "assistant",
+          content: text,
+          turnId: didWrite ? turnId : null,
+        });
+        await conversations.touch(conversationId);
+      } catch (err) {
+        console.error("[agent] persistance du tour assistant échouée :", err);
+      }
+    },
     // Journalisation serveur du détail (le client ne verra que le message doux que
     // `toUIMessageStreamResponse({ onError })` met dans la part `error` terminale).
     onError: ({ error }) => {
@@ -177,12 +244,13 @@ export function runAgentChat(opts: {
 
   return result.toUIMessageStreamResponse<CopiloteUIMessage>({
     // CAP-2 : signal de fin d'écriture, porté UNE fois sur la part `finish`. inc.4 : on y joint
-    // le `turnId` UNIQUEMENT si le run a écrit (un tour read-only n'offre pas de rewind).
+    // le `turnId` UNIQUEMENT si le run a écrit (un tour read-only n'offre pas de rewind). Phase 3 :
+    // le `conversationId` voyage TOUJOURS in-band (le client retient/renvoie un fil neuf).
     messageMetadata: ({ part }) =>
       part.type === "finish"
         ? didWrite
-          ? { didWrite, turnId }
-          : { didWrite }
+          ? { didWrite, turnId, conversationId }
+          : { didWrite, conversationId }
         : undefined,
     // CAP-3 : transforme une erreur mid-stream en part `error` terminale lisible.
     // Détail déjà journalisé par `onError` de `streamText` ; ici on ne renvoie au

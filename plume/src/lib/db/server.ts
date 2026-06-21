@@ -18,6 +18,12 @@ import {
 } from "./action-log-repositories";
 import { getServerDb } from "./client";
 import {
+  chatMessagesRepository,
+  conversationsRepository,
+  type ChatMessagesRepository,
+  type ConversationsRepository,
+} from "./conversation-repositories";
+import {
   importJobsRepository,
   mergeCandidatesRepository,
   type ImportJobsRepository,
@@ -44,6 +50,10 @@ export type ScopedRepositories = {
   messages: MessagesRepository;
   /** Journal d'actions du copilote (inc.4) : écriture atomique + lecture pour le rewind. */
   actionLog: ActionLogRepository;
+  /** Fils de conversation copilote (Phase 3) : reprise, multi-fils, rétention soft. */
+  conversations: ConversationsRepository;
+  /** Tours de dialogue persistés (Phase 3) : source de vérité serveur du contexte multi-tour. */
+  chatMessages: ChatMessagesRepository;
 };
 
 /** Surface de données scopée exposée aux features (repos + transaction scopée). */
@@ -66,6 +76,8 @@ function buildRepositories(scoped: ScopedDb): ScopedRepositories {
     seedVoix: seedVoixRepository(scoped),
     messages: messagesRepository(scoped),
     actionLog: actionLogRepository(scoped),
+    conversations: conversationsRepository(scoped),
+    chatMessages: chatMessagesRepository(scoped),
   };
 }
 

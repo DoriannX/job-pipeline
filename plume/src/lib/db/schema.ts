@@ -11,6 +11,7 @@
 
 import { createId } from "@paralleldrive/cuid2";
 import {
+  index,
   integer,
   primaryKey,
   real,
@@ -385,6 +386,94 @@ export const actionLog = sqliteTable("action_log", {
   // inverses en ordre chronologique inverse). Jamais Date.now() en dur.
   createdAt: integer("created_at", { mode: "number" }),
 });
+
+// --- conversations : un fil de discussion du copilote (Phase 3, CAP-1/2/4) --
+// Table SCOPÉE par tenant : `user_id` borne chaque fil à son propriétaire (invariant n°1 /
+// AR-2, AR-13) → scoping AUTOMATIQUE par la porte db.forUser. Un fil regroupe les tours de
+// dialogue (`chat_messages`) d'une conversation copilote, persistés côté serveur (le serveur
+// devient la source de vérité du contexte multi-tour — fini le body client comme mémoire).
+//
+// FRONTIÈRES (data-model.md) : ce TRANSCRIPT n'est NI `action_log` (mutations/audit, pont =
+// `turn_id`) NI `messages` (outreach du moat). Il n'entre JAMAIS dans `seed_voix`/few-shot/
+// `generation_events` et n'est PAS soumis à `sanitize()`.
+//
+// Conventions : colonnes SQL en snake_case ; PK `id` = cuid2 opaque ; temps en epoch ms
+// (number) injecté par l'horloge applicative (jamais Date.now() en dur).
+export const conversations = sqliteTable(
+  "conversations",
+  {
+    // PK opaque cuid2 — généré côté app.
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    // Frontière tenant : NOT NULL, référence users (cascade quand le user disparaît).
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Libellé = début du 1er message `user` tronqué (déterministe, AUCUN appel IA), posé à
+    // la création ; écrasé par le renommage (CAP-4). Nullable (un fil neuf sans titre encore).
+    titre: text("titre"),
+    // Archivage SOFT (CAP-4 archive + CAP-6 purge de rétention) : epoch ms ; NULL = actif.
+    // La porte filtre `archived_at IS NULL` pour TOUTE table portant la colonne → un fil
+    // archivé sort des lectures (liste comprise) SANS hard-delete. Parité contacts/messages.
+    archivedAt: integer("archived_at", { mode: "number" }),
+    // Horodatages (epoch ms), posés via l'horloge injectée (jamais Date.now() en dur).
+    createdAt: integer("created_at", { mode: "number" }),
+    // Dernière activité → sert à reprendre « le dernier fil actif » (CAP-2) et à trier la
+    // liste (CAP-4) ; bumpé à chaque tour persisté.
+    updatedAt: integer("updated_at", { mode: "number" }),
+  },
+  (table) => [
+    // Reprise du dernier fil actif (CAP-2) + tri de la liste (CAP-4) + sélection des plus
+    // anciens pour la purge (CAP-6) — toutes les lectures s'ordonnent par (tenant, récence).
+    index("idx_conversations_user_updated").on(table.userId, table.updatedAt),
+  ],
+);
+
+// --- chat_messages : un tour de dialogue dans un fil (Phase 3, CAP-1/3/5) ----
+// Table SCOPÉE par tenant (`user_id`). Persiste le message `user` brut OU le TEXTE `assistant`
+// FINAL d'un tour — JAMAIS la timeline tool-use intermédiaire (chips éphémères, non persistés).
+//
+// LIEN rewind (CAP-5) : `turn_id` (nullable) pointe vers `action_log.turn_id` du run AYANT écrit
+// — il réhydrate l'affordance « annuler ce tour » après reload. C'est le SEUL pont vers
+// `action_log` (mutations) ; les deux tables ne fusionnent jamais (data-model.md#Notes).
+//
+// Conventions : colonnes SQL en snake_case ; PK `id` = cuid2 opaque ; temps en epoch ms
+// (number) injecté par l'horloge applicative (jamais Date.now() en dur).
+export const chatMessages = sqliteTable(
+  "chat_messages",
+  {
+    // PK opaque cuid2 — généré côté app.
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    // Frontière tenant : NOT NULL, référence users (cascade quand le user disparaît).
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Rattachement au fil — NOT NULL, référence conversations (cascade avec le fil).
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    // Rôle du tour (jamais d'autre rôle persisté — pas de `system`/`tool`).
+    role: text("role").$type<"user" | "assistant">().notNull(),
+    // Message `user` brut OU texte `assistant` FINAL (jamais les chips tool-use). PAS de
+    // `sanitize()` (frontière moat — c'est un transcript d'assistance, pas du corpus outreach).
+    content: text("content").notNull(),
+    // LIEN vers `action_log.turn_id` — renseigné sur le tour `assistant` d'un run AYANT écrit
+    // (réhydrate le rewind, CAP-5) ; NULL sinon (tour read-only ou `user`).
+    turnId: text("turn_id"),
+    // Ordre des tours dans le fil (séquence d'affichage + ordre du contexte modèle), epoch ms.
+    createdAt: integer("created_at", { mode: "number" }),
+  },
+  (table) => [
+    // Lecture ORDONNÉE d'un fil (affichage + fenêtre de contexte bornée envoyée au modèle).
+    index("idx_chat_messages_conversation_created").on(
+      table.conversationId,
+      table.createdAt,
+    ),
+  ],
+);
 
 // --- generation_events : observabilité du moat (SM-1, archi l.80-84) --------
 // Table SCOPÉE par tenant. Un événement de génération est écrit TRANSACTIONNELLEMENT
