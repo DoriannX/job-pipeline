@@ -23,8 +23,15 @@
 // fin normale (`onDone`) : une mutation réellement commise reste reflétée même si la
 // verbalisation casse en route.
 
-/** Un tour de conversation envoyé au serveur (le serveur ne fait confiance qu'aux `user`). */
-export type CopiloteTurn = { role: "user" | "assistant"; content: string };
+/**
+ * Requête d'un tour (Phase 3) : le client n'envoie QUE le nouveau message `user` + l'id du fil
+ * (jamais l'historique `assistant` — le serveur est la source de vérité du contexte, CAP-3).
+ * `conversationId === null` ⇒ 1er message d'un fil neuf (le serveur le crée et renvoie l'id).
+ */
+export type StreamCopiloteInput = {
+  conversationId: string | null;
+  message: string;
+};
 
 /** Un appel d'outil signalé par le flux (pour l'afficher en petit, façon Claude). */
 export interface CopiloteToolEvent {
@@ -55,6 +62,12 @@ export interface CopiloteCallbacks {
    * fournit — le popup le RETIENT en-session pour offrir le rewind humain sur ce tour.
    */
   onWrite?: (turnId?: string) => void;
+  /**
+   * Phase 3 (CAP-2/3) : id du fil persisté, porté in-band sur la part `finish`. Pour un fil NEUF
+   * (création paresseuse au 1er message), c'est le SEUL canal du nouveau `conversationId` — le
+   * popup le RETIENT puis le RENVOIE aux tours suivants. Appelé au plus une fois, en fin de tour.
+   */
+  onConversation?: (conversationId: string) => void;
 }
 
 const GENERIC_ERROR =
@@ -69,7 +82,11 @@ type StreamPart = {
   errorText?: unknown;
   toolCallId?: unknown;
   toolName?: unknown;
-  messageMetadata?: { didWrite?: unknown; turnId?: unknown } | null;
+  messageMetadata?: {
+    didWrite?: unknown;
+    turnId?: unknown;
+    conversationId?: unknown;
+  } | null;
 };
 
 /**
@@ -77,16 +94,21 @@ type StreamPart = {
  * Ne LÈVE jamais : toute issue passe par les callbacks.
  */
 export async function streamCopilote(
-  messages: CopiloteTurn[],
+  input: StreamCopiloteInput,
   callbacks: CopiloteCallbacks,
   signal?: AbortSignal,
 ): Promise<void> {
   let response: Response;
   try {
+    // Le serveur tient le contexte : on n'envoie QUE le nouveau message + l'id du fil (omis pour
+    // un fil neuf — le serveur le crée et renvoie son id in-band).
+    const body = input.conversationId
+      ? { conversationId: input.conversationId, message: input.message }
+      : { message: input.message };
     response = await fetch("/api/agent/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify(body),
       signal,
     });
   } catch {
@@ -111,6 +133,9 @@ export async function streamCopilote(
   // inc.4 : `turnId` du run, porté in-band à côté de `didWrite` (présent seulement si le run a
   // écrit). On le retient pour le passer à `onWrite` en fin de tour.
   let turnId: string | undefined;
+  // Phase 3 : `conversationId` du fil, porté in-band sur la part `finish` (toujours présent). On
+  // le retient pour le passer à `onConversation` en fin de tour (le popup le RETIENT/RENVOIE).
+  let conversationId: string | undefined;
   // Une part TERMINALE (error/abort) a-t-elle clos le tour ? (CAP-3) → pas de `onDone`.
   let sawTerminalError = false;
 
@@ -182,6 +207,8 @@ export async function streamCopilote(
         if (typeof flag === "boolean" && flag) didWrite = true;
         const tid = part.messageMetadata?.turnId;
         if (typeof tid === "string" && tid.length > 0) turnId = tid;
+        const cid = part.messageMetadata?.conversationId;
+        if (typeof cid === "string" && cid.length > 0) conversationId = cid;
         break;
       }
       default:
@@ -207,6 +234,9 @@ export async function streamCopilote(
     return;
   }
 
+  // Phase 3 : on remonte d'ABORD le `conversationId` (le popup le retient/renvoie) — y compris
+  // quand le tour s'est clos sur une erreur (le fil neuf existe quand même côté serveur).
+  if (conversationId) callbacks.onConversation?.(conversationId);
   // CAP-2 : une écriture commise se reflète même si le tour s'est clos sur une erreur —
   // la part `finish` porte `didWrite` y compris quand `finishReason` vaut "error". inc.4 : on
   // transmet le `turnId` retenu pour que le popup offre le rewind sur ce tour.

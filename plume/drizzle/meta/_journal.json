@@ -71,6 +71,13 @@
       "when": 1782034637653,
       "tag": "0009_violet_iron_man",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1782049666518,
+      "tag": "0010_perpetual_famine",
+      "breakpoints": true
     }
   ]
 }

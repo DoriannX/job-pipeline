@@ -30,6 +30,8 @@ export const {
   messages,
   generationEvents,
   actionLog,
+  conversations,
+  chatMessages,
 } = prodSchema;
 
 const MIGRATIONS_DIR = fileURLToPath(
