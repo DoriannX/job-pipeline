@@ -24,6 +24,12 @@ export type ComposerContext = {
   nom: string;
   /** Canal préféré (pré-sélectionne le sélecteur de canal) ; null si non renseigné. */
   canalPrefere: Canal | null;
+  /**
+   * Le contact a-t-il un historique de conversation non vide (story 3.10, FR-35) ? Vrai ⇒
+   * une génération l'injectera au prompt → la micro-ligne de transparence API l'explicite
+   * (AC 4). On n'expose PAS le texte (inutile au client, surface minimale) : juste le booléen.
+   */
+  hasHistorique: boolean;
 };
 
 /**
@@ -48,5 +54,6 @@ export async function loadComposerContextAction(
     id: contact.id,
     nom: contact.nom,
     canalPrefere: contact.canalPrefere ?? null,
+    hasHistorique: (contact.historique?.trim().length ?? 0) > 0,
   };
 }

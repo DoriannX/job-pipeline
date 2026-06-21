@@ -67,7 +67,9 @@ development_status:
 
   # ---- Epic 3: Le moat, bout en bout (composer, envoyer, mesurer, historiser) ----
   # Rouvert 2026-06-21 (correct-course) : ajout story 3.10 historique de conversation.
-  epic-3: in-progress
+  # Re-clôturé 2026-06-21 : story 3.10 done (dev + code-review). Reste le Jalon R1 GO/PIVOT
+  # (porte de décision, PAS une story de dev) avant Epic 4.
+  epic-3: done
   3-1-composeur-en-flow-champ-unique-brouillon-immortel: done
   3-2-garantir-zero-tell-d-ia-sanitize: done
   3-3-generer-un-message-dans-la-voix-streaming: done
@@ -77,7 +79,7 @@ development_status:
   3-7-verrou-read-only-apres-envoye-modifier: done
   3-8-cycle-de-statut-d-un-tap: done
   3-9-evals-figes-de-la-voix-anti-regression: done
-  3-10-historique-conversation-contact: ready-for-dev
+  3-10-historique-conversation-contact: done
   # Jalon R1 GO/PIVOT (porte de decision, PAS une story de dev) : cloture l'Epic 3.
   # Mesurer SM-1 (Levenshtein normalisee mediane) sur 20-30 vrais messages.
   # mediane < 20% -> GO (Epics 4-6) ; >= 20% -> PIVOT (rouvrir le mecanisme de Voix).

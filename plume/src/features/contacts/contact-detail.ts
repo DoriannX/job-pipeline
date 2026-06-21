@@ -25,6 +25,8 @@ export type ContactDetailView = {
   canalPrefere: Canal | null;
   handles: Partial<Record<ContactHandle, string>> | null;
   notes: string | null;
+  /** Historique brut des échanges (story 3.10, FR-35) ; null = aucun. */
+  historique: string | null;
   /** Epoch ms ; null = jamais contacté. */
   dernierContactAt: number | null;
   /** Froideur dérivée à la lecture (cold-score), portée par couleur + ColdTag texte. */

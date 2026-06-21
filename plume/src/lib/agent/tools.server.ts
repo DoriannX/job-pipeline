@@ -29,7 +29,8 @@ import {
 } from "@/lib/db";
 import { CANAUX, type Canal } from "@/lib/domain/enums";
 import type { Tone } from "@/features/composer/generation";
-import { composeInVoice } from "@/lib/composer/pipeline.server";
+import { clampHistorique, composeInVoice } from "@/lib/composer/pipeline.server";
+import { sanitize } from "@/lib/copy";
 
 /** Projection LÉGÈRE d'un contact renvoyée à l'agent (borne les tokens). */
 export type ContactSummary = {
@@ -308,7 +309,7 @@ export type ComposeMessageDeps = {
     idea: string;
     canal: Canal;
     tone: Tone;
-    contact: { nom?: string | null };
+    contact: { nom?: string | null; historique?: string | null };
   }) => Promise<{ event: { generatedText: string } }>;
   /** `journal` (inc.4) : journalise le brouillon atomiquement sous le `turnId` du run. */
   journal?: JournalSink;
@@ -340,7 +341,10 @@ export async function composeMessage(
     idea: input.idea ?? "",
     canal,
     tone,
-    contact: { nom: contact.nom },
+    // Historique injecté pour générer EN CONTINUITÉ (story 3.10, parité /api/composer) :
+    // borné par `clampHistorique` avant l'envoi à Claude (queue gardée). Vide/NULL ⇒ aucune
+    // injection (comportement inchangé). Le copilote bénéficie ainsi du même moat que l'UI.
+    contact: { nom: contact.nom, historique: clampHistorique(contact.historique) },
   });
 
   const message = await deps.messages.createDraft(
@@ -359,6 +363,85 @@ export async function composeMessage(
     statut: "brouillon",
     text: event.generatedText,
   };
+}
+
+// ---------------------------------------------------------------------------
+// setContactHistorique (CAP-HIST, story 3.10) — enregistre/complète l'HISTORIQUE de
+// conversation d'un contact, dicté en langage naturel. Cet historique nourrit ensuite la
+// génération « en continuité » du Composeur (FR-35). NON destructif par défaut (`append` :
+// on ajoute à la suite) ; `replace` écrase explicitement. Sanitizé à l'écriture (point unique
+// AR-3, parité saisie manuelle) et borné (parité `HISTORIQUE_MAX` du formulaire).
+// ---------------------------------------------------------------------------
+
+/**
+ * Borne douce de STOCKAGE de l'historique posé par le copilote (parité `HISTORIQUE_MAX` =
+ * 8000 de la validation du formulaire). Au-delà, on garde la QUEUE (le plus récent), jamais
+ * la tête — cohérent avec `clampHistorique` côté injection prompt.
+ */
+export const MAX_HISTORIQUE_STORE = 8000;
+
+/** Résultat de `setContactHistorique` renvoyé à l'agent (pour qu'il verbalise l'action). */
+export type SetHistoriqueResult = {
+  contactId: string;
+  /** Mode réellement appliqué. */
+  mode: "append" | "replace";
+  /** Longueur finale stockée (caractères). */
+  length: number;
+  /** `true` si la borne de stockage a tronqué (la queue est conservée). */
+  capped: boolean;
+};
+
+/** Arguments validés de `setContactHistorique` (frontière zod du tool). */
+export type SetHistoriqueInput = {
+  contactId: string;
+  historique: string;
+  /** `append` (défaut, non destructif) ajoute à la suite ; `replace` écrase. */
+  mode?: "append" | "replace";
+};
+
+/**
+ * LOGIQUE PURE de `setContactHistorique`, testable hors serveur : reçoit un repository DÉJÀ
+ * scopé au tenant + un `clean` injecté (prod = `sanitize`, test = identité). Un `contactId`
+ * inconnu/hors tenant lève AVANT toute écriture (sécu + anti-bruit). `append` (défaut) préserve
+ * l'historique existant en ajoutant le nouveau bloc à la suite (séparé d'une ligne vide) ;
+ * `replace` l'écrase. Le résultat est borné à `MAX_HISTORIQUE_STORE` (queue gardée). Délègue au
+ * VRAI `contactsRepository.update` (jamais d'écriture drizzle directe — Archi #1).
+ */
+export async function setContactHistorique(
+  contacts: Pick<ContactsRepository, "get" | "update">,
+  input: SetHistoriqueInput,
+  clean: (s: string) => string = (s) => s,
+): Promise<SetHistoriqueResult> {
+  const contact = await contacts.get(input.contactId);
+  if (!contact) {
+    // Contact inconnu/hors tenant : on refuse AVANT toute écriture (sécu + anti-bruit).
+    throw new Error("Contact introuvable pour ce tenant.");
+  }
+
+  const addition = clean(input.historique).trim();
+  const mode: "append" | "replace" = input.mode ?? "append";
+  const existing = contact.historique?.trim() ?? "";
+
+  let next: string;
+  if (mode === "replace") {
+    next = addition;
+  } else if (existing.length === 0) {
+    next = addition;
+  } else if (addition.length === 0) {
+    next = existing; // rien à ajouter après nettoyage : on ne touche pas l'existant
+  } else {
+    next = `${existing}\n\n${addition}`;
+  }
+
+  // Borne de stockage : garde la QUEUE (le plus récent), jamais la tête (parité injection).
+  const capped = next.length > MAX_HISTORIQUE_STORE;
+  if (capped) next = next.slice(-MAX_HISTORIQUE_STORE);
+
+  await contacts.update(input.contactId, {
+    historique: next.length > 0 ? next : null,
+  });
+
+  return { contactId: input.contactId, mode, length: next.length, capped };
 }
 
 // ===========================================================================
@@ -477,6 +560,9 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "createContact",
   "composeMessage",
   "importContacts",
+  // setContactHistorique (story 3.10) : écrit `contacts.historique` → la fiche relit la vérité
+  // serveur après coup (router.refresh) par sa seule présence ici.
+  "setContactHistorique",
   // ARCHIVE-tools (delete réversible) : héritent de la sync (router.refresh) par leur seule
   // présence ici — la galerie Réseau relit la vérité serveur après un archivage.
   "archiveContact",
@@ -740,6 +826,57 @@ export function buildTools(userId: string, turnId: string): ToolSet {
           console.error("[agent] composeMessage a échoué :", err);
           return {
             error: "Rédaction du brouillon momentanément indisponible. Réessaie plus tard.",
+          };
+        }
+      },
+    }),
+
+    // --- setContactHistorique (CAP-HIST, story 3.10) : enregistre/complète l'historique. ---
+    setContactHistorique: tool({
+      description:
+        "Enregistre ou COMPLÈTE l'historique de conversation d'un contact (ce qui s'est dit " +
+        "lors d'échanges passés). Cet historique sert ensuite à générer des messages EN " +
+        "CONTINUITÉ (rebondir sur le dernier point). Utilise-le quand l'utilisateur te " +
+        "raconte un échange (ex. « j'ai parlé à Sophie hier, elle m'a dit qu'elle recrutait »). " +
+        "Donne `contactId` (résous-le d'abord via queryContacts, n'invente jamais d'id) et " +
+        "`historique` = le texte de l'échange, rédigé clairement. `mode` : `append` (DÉFAUT, " +
+        "ajoute à la suite sans rien perdre) ou `replace` (écrase tout — ne l'utilise QUE si " +
+        "l'utilisateur demande explicitement de remplacer/corriger). Confirme la cible (NOM du " +
+        "contact) avant d'écrire. N'INVENTE AUCUN échange : ne consigne que ce que l'utilisateur a dit.",
+      inputSchema: z.object({
+        contactId: z
+          .string()
+          .trim()
+          .min(1)
+          .max(64)
+          .describe("Id du contact (obtenu via queryContacts)."),
+        historique: z
+          .string()
+          .trim()
+          .min(1)
+          // Borne DURE à la frontière (anti-DoS) ; la logique pure borne ENSUITE le stockage à
+          // MAX_HISTORIQUE_STORE (« clampé, pas honoré ») — même patron à 2 bornes que seed/import.
+          .max(16_000)
+          .describe("Texte de l'échange à consigner (rédigé clairement)."),
+        mode: z
+          .enum(["append", "replace"])
+          .optional()
+          .describe(
+            "append (défaut, non destructif) ajoute à la suite ; replace écrase tout.",
+          ),
+      }),
+      execute: async (args) => {
+        try {
+          const gate = await forUser(userId);
+          // `sanitize` injecté = nettoyage à l'écriture (point unique AR-3, parité saisie).
+          // NB : `update` n'est pas journalisé (parité édition manuelle) — non rewindable, mais
+          // `append` par défaut est non destructif (l'existant n'est jamais perdu).
+          return await setContactHistorique(gate.contacts, args, sanitize);
+        } catch (err) {
+          console.error("[agent] setContactHistorique a échoué :", err);
+          return {
+            error:
+              "Enregistrement de l'historique momentanément indisponible. Réessaie plus tard.",
           };
         }
       },

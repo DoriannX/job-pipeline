@@ -189,6 +189,30 @@ describe("invariant n°1 — VRAIE table `contacts` (story 2.1)", () => {
     expect(await repoA().remove(aContact.id)).toBe(true);
     expect(await repoA().get(aContact.id)).toBeUndefined();
   });
+
+  it("contacts.historique (story 3.10) : lisible par son tenant, JAMAIS hors tenant", async () => {
+    // A crée un contact avec un historique privé.
+    const aContact = await repoA().create({
+      nom: "Camille",
+      historique: "Moi : on se recroise au meetup ? Lui : oui, je te tiens au courant.",
+    });
+
+    // A relit SON historique en clair.
+    expect((await repoA().get(aContact.id))?.historique).toContain(
+      "on se recroise au meetup",
+    );
+
+    // B (qui connaîtrait l'id) ne lit RIEN : zéro fuite de l'historique cross-tenant.
+    expect(await repoB().get(aContact.id)).toBeUndefined();
+
+    // B tente d'écraser l'historique de A : aucune ligne touchée, A intact.
+    expect(
+      await repoB().update(aContact.id, { historique: "piraté par B" }),
+    ).toBeUndefined();
+    expect((await repoA().get(aContact.id))?.historique).toContain(
+      "on se recroise au meetup",
+    );
+  });
 });
 
 describe("invariant n°1 — tables d'IMPORT `import_jobs` / `merge_candidates` (story 2.5)", () => {

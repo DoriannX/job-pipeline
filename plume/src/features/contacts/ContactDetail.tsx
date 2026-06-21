@@ -98,6 +98,19 @@ export function ContactDetail({ contact }: ContactDetailProps) {
         </section>
       ) : null}
 
+      {/* — Historique de conversation (story 3.10, FR-35) — encart doux, affiché seulement
+          si présent. Nourrit la génération en continuité ; édité via « Modifier » ci-dessous. */}
+      {contact.historique ? (
+        <section className="flex flex-col gap-2">
+          <h2 className="font-body text-label font-bold uppercase tracking-[0.12em] text-ink-soft">
+            Historique de conversation
+          </h2>
+          <p className="whitespace-pre-line rounded-md border-[length:--border-width-ink] border-line bg-surface-note px-4 py-3 font-body text-body text-ink">
+            {contact.historique}
+          </p>
+        </section>
+      ) : null}
+
       {/* — Édition + suppression (capacités 2.1, accessibles aussi ici) — wrapper client. */}
       <ContactDetailActions contact={contact} />
 

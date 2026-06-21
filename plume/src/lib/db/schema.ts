@@ -126,6 +126,11 @@ export const contacts = sqliteTable(
     handles: text("handles", { mode: "json" }).$type<ContactHandles>(),
     // Notes libres.
     notes: text("notes"),
+    // Historique brut des échanges passés, nourrit la génération en continuité — FR-35.
+    // DISTINCT de `notes` (qui reste un pense-bête perso) : ce champ est INJECTÉ au prompt
+    // du Composeur (borné) pour rebondir sur le dernier point en suspens. Sanitizé à
+    // l'écriture (parité seeds/corpus, AR-3), nullable (ADD COLUMN rétro-compatible).
+    historique: text("historique"),
     // Dernier contact, epoch ms ; NULL = jamais contacté (porte le Score de froideur, story 2.3).
     dernierContactAt: integer("dernier_contact_at", { mode: "number" }),
     // Provenance — 'manuel' par défaut (AR-9, AR-16).

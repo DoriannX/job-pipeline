@@ -82,6 +82,7 @@ export default async function ContactPage({
     canalPrefere: contact.canalPrefere ?? null,
     handles: contact.handles ?? null,
     notes: contact.notes ?? null,
+    historique: contact.historique ?? null,
     dernierContactAt,
     coldness: coldness(dernierContactAt, maintenant),
     messages,

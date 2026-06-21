@@ -23,6 +23,11 @@ export interface GenerateRequest {
   canal: Canal;
   tone: Tone;
   mode?: GenerationMode;
+  /**
+   * Contact ciblé (story 3.10) : permet au serveur d'injecter son nom + son historique au
+   * prompt (continuité). Optionnel — absent ⇒ génération sans contexte contact (compat 3.3).
+   */
+  contactId?: string;
 }
 
 /** Callbacks de pilotage du flux. */

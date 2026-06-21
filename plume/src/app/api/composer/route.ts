@@ -27,7 +27,8 @@ import { auth } from "@/lib/auth";
 import { forUser } from "@/lib/db";
 import { CANAUX } from "@/lib/domain/enums";
 import { AppError } from "@/lib/claude.server";
-import { composeInVoice } from "@/lib/composer/pipeline.server";
+import { clampHistorique, composeInVoice } from "@/lib/composer/pipeline.server";
+import type { PromptContactContext } from "@/lib/prompt.server";
 import { ideaRequired } from "@/features/composer/generation";
 
 // Runtime Node (le SDK Anthropic + l'accès DB visent Node, pas l'edge). Force-dynamic :
@@ -50,6 +51,10 @@ const bodySchema = z
     canal: z.enum(CANAUX),
     tone: z.enum(["rapide", "soigne"]),
     mode: z.enum(["generate", "improve"]).default("generate"),
+    // `contactId` OPTIONNEL (story 3.10) : quand présent, la route charge le contact (scopé
+    // tenant) pour injecter son nom + son historique au prompt (continuité). Absent ⇒
+    // comportement 3.3/3.4 strictement préservé (aucun contact transmis à la génération).
+    contactId: z.string().trim().min(1).optional(),
   })
   .refine((d) => !ideaRequired(d.mode) || d.idea.length >= 1, {
     message: "Rien à retravailler : le champ est vide.",
@@ -92,7 +97,21 @@ export async function POST(request: Request): Promise<Response> {
   //    throw ici pour un userId valide.
   const gate = await forUser(userId);
 
-  const { idea, canal, tone, mode } = parsed;
+  const { idea, canal, tone, mode, contactId } = parsed;
+
+  // 3b. Contexte contact (story 3.10) : si `contactId` est fourni, on charge le contact
+  //     SCOPÉ au tenant (la porte masque un id d'autrui/inexistant → undefined, jamais de
+  //     fuite ni de 500). On en tire le nom (adresse) + l'historique TRONQUÉ à `MAX_HISTORIQUE`
+  //     (borné serveur, jamais honoré tel quel). Le `sanitize()` a déjà eu lieu à l'écriture.
+  //     `contactId` absent ⇒ `contact` reste `undefined` ⇒ génération à l'identique de 3.3/3.4.
+  let contact: PromptContactContext | undefined;
+  if (contactId) {
+    const row = await gate.contacts.get(contactId);
+    if (row) {
+      // Historique BORNÉ avant injection (`clampHistorique`, « clampé pas honoré tel quel »).
+      contact = { nom: row.nom, historique: clampHistorique(row.historique) };
+    }
+  }
 
   // 4. Flux NDJSON : on délègue au PIPELINE VOIX PARTAGÉ (`composeInVoice`) — corpus voix
   //    (FR-17) → génération → `sanitize()` —, en lui passant un `onDelta` qui POMPE les
@@ -107,6 +126,7 @@ export async function POST(request: Request): Promise<Response> {
           canal,
           tone,
           mode,
+          contact,
           onDelta: (delta) => {
             controller.enqueue(ndjson({ type: "delta", text: delta }));
           },

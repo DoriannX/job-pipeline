@@ -14,6 +14,7 @@ import { revalidatePath } from "next/cache";
 
 import { forUser, type BulkCreateItem } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { sanitize } from "@/lib/copy";
 import { isCanal } from "@/lib/domain/enums";
 
 import { parseQuickAdd } from "./dedup";
@@ -77,6 +78,17 @@ function readHandles(formData: FormData) {
   };
 }
 
+/**
+ * Nettoie l'historique À L'ÉCRITURE (point unique `sanitize`, AR-3 — comme les seeds de
+ * voix sont sanitizés à l'import). Le champ Zod a déjà transformé le vide en `undefined` ;
+ * si le nettoyage vide la chaîne (n'était que des Tells/invisibles), on persiste `null`.
+ */
+function cleanHistorique(value: string | undefined): string | null {
+  if (!value) return null;
+  const cleaned = sanitize(value);
+  return cleaned.length > 0 ? cleaned : null;
+}
+
 /** Valide le FormData via Zod ; renvoie soit les données, soit l'état d'erreur. */
 function parse(formData: FormData):
   | { ok: true; data: import("./validation").ContactInput }
@@ -88,6 +100,7 @@ function parse(formData: FormData):
     canalPrefere: isCanal(canalRaw) ? canalRaw : "",
     handles: readHandles(formData),
     notes: formData.get("notes") ?? undefined,
+    historique: formData.get("historique") ?? undefined,
   });
 
   if (!parsed.success) {
@@ -121,7 +134,8 @@ export async function createContactAction(
 
   const result = parse(formData);
   if (!result.ok) return result.state;
-  const { nom, entreprise, canalPrefere, handles, notes } = result.data;
+  const { nom, entreprise, canalPrefere, handles, notes, historique } =
+    result.data;
 
   const db = await forUser(userId);
   await db.contacts.create({
@@ -130,6 +144,9 @@ export async function createContactAction(
     canalPrefere: canalPrefere ?? null,
     handles: isHandlesEmpty(handles) ? null : handles,
     notes: notes ?? null,
+    // Historique SANITIZÉ à l'écriture (point unique AR-3, parité seeds/corpus). Vide
+    // après nettoyage (ex. n'était que des Tells) ⇒ null, jamais une chaîne fantôme.
+    historique: cleanHistorique(historique),
   });
 
   revalidatePath(RESEAU_PATH);
@@ -204,7 +221,8 @@ export async function updateContactAction(
 
   const result = parse(formData);
   if (!result.ok) return result.state;
-  const { nom, entreprise, canalPrefere, handles, notes } = result.data;
+  const { nom, entreprise, canalPrefere, handles, notes, historique } =
+    result.data;
 
   const db = await forUser(userId);
   let updated;
@@ -215,6 +233,8 @@ export async function updateContactAction(
       canalPrefere: canalPrefere ?? null,
       handles: isHandlesEmpty(handles) ? null : handles,
       notes: notes ?? null,
+      // Sanitizé à l'écriture (parité création) ; vide après nettoyage ⇒ null.
+      historique: cleanHistorique(historique),
     });
   } catch (e) {
     // Le nouveau nom+entreprise (ou email) recalcule la `dedup_key` ; s'il entre en

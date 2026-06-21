@@ -31,8 +31,14 @@ import type { Canal } from "@/lib/domain/enums";
  * v2 (story 3.4) : introduction du `mode` (`generate` | `improve`). Le mode fait partie
  * de la RECETTE — le tour utilisateur diffère de façon OBSERVABLE entre les deux —, donc
  * on incrémente. Le préfixe stable (système + few-shot, cachable) reste IDENTIQUE.
+ *
+ * v3 (story 3.10) : injection optionnelle de l'HISTORIQUE de conversation du contact dans
+ * le tour utilisateur (suffixe volatil) + consigne de CONTINUITÉ. Change observable de la
+ * recette QUAND un historique est présent ; SANS historique, le tour user est IDENTIQUE à
+ * v2 (non-régression garantie). On incrémente quand même : la version trace la RECETTE
+ * disponible, pas seulement le chemin emprunté. Le préfixe stable (cachable) reste INTACT.
  */
-export const PROMPT_VERSION = 2;
+export const PROMPT_VERSION = 3;
 
 /**
  * Mode de fabrication du tour utilisateur (story 3.4).
@@ -48,6 +54,13 @@ export type PromptMode = "generate" | "improve";
 export interface PromptContactContext {
   /** Prénom/nom du contact ciblé (pour adresser le message), si connu. */
   nom?: string | null;
+  /**
+   * Historique brut des échanges passés avec ce contact (story 3.10, FR-35). PER-CONTACT
+   * et VOLATIL → il vit dans le tour utilisateur (suffixe), JAMAIS dans le `system` cachable
+   * (sinon le cache se briserait à chaque contact). Déjà BORNÉ/tronqué par l'appelant serveur
+   * (MAX_HISTORIQUE) avant d'arriver ici. Vide/absent ⇒ aucune injection (non-régression v2).
+   */
+  historique?: string | null;
 }
 
 /** Ingrédients de construction du prompt. */
@@ -186,6 +199,23 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
     ? `Tu écris à ${contact.nom.trim()}.\n`
     : "";
 
+  // HISTORIQUE DE CONVERSATION (story 3.10, FR-35) — injecté dans le tour utilisateur
+  // (suffixe volatil, jamais le `system` cachable), UNIQUEMENT en mode `generate` et si
+  // non vide. En `improve`, on n'injecte PAS : la consigne « retravaille EN PLACE sans
+  // changer le fond » entrerait en conflit avec « rebondis sur un point » — l'utilisateur
+  // a déjà écrit son texte. Le bloc est déjà BORNÉ par l'appelant (MAX_HISTORIQUE). Absent
+  // ⇒ chaîne vide ⇒ tour utilisateur STRICTEMENT identique à v2 (non-régression AC 3).
+  const historique = contact?.historique?.trim() ?? "";
+  const historiqueBloc =
+    mode !== "improve" && historique.length > 0
+      ? "Historique de vos échanges passés avec ce contact (du plus ancien au plus " +
+        `récent) :\n"""\n${historique}\n"""\n` +
+        "Appuie-toi sur cet historique pour écrire la SUITE NATURELLE de la conversation : " +
+        "REBONDIS sur le dernier point laissé en suspens (une question restée sans réponse, " +
+        "une intention annoncée, un fil ouvert). Ne te contente PAS de résumer ni de répéter " +
+        "ce qui a déjà été dit ; ne réinvente pas non plus le passé.\n\n"
+      : "";
+
   const consigne =
     mode === "improve"
       ? // AMÉLIORER (FR-8, UX-DR8) : retravail EN PLACE, sans ton étranger.
@@ -207,7 +237,7 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
           "Idée brute à mettre en forme dans la voix de l'utilisateur :\n" +
           `"""\n${idea}\n"""`;
 
-  const userText = `${contrainteCanal}\n\n${adresse}${consigne}`;
+  const userText = `${contrainteCanal}\n\n${adresse}${historiqueBloc}${consigne}`;
 
   const messages: Anthropic.MessageParam[] = [
     { role: "user", content: userText },
