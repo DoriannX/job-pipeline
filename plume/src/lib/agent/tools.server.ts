@@ -415,22 +415,21 @@ export type ArchiveContactsResult = {
 
 /**
  * LOGIQUE PURE d'`archiveContacts`, testable hors serveur : reçoit un repository DÉJÀ scopé au
- * tenant. CLAMPE la liste à `MAX_ARCHIVE` (SÉCU #6), puis archive chaque id via le VRAI `remove`
- * (chacun journalisé sous le même `turnId` → tout le lot rewindable d'un geste, parité
- * `seedContacts`). Compte les archivages EFFECTIFS (un id inconnu/déjà archivé ne compte pas).
+ * tenant. CLAMPE la liste à `MAX_ARCHIVE` (SÉCU #6), puis délègue au VRAI `contactsRepository.
+ * bulkRemove` qui archive TOUT le lot dans UNE SEULE transaction (atomicité : un échec annule
+ * tout, jamais d'archivage partiel ; parité `bulkCreate`/`importContacts`). Chaque ligne est
+ * journalisée sous le même `turnId` → tout le lot rewindable d'un geste. `bulkRemove` renvoie les
+ * archivages EFFECTIFS (un id inconnu/déjà archivé ne compte pas).
  */
 export async function archiveContacts(
-  contacts: Pick<ContactsRepository, "remove">,
+  contacts: Pick<ContactsRepository, "bulkRemove">,
   input: { contactIds: string[] },
   journal?: JournalSink,
 ): Promise<ArchiveContactsResult> {
   const requested = input.contactIds.length;
   // CLAMP serveur (« clampé, pas honoré ») : l'excédent au-delà du plafond est ignoré.
   const ids = input.contactIds.slice(0, MAX_ARCHIVE);
-  let archived = 0;
-  for (const id of ids) {
-    if (await contacts.remove(id, journal)) archived += 1;
-  }
+  const archived = await contacts.bulkRemove(ids, journal);
   return { archived, requested, capped: requested > MAX_ARCHIVE };
 }
 

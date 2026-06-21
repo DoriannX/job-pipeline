@@ -39,11 +39,16 @@ export async function createDevSession(makeToken: () => string): Promise<DevSess
   )[0];
   if (!user) {
     // `createdAt` en epoch ms : pas d'horloge injectée sur ce chemin adaptateur (hors porte).
-    const [created] = await db
+    // ANTI-RACE : deux premiers logins dev concourants lisent tous deux `undefined` puis
+    // tentent l'insert. `onConflictDoNothing` (sur la clé unique `email`) rend le 2ᵉ insert
+    // inoffensif (au lieu d'un 500 UNIQUE), puis on RELIT pour récupérer la ligne gagnante.
+    await db
       .insert(users)
       .values({ email: DEV_EMAIL, name: DEV_NAME, createdAt: Date.now() })
-      .returning();
-    user = created;
+      .onConflictDoNothing({ target: users.email });
+    user = (
+      await db.select().from(users).where(eq(users.email, DEV_EMAIL)).limit(1)
+    )[0];
   }
 
   const sessionToken = makeToken();

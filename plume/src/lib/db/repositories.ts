@@ -91,6 +91,16 @@ export type ContactsRepository = {
    * rewind). Idempotent : un contact déjà archivé ⇒ `false`, aucune écriture, aucune entrée.
    */
   remove: (id: string, journal?: JournalSink) => Promise<boolean>;
+  /**
+   * SOFT-DELETE EN BLOC (archivage) — version atomique de `remove` pour un LOT d'ids (copilote —
+   * archiveContacts). Tout le lot s'archive dans UNE SEULE transaction (parité `bulkCreate`) :
+   * un échec en cours de route ANNULE TOUT (rollback total), jamais d'archivage partiel. Chaque
+   * ligne réellement archivée est journalisée (op `archived`, `prevState = {archivedAt: null}`)
+   * sous le même `turnId` → tout le lot rewindable d'un geste. Renvoie le nombre d'archivages
+   * EFFECTIFS (un id inconnu / déjà archivé ne compte pas, ne journalise rien). `journal` absente
+   * ⇒ chemin non journalisé (toujours en bloc, mais sans entrées d'audit).
+   */
+  bulkRemove: (ids: string[], journal?: JournalSink) => Promise<number>;
 };
 
 /**
@@ -207,6 +217,36 @@ async function createContactRow(
       prevState,
     },
   };
+}
+
+/**
+ * CŒUR du soft-delete d'UN contact, extrait pour s'exécuter indifféremment sur la porte scopée OU
+ * sur un handle transactionnel (`tx`). Partagé par `remove` (un id) et `bulkRemove` (un lot dans
+ * UNE transaction) → la logique d'archivage + journal est écrite une seule fois. On n'archive
+ * qu'un contact ACTIF (idempotent : déjà archivé ⇒ 0 ligne → `false`, aucune écriture, aucune
+ * entrée — sinon le rewind « désarchiverait » à tort). `prevState = {archivedAt: null}` = l'état
+ * AVANT (actif) → l'inverse restaure l'actif.
+ */
+async function archiveContactRow(
+  db: ScopedDb,
+  id: string,
+  journal?: JournalSink,
+): Promise<boolean> {
+  const ts = now(db.now);
+  const [row] = await db.update(
+    contacts,
+    { archivedAt: ts, updatedAt: ts },
+    and(eq(contacts.id, id), isNull(contacts.archivedAt)),
+  );
+  if (row && journal) {
+    await journal(db, {
+      entityType: "contact",
+      entityId: row.id,
+      op: "archived",
+      prevState: { archivedAt: null },
+    });
+  }
+  return row !== undefined;
 }
 
 /**
@@ -395,25 +435,22 @@ export function contactsRepository(scoped: ScopedDb): ContactsRepository {
       //
       // `db` = porte scopée, OU handle transactionnel (`tx`) quand on journalise — pour rendre
       // l'archivage ET son entrée `action_log` atomiques (parité `createDraft`/`create`).
+      const run = (db: ScopedDb) => archiveContactRow(db, id, journal);
+      return journal ? scoped.transaction(run) : run(scoped);
+    },
+
+    async bulkRemove(ids, journal) {
+      // ARCHIVAGE EN BLOC ATOMIQUE (copilote — archiveContacts) : tout le lot s'archive dans UNE
+      // SEULE transaction (parité `bulkCreate`), au lieu de N transactions indépendantes. Un échec
+      // en cours (DB/connexion) annule TOUT le lot (rollback total) → jamais d'archivage partiel
+      // ni de compte erroné. Chaque ligne réellement archivée est journalisée sous le même
+      // `turnId` → le lot entier reste rewindable d'un geste. Compte les archivages EFFECTIFS.
       const run = async (db: ScopedDb) => {
-        const ts = now(db.now);
-        const [row] = await db.update(
-          contacts,
-          { archivedAt: ts, updatedAt: ts },
-          and(eq(contacts.id, id), isNull(contacts.archivedAt)),
-        );
-        // Journal (op `archived`) UNIQUEMENT si une ligne ACTIVE a bien été archivée : un no-op
-        // (déjà archivé) ne doit RIEN journaliser, sinon le rewind « désarchiverait » à tort.
-        // `prevState = {archivedAt: null}` = l'état AVANT (actif) → l'inverse restaure l'actif.
-        if (row && journal) {
-          await journal(db, {
-            entityType: "contact",
-            entityId: row.id,
-            op: "archived",
-            prevState: { archivedAt: null },
-          });
+        let archived = 0;
+        for (const id of ids) {
+          if (await archiveContactRow(db, id, journal)) archived += 1;
         }
-        return row !== undefined;
+        return archived;
       };
       return journal ? scoped.transaction(run) : run(scoped);
     },
