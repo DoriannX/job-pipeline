@@ -64,10 +64,12 @@ export {
   deriveTitre,
   MAX_CONTEXT_TURNS,
   TITRE_MAX_LENGTH,
+  MAX_CONVERSATIONS_PER_TENANT,
   type ConversationsRepository,
   type ChatMessagesRepository,
   type Conversation,
   type ChatMessageRow,
+  type ConversationSummary,
   type AppendChatMessage,
 } from "./conversation-repositories";
 export type { JournalSink, MutationRecord, JournaledOp } from "./journal";

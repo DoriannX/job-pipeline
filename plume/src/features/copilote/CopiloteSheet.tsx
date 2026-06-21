@@ -30,8 +30,21 @@ import { colors } from "@/design/tokens";
 
 import { streamCopilote } from "./stream-client";
 import { rewindTurnAction } from "./rewind.actions";
-import { bootstrapCopiloteAction } from "./bootstrap.actions";
+import {
+  bootstrapCopiloteAction,
+  type BootstrapTurn,
+} from "./bootstrap.actions";
+import {
+  listConversationsAction,
+  openConversationAction,
+  renameConversationAction,
+  archiveConversationAction,
+} from "./conversations.actions";
 import { CopiloteMarkdown } from "./CopiloteMarkdown";
+
+// Projection légère d'un fil pour la liste (miroir de `ConversationSummary` côté serveur — défini
+// localement pour ne PAS importer le barrel `@/lib/db` (server-only) dans ce composant client).
+type ThreadSummary = { id: string; titre: string | null; updatedAt: number | null };
 
 // Libellés FR des outils, affichés en petit (façon Claude) quand l'agent agit. Le front
 // montre le NOM lisible, jamais les arguments (il reste « bête »). Un tool inconnu retombe
@@ -94,10 +107,26 @@ export function CopiloteSheet() {
   const [draft, setDraft] = useState("");
   const [items, setItems] = useState<ChatItem[]>([]);
   // PHASE 3 : id du fil persisté courant. `null` = fil neuf (le serveur le crée au 1er message et
-  // renvoie l'id in-band → on le retient ici, puis on le RENVOIE aux tours suivants). Une réf
-  // (pas un state : aucune UI n'en dépend en 3-A) évite une capture périmée dans la closure de
-  // `send` (parité `streamingRef`).
+  // renvoie l'id in-band → on le retient ici, puis on le RENVOIE aux tours suivants). La RÉF évite
+  // une capture périmée dans la closure de `send` (parité `streamingRef`) ; le STATE miroir sert le
+  // rendu (surlignage du fil courant dans la liste, CAP-4). `setConversation` met à jour les deux.
   const conversationIdRef = useRef<string | null>(null);
+  const [currentConversationId, setCurrentConversationId] = useState<
+    string | null
+  >(null);
+  const setConversation = useCallback((id: string | null) => {
+    conversationIdRef.current = id;
+    setCurrentConversationId(id);
+  }, []);
+
+  // PHASE 3-B (CAP-4) — gestion multi-fils. `view` bascule entre le fil courant et la LISTE des
+  // fils ; `threads` = la liste (titre + récence) ; `editing` = le fil en cours de renommage inline.
+  type View = "chat" | "list";
+  const [view, setView] = useState<View>("chat");
+  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [editing, setEditing] = useState<{ id: string; titre: string } | null>(
+    null,
+  );
 
   // Taille EN-SESSION du panneau ouvert, en pixels. `null` = taille par défaut figée
   // (`PANEL_W`/`PANEL_H` sont des chaînes CSS `min()/calc()` non interpolables). Dès le 1er
@@ -273,12 +302,106 @@ export function CopiloteSheet() {
     streamingRef.current = false;
     currentAssistantIdRef.current = null;
     producedAssistantRef.current = false;
-    conversationIdRef.current = null;
+    setConversation(null);
     setItems([]);
     setDraft("");
     setStatus("idle");
+    setView("chat");
     inputRef.current?.focus();
+  }, [setConversation]);
+
+  // Mappe les tours réhydratés (bootstrap/réouverture) en items de chat : texte FINAL uniquement
+  // (chips tool-use NON réhydratées, Non-goal) ; un tour `assistant` porteur d'un `turnId` rouvre
+  // l'affordance « annuler ce tour » (CAP-5). `nextId` via la réf → fonction stable (deps vides).
+  const mapTurns = useCallback((turns: BootstrapTurn[]): ChatItem[] => {
+    const out: ChatItem[] = [];
+    for (const turn of turns) {
+      if (turn.role === "user") {
+        out.push({ id: nextId.current++, kind: "user", content: turn.content });
+      } else {
+        out.push({
+          id: nextId.current++,
+          kind: "assistant",
+          content: turn.content,
+        });
+        if (turn.turnId) {
+          out.push({
+            id: nextId.current++,
+            kind: "rewind",
+            turnId: turn.turnId,
+            status: "idle",
+          });
+        }
+      }
+    }
+    return out;
   }, []);
+
+  // Recharge la LISTE des fils (CAP-4) depuis le serveur (scopé tenant). Doux : un échec laisse la
+  // liste en l'état. Réutilisé après ouverture de la vue liste et après rename/archive (sync).
+  const refreshThreads = useCallback(async () => {
+    const list = await listConversationsAction();
+    setThreads(list);
+  }, []);
+
+  // Bascule vers la vue LISTE et (re)charge les fils.
+  const showThreadList = useCallback(() => {
+    abortRef.current?.abort();
+    streamingRef.current = false;
+    setStatus("idle");
+    setEditing(null);
+    setView("list");
+    void refreshThreads();
+  }, [refreshThreads]);
+
+  // Rouvre un fil (CAP-4) : recharge son transcript (réutilise le chargement borné de 3-A), retient
+  // son id, et bascule en vue conversation. Coupe un flux éventuel.
+  const openThread = useCallback(
+    (id: string) => {
+      abortRef.current?.abort();
+      streamingRef.current = false;
+      currentAssistantIdRef.current = null;
+      producedAssistantRef.current = false;
+      setStatus("idle");
+      setEditing(null);
+      void openConversationAction(id).then((res) => {
+        if (!res.conversationId) return; // fil disparu/non possédé : on reste en liste
+        setConversation(res.conversationId);
+        setItems(mapTurns(res.turns));
+        setView("chat");
+      });
+    },
+    [mapTurns, setConversation],
+  );
+
+  // Renomme un fil (CAP-4) : persiste via l'action puis rafraîchit la liste (sync via relecture,
+  // AUCUN nouveau mécanisme). Titre vide/inchangé → on ferme simplement l'édition.
+  const commitRename = useCallback(() => {
+    const target = editing;
+    setEditing(null);
+    if (!target) return;
+    const titre = target.titre.trim();
+    if (titre.length === 0) return;
+    void renameConversationAction(target.id, titre).then((res) => {
+      if (res.ok) void refreshThreads();
+    });
+  }, [editing, refreshThreads]);
+
+  // Archive un fil (CAP-4) — SOFT, jamais de hard-delete. S'il s'agit du fil OUVERT, on repart sur
+  // un fil neuf (popup vide). Puis on rafraîchit la liste (le fil archivé en sort).
+  const archiveThread = useCallback(
+    (id: string) => {
+      void archiveConversationAction(id).then((res) => {
+        if (!res.ok) return;
+        if (conversationIdRef.current === id) {
+          setConversation(null);
+          setItems([]);
+        }
+        void refreshThreads();
+      });
+    },
+    [refreshThreads, setConversation],
+  );
 
   // REWIND d'un tour (inc.4) : affordance HUMAINE (jamais un tool d'agent). On appelle la server
   // action `rewindTurnAction(turnId)` qui rejoue les inverses (soft, jamais hard-delete) puis
@@ -347,29 +470,8 @@ export function CopiloteSheet() {
         // Si l'utilisateur a déjà tapé/envoyé pendant le chargement, on ne piétine pas son fil.
         if (cancelled || conversationIdRef.current !== null) return;
         if (!res.conversationId || res.turns.length === 0) return;
-        conversationIdRef.current = res.conversationId;
-        const rehydrated: ChatItem[] = [];
-        for (const turn of res.turns) {
-          if (turn.role === "user") {
-            rehydrated.push({ id: newId(), kind: "user", content: turn.content });
-          } else {
-            rehydrated.push({
-              id: newId(),
-              kind: "assistant",
-              content: turn.content,
-            });
-            // CAP-5 : un tour `assistant` ayant écrit (turnId persisté) rouvre le rewind.
-            if (turn.turnId) {
-              rehydrated.push({
-                id: newId(),
-                kind: "rewind",
-                turnId: turn.turnId,
-                status: "idle",
-              });
-            }
-          }
-        }
-        setItems(rehydrated);
+        setConversation(res.conversationId);
+        setItems(mapTurns(res.turns));
       })
       .catch(() => {
         // Échec doux : popup vide, l'utilisateur démarre un nouveau fil.
@@ -377,7 +479,7 @@ export function CopiloteSheet() {
     return () => {
       cancelled = true;
     };
-  }, [expanded]);
+  }, [expanded, mapTurns, setConversation]);
 
   // Suit l'intention de l'utilisateur : s'il est à ≤ 48px du bas, on « colle » (auto-scroll) ;
   // dès qu'il remonte au-delà, on lâche (il lit tranquillement, le flux ne le rappelle plus).
@@ -558,12 +660,12 @@ export function CopiloteSheet() {
         // c'est ainsi qu'on apprend le `conversationId` à RETENIR et RENVOYER aux tours suivants
         // (le serveur le valide à chaque appel). Idempotent pour un fil déjà connu.
         onConversation: (id) => {
-          conversationIdRef.current = id;
+          setConversation(id);
         },
       },
       controller.signal,
     );
-  }, [draft, router]);
+  }, [draft, router, setConversation]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Entrée = envoyer ; Maj+Entrée = nouvelle ligne.
@@ -712,18 +814,43 @@ export function CopiloteSheet() {
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                {/* Nouvelle conversation : vide l'historique (visible seulement s'il y en a). */}
-                {items.length > 0 ? (
+                {view === "list" ? (
+                  /* Vue liste : retour au fil courant (chrome, jamais mauve). */
                   <button
                     type="button"
-                    onClick={newConversation}
-                    aria-label="Nouvelle conversation"
-                    title="Nouvelle conversation"
+                    onClick={() => setView("chat")}
+                    aria-label="Retour à la conversation"
+                    title="Retour à la conversation"
                     className="rounded-button p-2 text-ink-soft outline-accent outline-offset-2 focus-visible:outline-2"
                   >
-                    <Icon name="edit" size={20} />
+                    <Icon name="arrow-left" size={20} />
                   </button>
-                ) : null}
+                ) : (
+                  <>
+                    {/* Mes conversations : ouvre la liste des fils (chrome secondaire, jamais mauve). */}
+                    <button
+                      type="button"
+                      onClick={showThreadList}
+                      aria-label="Mes conversations"
+                      title="Mes conversations"
+                      className="rounded-button p-2 text-ink-soft outline-accent outline-offset-2 focus-visible:outline-2"
+                    >
+                      <Icon name="copy" size={20} />
+                    </button>
+                    {/* Nouvelle conversation : oublie le fil courant (visible seulement s'il y en a). */}
+                    {items.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={newConversation}
+                        aria-label="Nouvelle conversation"
+                        title="Nouvelle conversation"
+                        className="rounded-button p-2 text-ink-soft outline-accent outline-offset-2 focus-visible:outline-2"
+                      >
+                        <Icon name="edit" size={20} />
+                      </button>
+                    ) : null}
+                  </>
+                )}
                 <button
                   type="button"
                   onClick={closePanel}
@@ -735,6 +862,24 @@ export function CopiloteSheet() {
               </div>
             </header>
 
+            {view === "list" ? (
+              /* — Vue LISTE des fils (CAP-4) : titre + récence, rouvrir / renommer / archiver. — */
+              <ThreadListView
+                threads={threads}
+                editing={editing}
+                currentId={currentConversationId}
+                onNew={newConversation}
+                onOpen={openThread}
+                onArchive={archiveThread}
+                onStartRename={(id, titre) => setEditing({ id, titre })}
+                onEditChange={(titre) =>
+                  setEditing((e) => (e ? { ...e, titre } : e))
+                }
+                onCommitRename={commitRename}
+                onCancelRename={() => setEditing(null)}
+              />
+            ) : (
+              <>
             {/* — Fil de la conversation (scrollable). — */}
             <div
               ref={scrollRef}
@@ -801,8 +946,149 @@ export function CopiloteSheet() {
                 <Icon name="arrow-up" size={20} />
               </button>
             </div>
+              </>
+            )}
       </motion.div>
     </motion.div>
+  );
+}
+
+/** Récence DOUCE et lisible d'un fil (« à l'instant », « il y a 3 h », « il y a 5 j »). */
+function formatRecency(updatedAt: number | null): string {
+  if (updatedAt == null) return "";
+  const diff = Date.now() - updatedAt;
+  const min = Math.floor(diff / 60_000);
+  if (min < 1) return "à l'instant";
+  if (min < 60) return `il y a ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `il y a ${h} h`;
+  const j = Math.floor(h / 24);
+  return `il y a ${j} j`;
+}
+
+/**
+ * Vue LISTE des fils (CAP-4) : démarrer une nouvelle conversation (mauve = action), rouvrir un fil,
+ * le renommer (édition inline) ou l'archiver (soft). Design-system `project-context.md` : contour
+ * plein + hard offset, MAUVE réservé à l'action « Nouvelle conversation » ; renommer/archiver sont
+ * SECONDAIRES (ghost menthe), jamais rouge alarme ; tout signal couleur doublé d'un label (a11y).
+ */
+function ThreadListView({
+  threads,
+  editing,
+  currentId,
+  onNew,
+  onOpen,
+  onArchive,
+  onStartRename,
+  onEditChange,
+  onCommitRename,
+  onCancelRename,
+}: {
+  threads: ThreadSummary[];
+  editing: { id: string; titre: string } | null;
+  currentId: string | null;
+  onNew: () => void;
+  onOpen: (id: string) => void;
+  onArchive: (id: string) => void;
+  onStartRename: (id: string, titre: string) => void;
+  onEditChange: (titre: string) => void;
+  onCommitRename: () => void;
+  onCancelRename: () => void;
+}) {
+  return (
+    <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-margin-mobile py-3">
+      {/* Nouvelle conversation = action → mauve (la SEULE action mauve de cette vue). */}
+      <button
+        type="button"
+        onClick={onNew}
+        className={`${BTN_PRIMARY} w-full justify-center gap-2`}
+      >
+        <Icon name="plus" size={18} />
+        <span className="font-body text-label font-bold uppercase tracking-[0.12em]">
+          Nouvelle conversation
+        </span>
+      </button>
+
+      {threads.length === 0 ? (
+        <p className="m-auto max-w-[18rem] text-center font-body text-body text-ink-soft">
+          Aucune conversation pour l&apos;instant. Démarres-en une !
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {threads.map((thread) => {
+            const isEditing = editing?.id === thread.id;
+            const isCurrent = currentId === thread.id;
+            return (
+              <li
+                key={thread.id}
+                className={`flex items-center gap-2 rounded-button border-[length:--border-width-ink] px-3 py-2 ${
+                  isCurrent ? "border-ink bg-surface-chip" : "border-line bg-surface-note"
+                }`}
+              >
+                {isEditing ? (
+                  <input
+                    autoFocus
+                    value={editing.titre}
+                    onChange={(e) => onEditChange(e.target.value)}
+                    onBlur={onCommitRename}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        onCommitRename();
+                      } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        onCancelRename();
+                      }
+                    }}
+                    aria-label="Renommer la conversation"
+                    className="min-w-0 flex-1 rounded-button border-[length:--border-width-ink] border-ink bg-surface-note px-2 py-1 font-body text-body text-ink caret-accent outline-accent outline-offset-2 focus-visible:outline-2"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onOpen(thread.id)}
+                    className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left outline-accent outline-offset-2 focus-visible:outline-2"
+                  >
+                    <span className="w-full truncate font-body text-body text-ink">
+                      {thread.titre ?? "Sans titre"}
+                    </span>
+                    <span className="font-body text-label text-ink-soft">
+                      {formatRecency(thread.updatedAt)}
+                    </span>
+                  </button>
+                )}
+
+                {!isEditing ? (
+                  <div className="flex shrink-0 items-center gap-1">
+                    {/* Renommer — secondaire (ghost menthe), jamais mauve. */}
+                    <button
+                      type="button"
+                      onClick={() => onStartRename(thread.id, thread.titre ?? "")}
+                      aria-label="Renommer"
+                      title="Renommer"
+                      className="rounded-button p-1.5 text-mint-deep outline-accent outline-offset-2 focus-visible:outline-2"
+                    >
+                      <Icon name="edit" size={16} />
+                    </button>
+                    {/* Archiver — SOFT (réversible), secondaire (ghost menthe), jamais rouge alarme.
+                        Geste « ranger » (flèche bas), label explicite (a11y doublée). */}
+                    <button
+                      type="button"
+                      onClick={() => onArchive(thread.id)}
+                      aria-label="Archiver"
+                      title="Archiver"
+                      className="rounded-button p-1.5 text-mint-deep outline-accent outline-offset-2 focus-visible:outline-2"
+                    >
+                      <Icon name="arrow-down" size={16} />
+                    </button>
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 
