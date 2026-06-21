@@ -190,6 +190,15 @@ La génération utilise Claude Haiku par défaut ; Opus est sélectionnable. `[A
 #### FR-15 : Mode sans-IA par Contact — SUPPRIMÉ (2026-06-16, décision #30 close)
 Retiré du périmètre, aligné sur l'UX (#18/#19). Inutile : le champ unique EST le Message (FR-6) et n'appelle l'API que sur action explicite Générer/Améliorer — ne pas générer = déjà aucun appel IA. Le cas hors-ligne / IA indisponible est couvert par FR-7 (champ éditable, écriture et envoi manuels). Le consentement à l'usage de l'IA est donné aux CGU à l'inscription ; pas d'opt-out par Contact. Conséquence data : plus de réglage par Contact, plus d'exclusion du corpus — tous les Messages envoyés alimentent la Voix (cf. FR-17), y compris ceux tapés à la main.
 
+#### FR-35 : Historique de conversation par Contact (ajout 2026-06-21)
+L'utilisateur peut coller et éditer l'historique brut de ses échanges passés avec un Contact (textarea libre, saisissable à la création du Contact et éditable ensuite). Quand un historique existe, il est injecté au prompt du Composeur (taille **bornée** côté serveur, cohérent NFR-5 coût / NFR-1 perf) pour produire un message en **continuité** : il rebondit sur le dernier point laissé en suspens plutôt que de seulement rappeler le passé. Le champ intention (FR-7) reste optionnel. Aucun parsing de format : le bloc est avalé tel quel (pas de démêlage qui-a-dit-quoi). Génération = Composeur, jamais le Copilote. Stockage brut sur le Contact ; curation/vie privée = responsabilité de l'utilisateur (il censure ce qu'il colle).
+**Consequences (testable) :**
+- Un Contact **avec** historique génère un message qui reprend le dernier point en suspens.
+- Un Contact **sans** historique : génération inchangée (few-shot seul), aucune régression.
+- L'historique injecté est tronqué au-delà de la borne serveur (jamais honoré tel quel).
+- L'historique est scopé `user_id` et passe le test cross-tenant ; sanitizé à l'écriture.
+- **Transparence (extension FR-32)** : quand une génération est lancée sur un Contact ayant un historique, ce dernier fait partie du contexte transmis à Claude — explicité au même titre que l'idée et le few-shot.
+
 ### 4.3 Apprentissage de la Voix
 
 **Description :** La Voix s'amorce optionnellement à l'onboarding (Seed de voix) et s'affine au fil des envois : chaque Message édité puis envoyé devient un nouvel exemple. Friction d'onboarding minimale (priorité adoption) : on ne bloque pas à l'entrée.
@@ -315,6 +324,7 @@ L'utilisateur peut supprimer ses données à tout moment.
 L'app explicite ce qui est transmis à l'API Claude et quand.
 **Consequences (testable) :**
 - Une mention claire indique qu'une génération (Générer/Améliorer) envoie le contexte du Message à l'API Claude, et qu'un Message tapé sans générer ne transmet rien.
+- Quand le Contact a un historique (FR-35), la mention reflète que cet historique fait partie du contexte transmis à Claude lors d'une génération.
 
 #### FR-33 : Onboarding court
 L'onboarding (connexion Google, Seed optionnel, ajout des premiers Contacts en manuel/rapide) se fait en moins de deux minutes, **sans dépendre du CSV LinkedIn** (qui arrive en différé, FR-1).
