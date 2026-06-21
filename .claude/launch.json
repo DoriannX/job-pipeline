@@ -1,0 +1,16 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "plume (next dev)",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:\\Users\\P0ulpy\\AppData\\Local\\node\\corepack\\v1\\pnpm\\10.33.0\\bin\\pnpm.cjs",
+        "--dir",
+        "plume",
+        "dev"
+      ],
+      "port": 3000
+    }
+  ]
+}
