@@ -46,6 +46,7 @@ export type ContactFormDefaults = {
   canalPrefere?: Canal | null;
   handles?: Partial<Record<ContactHandle, string>> | null;
   notes?: string | null;
+  historique?: string | null;
 };
 
 type ContactAction = (
@@ -233,6 +234,29 @@ export function ContactForm({
           placeholder="Ce que tu veux garder en tête…"
           className={`${FIELD_CLASS} resize-y`}
         />
+      </div>
+
+      {/* Historique de conversation (story 3.10, FR-35) — textarea libre, OPTIONNEL.
+          Quand renseigné, il nourrit la génération du Composeur (continuité). Même rendu
+          doux que Notes (fond note, contour encre) ; aucun rouge, aucune contrainte. */}
+      <div className="flex flex-col gap-2">
+        <label
+          htmlFor="contact-historique"
+          className="font-body text-label font-bold uppercase tracking-[0.12em] text-ink-soft"
+        >
+          Historique de conversation
+        </label>
+        <textarea
+          id="contact-historique"
+          name="historique"
+          rows={4}
+          defaultValue={defaults?.historique ?? ""}
+          placeholder="Colle vos derniers échanges : le message généré rebondira dessus…"
+          className={`${FIELD_CLASS} resize-y`}
+        />
+        <span className="font-body text-label text-ink-hint">
+          Optionnel. Utilisé pour écrire en continuité avec ce contact.
+        </span>
       </div>
 
       {/* Actions : primaire chunky mauve + annuler discret. */}

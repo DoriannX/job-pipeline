@@ -98,6 +98,34 @@ export function buildGenerationEvent(input: BuildEventInput): GenerationEvent {
 // STREAME les deltas vers le client (NDJSON), le tool ne veut que le texte final.
 // ---------------------------------------------------------------------------
 
+/**
+ * Plafond d'INJECTION de l'historique au prompt (story 3.10, FR-35) — TRONCATURE serveur
+ * avant l'envoi à Claude (coût NFR-5 / perf NFR-1). Patron projet « clampé, pas honoré tel
+ * quel » (parité `MAX_SEED`/`MAX_IMPORT` côté tools, ici en CARACTÈRES : texte libre). DISTINCT
+ * de la borne de SAISIE `HISTORIQUE_MAX` (8000, validation form) : une valeur grande mais
+ * plausible est STOCKÉE puis TRONQUÉE ici, jamais rejetée.
+ */
+export const MAX_HISTORIQUE = 4000;
+
+/**
+ * Borne l'historique AVANT injection au prompt (« clampé, pas honoré tel quel »). Vide/NULL
+ * ⇒ `null` (aucune injection). Au-delà de `MAX_HISTORIQUE` ⇒ tronqué à la longueur max. Pur,
+ * sans I/O — testable directement (AC 5). Le `sanitize()` a déjà eu lieu à l'écriture BDD.
+ *
+ * On garde la QUEUE (les échanges les PLUS RÉCENTS, `slice(-MAX)`), JAMAIS la tête : la
+ * consigne du prompt demande de « rebondir sur le DERNIER point laissé en suspens », et le
+ * bloc est présenté « du plus ancien au plus récent ». Tronquer par la tête supprimerait
+ * justement l'échange le plus récent — celui qui porte la continuité. On coupe donc le
+ * début (le plus ancien, le moins utile), pas la fin.
+ */
+export function clampHistorique(raw: string | null | undefined): string | null {
+  const trimmed = raw?.trim();
+  if (!trimmed) return null;
+  return trimmed.length > MAX_HISTORIQUE
+    ? trimmed.slice(-MAX_HISTORIQUE)
+    : trimmed;
+}
+
 /** Corpus de voix scopé + ses références (ids des exemples injectés). */
 export interface VoiceCorpus {
   /** Exemples few-shot bornés (ordre récent → ancien), prêts pour le prompt. */

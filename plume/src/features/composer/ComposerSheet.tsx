@@ -401,7 +401,9 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
       };
 
       void streamGeneration(
-        { idea: input, canal, tone, mode },
+        // `contactId` (story 3.10) : le serveur charge le contact (scopé) et injecte son
+        // historique au prompt pour écrire en continuité. Le contact est déjà en contexte UI.
+        { idea: input, canal, tone, mode, contactId },
         {
           onFirstDelta: () => {
             clearTimer();
@@ -443,7 +445,7 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
         controller.signal,
       );
     },
-    [text, canal, tone, online],
+    [text, canal, tone, online, contactId],
   );
 
   // Générer / Régénérer (story 3.3) et Améliorer (story 3.4) : même flux, mode distinct.
@@ -642,10 +644,14 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
           </p>
         ) : null}
 
-        {/* — Micro-ligne de transparence API one-time (FR-32, UX-DR21). — */}
+        {/* — Micro-ligne de transparence API one-time (FR-32, UX-DR21). Quand le contact a
+            un historique (story 3.10), on EXPLICITE qu'il fait partie du contexte envoyé à
+            Claude (extension FR-32, AC 4) — sinon, la formulation 3.3 d'origine est gardée. — */}
         {showApiNotice ? (
           <p className="font-body text-label text-ink-hint">
-            Pour générer, ton texte est envoyé à l&apos;API Claude.
+            {context?.hasHistorique
+              ? "Pour générer, ton texte et l’historique de ce contact sont envoyés à l’API Claude."
+              : "Pour générer, ton texte est envoyé à l’API Claude."}
           </p>
         ) : null}
 

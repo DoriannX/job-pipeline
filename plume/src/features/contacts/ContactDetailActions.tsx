@@ -48,6 +48,7 @@ export function ContactDetailActions({ contact }: ContactDetailActionsProps) {
     canalPrefere: contact.canalPrefere,
     handles: contact.handles,
     notes: contact.notes,
+    historique: contact.historique,
   };
 
   // DeleteContactDialog attend une ContactView (galerie) ; on réutilise sa forme — seuls

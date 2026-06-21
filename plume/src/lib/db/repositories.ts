@@ -30,6 +30,8 @@ export type ContactCreate = {
   canalPrefere?: Canal | null;
   handles?: ContactHandles | null;
   notes?: string | null;
+  /** Historique brut des échanges (FR-35), déjà sanitizé par l'action (parité seeds). */
+  historique?: string | null;
   dernierContactAt?: number | null;
   source?: Source;
   importedAt?: number | null;
@@ -133,6 +135,7 @@ async function createContactRow(
       canalPrefere: data.canalPrefere ?? null,
       handles: data.handles ?? null,
       notes: data.notes ?? null,
+      historique: data.historique ?? null,
       dernierContactAt: data.dernierContactAt ?? null,
       // `source` garde son défaut SQL ('manuel') si non fourni.
       ...(data.source ? { source: data.source } : {}),
@@ -194,6 +197,10 @@ async function createContactRow(
   if (data.notes != null) {
     merge.notes = data.notes;
     prevState.notes = existing.notes;
+  }
+  if (data.historique != null) {
+    merge.historique = data.historique;
+    prevState.historique = existing.historique;
   }
   if (data.dernierContactAt != null) {
     merge.dernierContactAt = data.dernierContactAt;
@@ -392,6 +399,7 @@ export function contactsRepository(scoped: ScopedDb): ContactsRepository {
       if (data.canalPrefere !== undefined) set.canalPrefere = data.canalPrefere;
       if (data.handles !== undefined) set.handles = data.handles;
       if (data.notes !== undefined) set.notes = data.notes;
+      if (data.historique !== undefined) set.historique = data.historique;
       if (data.dernierContactAt !== undefined)
         set.dernierContactAt = data.dernierContactAt;
       if (data.source !== undefined) set.source = data.source;

@@ -24,9 +24,11 @@ import {
   archiveContact,
   archiveContacts,
   archiveDraftTool,
+  setContactHistorique,
   MAX_SEED,
   MAX_IMPORT,
   MAX_ARCHIVE,
+  MAX_HISTORIQUE_STORE,
   WRITE_TOOL_NAMES,
 } from "@/lib/agent/tools.server";
 import { buildGenerationEvent } from "@/lib/composer/pipeline.server";
@@ -372,6 +374,45 @@ describe("composeMessage — BROUILLON dans la voix, JAMAIS envoyé (inc.3 CAP-2
     expect(res.canal).toBe("sms");
   });
 
+  it("transmet l'historique du contact au pipeline voix (génération en continuité, story 3.10)", async () => {
+    const c = await contactsA().create({
+      nom: "Sophie Martin",
+      historique: "Dernier échange : elle attend ma dispo pour un café.",
+    });
+    let seen: { nom?: string | null; historique?: string | null } | null = null;
+    await composeMessage(
+      {
+        contacts: contactsA(),
+        messages: messagesA(),
+        compose: async (p) => {
+          seen = p.contact;
+          return { event: { generatedText: "ok" } };
+        },
+      },
+      { contactId: c.id },
+    );
+    expect(seen).not.toBeNull();
+    expect(seen!.nom).toBe("Sophie Martin");
+    expect(seen!.historique).toContain("attend ma dispo pour un café");
+  });
+
+  it("contact sans historique → historique null transmis (aucune injection)", async () => {
+    const c = await contactsA().create({ nom: "Léo" });
+    let seen: { historique?: string | null } | null = null;
+    await composeMessage(
+      {
+        contacts: contactsA(),
+        messages: messagesA(),
+        compose: async (p) => {
+          seen = p.contact;
+          return { event: { generatedText: "ok" } };
+        },
+      },
+      { contactId: c.id },
+    );
+    expect(seen!.historique).toBeNull();
+  });
+
   it("contactId inconnu → AUCUNE génération (borne anti-coût)", async () => {
     let composed = false;
     await expect(
@@ -500,8 +541,97 @@ describe("WRITE_TOOL_NAMES — les write-tools réels héritent de la sync (inc.
     expect(WRITE_TOOL_NAMES.has("archiveContact")).toBe(true);
     expect(WRITE_TOOL_NAMES.has("archiveContacts")).toBe(true);
     expect(WRITE_TOOL_NAMES.has("archiveDraft")).toBe(true);
+    // setContactHistorique écrit `contacts.historique` → héritage sync.
+    expect(WRITE_TOOL_NAMES.has("setContactHistorique")).toBe(true);
     // Le read-tool reste hors du registre (pas de refresh sur une lecture).
     expect(WRITE_TOOL_NAMES.has("queryContacts")).toBe(false);
+  });
+});
+
+describe("setContactHistorique — consigne/complète l'historique, scope, borne (story 3.10)", () => {
+  let db: TestDb;
+  const userA = makeUser({ name: "Alice" });
+  const userB = makeUser({ name: "Bob" });
+  const repoA = () => contactsRepository(forUserDb(db, userA.id, now));
+  const repoB = () => contactsRepository(forUserDb(db, userB.id, now));
+
+  beforeEach(async () => {
+    db = await makeTestDb();
+    await seedUsers(db, [userA, userB]);
+  });
+
+  it("append (défaut) : pose l'historique sur un contact sans, puis AJOUTE à la suite", async () => {
+    const c = await repoA().create({ nom: "Sophie" });
+
+    const r1 = await setContactHistorique(repoA(), {
+      contactId: c.id,
+      historique: "Premier échange : elle recrute un CTO.",
+    });
+    expect(r1.mode).toBe("append");
+    expect((await repoA().get(c.id))?.historique).toContain("recrute un CTO");
+
+    await setContactHistorique(repoA(), {
+      contactId: c.id,
+      historique: "Deuxième échange : on se rappelle lundi.",
+    });
+    const histo = (await repoA().get(c.id))?.historique ?? "";
+    // Les DEUX échanges présents, dans l'ordre (append non destructif).
+    expect(histo).toContain("recrute un CTO");
+    expect(histo).toContain("on se rappelle lundi");
+    expect(histo.indexOf("CTO")).toBeLessThan(histo.indexOf("lundi"));
+  });
+
+  it("replace : écrase l'historique existant", async () => {
+    const c = await repoA().create({
+      nom: "Léa",
+      historique: "Vieil historique à jeter.",
+    });
+    await setContactHistorique(repoA(), {
+      contactId: c.id,
+      historique: "Tout neuf.",
+      mode: "replace",
+    });
+    const histo = (await repoA().get(c.id))?.historique ?? "";
+    expect(histo).toBe("Tout neuf.");
+    expect(histo).not.toContain("Vieil historique");
+  });
+
+  it("borne le stockage à MAX_HISTORIQUE_STORE en gardant la QUEUE (le plus récent)", async () => {
+    const c = await repoA().create({
+      nom: "Gros",
+      historique: "X".repeat(MAX_HISTORIQUE_STORE),
+    });
+    const recent = "DERNIER ÉCHANGE CLÉ";
+    const res = await setContactHistorique(repoA(), {
+      contactId: c.id,
+      historique: recent,
+    });
+    expect(res.capped).toBe(true);
+    expect(res.length).toBe(MAX_HISTORIQUE_STORE);
+    // La queue (le plus récent) est conservée ; la tête est tronquée.
+    expect((await repoA().get(c.id))?.historique?.endsWith(recent)).toBe(true);
+  });
+
+  it("applique `clean` (sanitize injecté) à l'écriture", async () => {
+    const c = await repoA().create({ nom: "Net" });
+    await setContactHistorique(
+      repoA(),
+      { contactId: c.id, historique: "garde-moi" },
+      () => "NETTOYÉ", // clean injecté → preuve qu'il est appliqué
+    );
+    expect((await repoA().get(c.id))?.historique).toBe("NETTOYÉ");
+  });
+
+  it("contact inconnu / hors tenant : lève, AUCUNE écriture", async () => {
+    const c = await repoA().create({ nom: "Privé de A" });
+    // B (qui connaîtrait l'id) ne peut pas écrire l'historique de A.
+    await expect(
+      setContactHistorique(repoB(), {
+        contactId: c.id,
+        historique: "piraté",
+      }),
+    ).rejects.toThrow();
+    expect((await repoA().get(c.id))?.historique ?? null).toBeNull();
   });
 });
 

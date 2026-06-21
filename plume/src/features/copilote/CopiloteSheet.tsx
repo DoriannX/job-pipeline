@@ -39,6 +39,7 @@ const TOOL_LABELS: Record<string, string> = {
   importContacts: "Import de contacts",
   composeMessage: "Rédaction d'un brouillon",
   seedContacts: "Création de contacts de test",
+  setContactHistorique: "Mise à jour de l'historique",
 };
 
 // Géométrie partagée icône ↔ panneau (la même boîte qui morphe). Largeur = pleine
@@ -142,6 +143,11 @@ export function CopiloteSheet() {
   const producedAssistantRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // « Coller au bas » : l'auto-défilement ne s'applique QUE si l'utilisateur est déjà (presque)
+  // tout en bas. Dès qu'il REMONTE pour relire pendant que le flux écrit, on cesse de le ramener
+  // en bas (le bug : chaque delta forçait un scroll). Remis à `true` quand il renvoie un message
+  // ou repart manuellement au bas. Réf (pas un state) → pas de re-render à chaque scroll.
+  const stickBottomRef = useRef(true);
 
   // Nouvelle conversation : vide l'historique en-session (aucune persistance de toute façon),
   // coupe un flux en cours et réinitialise la saisie. Le popup reste ouvert.
@@ -208,9 +214,22 @@ export function CopiloteSheet() {
     };
   }, []);
 
-  // Auto-défilement vers le bas à chaque nouveau contenu (réponse qui pousse).
+  // Suit l'intention de l'utilisateur : s'il est à ≤ 48px du bas, on « colle » (auto-scroll) ;
+  // dès qu'il remonte au-delà, on lâche (il lit tranquillement, le flux ne le rappelle plus).
+  const STICK_THRESHOLD_PX = 48;
+  const onScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickBottomRef.current = distanceFromBottom <= STICK_THRESHOLD_PX;
+  }, []);
+
+  // Auto-défilement vers le bas à chaque nouveau contenu — UNIQUEMENT si l'utilisateur est
+  // resté collé au bas. S'il a remonté pour relire, on ne le ramène pas (correctif UX).
   useEffect(() => {
-    if (isOpen) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    if (isOpen && stickBottomRef.current) {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    }
   }, [items, isOpen]);
 
   // Focus du champ une fois PLEINEMENT ouvert.
@@ -233,6 +252,8 @@ export function CopiloteSheet() {
     // Garde SYNCHRONE de ré-entrance (cf. `streamingRef`) : bloque la double-frappe Entrée.
     if (content.length === 0 || streamingRef.current) return;
     streamingRef.current = true;
+    // Envoyer un message = intention claire de suivre la réponse → on recolle au bas.
+    stickBottomRef.current = true;
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -513,6 +534,7 @@ export function CopiloteSheet() {
             {/* — Fil de la conversation (scrollable). — */}
             <div
               ref={scrollRef}
+              onScroll={onScroll}
               className="flex flex-1 flex-col gap-3 overflow-y-auto px-margin-mobile py-3"
             >
               {items.length === 0 ? (

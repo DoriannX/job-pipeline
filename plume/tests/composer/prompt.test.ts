@@ -142,6 +142,91 @@ describe("prompt — contexte contact (suffixe volatil)", () => {
   });
 });
 
+// --- Historique de conversation (story 3.10, FR-35) ------------------------
+// On verrouille : (1) PRÉSENT → le bloc historique + la consigne de CONTINUITÉ sont dans le
+// tour utilisateur, JAMAIS dans le `system` cachable (cache préservé) ; (2) ABSENT/vide →
+// tour utilisateur STRICTEMENT identique à un prompt sans `contact` (non-régression AC 3) ;
+// (3) en mode `improve`, AUCUNE injection (la consigne « en place » primerait, AC 6/scope).
+
+const userOf = (input: Parameters<typeof buildPrompt>[0]) =>
+  String((buildPrompt(input).messages[0] as { content: string }).content);
+
+const histoEx =
+  "Moi : on s'était dit qu'on se recroiserait au prochain meetup.\n" +
+  "Lui : oui ! je te tiens au courant de la date.";
+
+describe("prompt — historique de conversation (story 3.10)", () => {
+  it("PROMPT_VERSION est passée à 3 (recette historique disponible)", () => {
+    expect(PROMPT_VERSION).toBe(3);
+  });
+
+  it("historique présent → bloc + consigne de continuité dans le TOUR UTILISATEUR", () => {
+    const t = userOf({
+      ...baseInput,
+      canal: "linkedin",
+      contact: { nom: "Camille", historique: histoEx },
+    });
+    // Le texte de l'historique voyage bien dans le tour user…
+    expect(t).toContain("on se recroiserait au prochain meetup");
+    // …avec une consigne EXPLICITE de continuité (rebondir, pas résumer).
+    expect(t).toMatch(/REBONDIS|continuité|suite naturelle/i);
+    expect(t).toMatch(/dernier point/i);
+  });
+
+  it("historique présent → JAMAIS dans le système cachable (cache préservé)", () => {
+    const { system } = buildPrompt({
+      ...baseInput,
+      canal: "linkedin",
+      contact: { nom: "Camille", historique: histoEx },
+    });
+    const systemText = system.map((b) => b.text).join("\n");
+    expect(systemText).not.toContain("on se recroiserait");
+    // Et la césure de cache reste sur le DERNIER bloc stable (inchangée).
+    expect(system[system.length - 1].cache_control).toEqual({
+      type: "ephemeral",
+    });
+  });
+
+  it("SANS historique → tour utilisateur IDENTIQUE à un prompt sans contact (non-régression)", () => {
+    const sansContact = userOf({ ...baseInput, canal: "email" });
+    // historique absent (undefined) ne doit RIEN ajouter au tour user.
+    const histoAbsent = userOf({
+      ...baseInput,
+      canal: "email",
+      contact: { historique: null },
+    });
+    const histoVide = userOf({
+      ...baseInput,
+      canal: "email",
+      contact: { historique: "   \n  " },
+    });
+    expect(histoAbsent).toBe(sansContact);
+    expect(histoVide).toBe(sansContact);
+  });
+
+  it("le SYSTÈME (préfixe cachable) est IDENTIQUE avec et sans historique", () => {
+    const sans = buildPrompt({ ...baseInput, canal: "linkedin" });
+    const avec = buildPrompt({
+      ...baseInput,
+      canal: "linkedin",
+      contact: { nom: "Camille", historique: histoEx },
+    });
+    expect(avec.system).toEqual(sans.system);
+  });
+
+  it("mode improve → historique NON injecté (la consigne en place prime)", () => {
+    const t = userOf({
+      ...baseInput,
+      canal: "linkedin",
+      mode: "improve",
+      contact: { nom: "Camille", historique: histoEx },
+    });
+    expect(t).not.toContain("on se recroiserait au prochain meetup");
+    // Et reste bien la consigne d'amélioration.
+    expect(t).toMatch(/retravaille/i);
+  });
+});
+
 // --- Mode `improve` (story 3.4, FR-8/UX-DR8) -------------------------------
 // Le pipeline serveur est IDENTIQUE à 3.3 : seule l'INSTRUCTION du tour utilisateur
 // change. On verrouille : (1) le préfixe stable (système + few-shot, cachable) est

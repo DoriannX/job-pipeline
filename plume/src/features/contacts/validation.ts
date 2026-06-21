@@ -11,6 +11,10 @@ import { CANAUX } from "@/lib/domain/enums";
 const NOM_MAX = 120;
 const NOTES_MAX = 2000;
 const HANDLE_MAX = 320;
+// Borne DOUCE de SAISIE de l'historique (story 3.10, FR-35) : rejette l'absurde à la
+// frontière du formulaire. DISTINCTE de la borne d'INJECTION prompt (`MAX_HISTORIQUE`,
+// serveur) qui TRONQUE avant l'envoi à Claude — patron projet « 2 bornes » (cf. seeds/import).
+const HISTORIQUE_MAX = 8000;
 
 /** Un handle optionnel : chaîne courte, trim, vide => absent. */
 const handle = z
@@ -55,6 +59,14 @@ export const contactInputSchema = z.object({
     .string()
     .trim()
     .max(NOTES_MAX, "Ces notes sont un peu longues.")
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  // Historique brut des échanges passés (FR-35) — textarea libre, optionnel. Borne douce
+  // de saisie ; le serveur TRONQUE plus court encore avant injection au prompt (MAX_HISTORIQUE).
+  historique: z
+    .string()
+    .trim()
+    .max(HISTORIQUE_MAX, "Cet historique est un peu long.")
     .optional()
     .transform((v) => (v ? v : undefined)),
 });
