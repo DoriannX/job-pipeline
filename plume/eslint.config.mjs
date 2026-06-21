@@ -32,13 +32,32 @@ const patternsPorteData = [
   },
 ];
 
-// --- Barrière 2 — Clé Claude server-only -------------------------------------
-// `@anthropic-ai/sdk` interdit hors src/lib/** (override plus bas pour la zone lib).
-const importSdkClaude = {
-  name: "@anthropic-ai/sdk",
-  message:
-    "Le SDK Claude est server-only : encapsule-le derrière un module .server.ts dans src/lib/**.",
-};
+// --- Barrière 2 — Clés LLM server-only ---------------------------------------
+// Tout SDK qui porte une clé API LLM est interdit hors src/lib/** (override plus
+// bas pour la zone lib). Couvre le SDK Claude direct (composer) ET le Vercel AI
+// SDK du copilote (`ai` + providers) : la clé ne doit jamais atteindre le client.
+const importsSdkLlm = [
+  {
+    name: "@anthropic-ai/sdk",
+    message:
+      "Le SDK Claude est server-only : encapsule-le derrière un module .server.ts dans src/lib/**.",
+  },
+  {
+    name: "ai",
+    message:
+      "Le Vercel AI SDK est server-only (clé API) : passe par un module .server.ts dans src/lib/agent/**.",
+  },
+  {
+    name: "@ai-sdk/anthropic",
+    message:
+      "Provider LLM server-only (clé API) : passe par un module .server.ts dans src/lib/agent/**.",
+  },
+  {
+    name: "@ai-sdk/google",
+    message:
+      "Provider LLM server-only (clé API) : passe par un module .server.ts dans src/lib/agent/**.",
+  },
+];
 
 // --- Barrière 3 — Frontière serveur/client -----------------------------------
 // `server-only` et les modules `*.server` jamais importables côté client.
@@ -64,7 +83,7 @@ const barriereZoneClient = {
     "no-restricted-imports": [
       "error",
       {
-        paths: [...importsPorteData, importSdkClaude, importServerOnly],
+        paths: [...importsPorteData, ...importsSdkLlm, importServerOnly],
         patterns: [...patternsPorteData, patternServerModule],
       },
     ],
@@ -146,10 +165,10 @@ const overrideRouteHandlers = {
     "no-restricted-imports": [
       "error",
       {
-        // On conserve la porte data + l'interdiction du SDK Claude nu ;
+        // On conserve la porte data + l'interdiction des SDK LLM nus ;
         // on lève uniquement la barrière server/client (modules *.server / server-only),
         // car un route handler EST du code serveur.
-        paths: [...importsPorteData, importSdkClaude],
+        paths: [...importsPorteData, ...importsSdkLlm],
         patterns: patternsPorteData,
       },
     ],

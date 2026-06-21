@@ -26,9 +26,8 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { forUser } from "@/lib/db";
 import { CANAUX } from "@/lib/domain/enums";
-import { AppError, generateMessage } from "@/lib/claude.server";
-import { buildGenerationEvent } from "@/lib/composer/pipeline.server";
-import { selectFewShot } from "@/lib/composer/voice";
+import { AppError } from "@/lib/claude.server";
+import { composeInVoice } from "@/lib/composer/pipeline.server";
 import { ideaRequired } from "@/features/composer/generation";
 
 // Runtime Node (le SDK Anthropic + l'accès DB visent Node, pas l'edge). Force-dynamic :
@@ -88,66 +87,28 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Corps JSON illisible." }, { status: 400 });
   }
 
-  // 3. Extraction du CORPUS DE VOIX scopé (FR-17, archi l.193). Le corpus = `seed_voix`
-  //    (amorce optionnelle) + TOUS les Messages ENVOYÉS (manuels inclus, aucune exclusion)
-  //    — c'est la couture annoncée en 3.5, effective ici en 3.6. On lit les deux sources
-  //    via la porte scopée, on les FUSIONNE en une liste ordonnée récent → ancien, puis on
-  //    BORNE le few-shot avec la stratégie nommée `selectFewShot` (les N plus récents,
-  //    AR-7, NFR-1). `voiceExamplesRef` trace les ids EXACTS injectés (seeds et/ou
-  //    messages). Liste vide → `[]` → ton NEUTRE (FR-16). Un échec d'accès DB ne doit PAS
-  //    casser la génération : on l'absorbe et on dégrade en corpus vide (jamais de 500).
-  let voiceExamples: string[] = [];
-  let voiceExamplesRef: string[] = [];
-  try {
-    const gate = await forUser(userId);
-    // Les deux sources sont déjà ordonnées récent → ancien par leur repository.
-    const [seeds, sentTexts] = await Promise.all([
-      gate.seedVoix.list(),
-      gate.messages.listSentTexts(),
-    ]);
-    // Exemples candidats, AVEC leur référence (id de seed, ou marqueur de message). On
-    // entrelace par récence approximative en plaçant les Messages envoyés D'ABORD (la
-    // voix la plus actuelle = ce que l'utilisateur a réellement envoyé), puis les seeds.
-    const candidates: { texte: string; ref: string }[] = [
-      ...sentTexts.map((texte, i) => ({ texte, ref: `message:${i}` })),
-      ...seeds.map((s) => ({ texte: s.texte, ref: s.id })),
-    ];
-    voiceExamples = selectFewShot(candidates.map((c) => c.texte));
-    // `selectFewShot` garde les N premiers : les N premières refs correspondent 1-pour-1.
-    voiceExamplesRef = candidates.slice(0, voiceExamples.length).map((c) => c.ref);
-  } catch {
-    // Accès DB indisponible : ton neutre (corpus vide), jamais de 500 brut.
-    voiceExamples = [];
-    voiceExamplesRef = [];
-  }
+  // 3. Porte scopée du tenant — sert le corpus de voix au pipeline partagé. Construire la
+  //    porte ne touche pas l'I/O (les lectures se font dans `composeInVoice`) → jamais de
+  //    throw ici pour un userId valide.
+  const gate = await forUser(userId);
 
   const { idea, canal, tone, mode } = parsed;
 
-  // 4. Flux NDJSON : on POMPE les deltas du modèle vers le client en direct, puis on
-  //    finalise (sanitize + GenerationEvent) dans l'event `done`. Toute erreur devient
-  //    un event `error` DOUX (jamais de 500 brut au client : il lit le flux).
+  // 4. Flux NDJSON : on délègue au PIPELINE VOIX PARTAGÉ (`composeInVoice`) — corpus voix
+  //    (FR-17) → génération → `sanitize()` —, en lui passant un `onDelta` qui POMPE les
+  //    deltas vers le client en direct. La route et le copilote partagent CE moat (zéro
+  //    duplication). Toute erreur devient un event `error` DOUX (jamais de 500 : il lit le flux).
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        const result = await generateMessage(
-          { idea, canal, tone, voiceExamples, mode },
-          (delta) => {
-            controller.enqueue(ndjson({ type: "delta", text: delta }));
-          },
-        );
-
-        // Finalisation : sanitize + re-valide bornée + GenerationEvent en mémoire.
-        const event = buildGenerationEvent({
-          rawText: result.text,
+        const { event } = await composeInVoice({
+          gate,
           idea,
           canal,
           tone,
           mode,
-          modelId: result.modelId,
-          voiceExamplesRef,
-          tokens: {
-            input: result.usage.inputTokens,
-            output: result.usage.outputTokens,
+          onDelta: (delta) => {
+            controller.enqueue(ndjson({ type: "delta", text: delta }));
           },
         });
 

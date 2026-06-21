@@ -29,6 +29,7 @@ export const {
   seedVoix,
   messages,
   generationEvents,
+  actionLog,
 } = prodSchema;
 
 const MIGRATIONS_DIR = fileURLToPath(

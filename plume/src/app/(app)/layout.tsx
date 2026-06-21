@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { TabBar } from "@/components/ui/TabBar";
 import { ComposerSheet } from "@/features/composer/ComposerSheet";
+import { CopiloteSheet } from "@/features/copilote/CopiloteSheet";
 
 // Coquille de l'app connectée (story 1.4).
 //
@@ -32,6 +33,9 @@ export default async function AppLayout({
 
       {/* Point de montage UNIQUE du composeur (placeholder inerte ; ouverture réelle = Epic 3). */}
       <ComposerSheet />
+
+      {/* Point de montage UNIQUE du copilote (icône flottante + popup, présent sur les 3 onglets). */}
+      <CopiloteSheet />
     </div>
   );
 }

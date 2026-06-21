@@ -44,6 +44,7 @@ export {
   type MessagesRepository,
   type Message,
   type GenerationEventRow,
+  type CreateDraftInput,
   type MarkSentInput,
   type MarkSentGeneration,
   type EditSentInput,
@@ -51,3 +52,13 @@ export {
   type SetStatusInput,
   type SetStatusResult,
 } from "./message-repositories";
+export {
+  actionLogRepository,
+  type ActionLogRepository,
+  type ActionLogEntry,
+  type RecordActionInput,
+} from "./action-log-repositories";
+export type { JournalSink, MutationRecord, JournaledOp } from "./journal";
+export type { ActionLogPrevState } from "./schema";
+// Dev-only : création de session sans Google (cf. src/lib/auth-dev.ts). Server-only.
+export { createDevSession, type DevSession } from "./dev-auth";

@@ -57,6 +57,13 @@
       "when": 1781770188248,
       "tag": "0007_optimal_thunderbolt",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1781968421193,
+      "tag": "0008_action_log_and_message_archive",
+      "breakpoints": true
     }
   ]
 }
