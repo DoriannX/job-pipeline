@@ -342,6 +342,19 @@ export function CopiloteSheet() {
     if (isOpen) inputRef.current?.focus();
   }, [isOpen]);
 
+  // Auto-grandissement du champ : il s'étire avec le contenu (les gros pavés deviennent
+  // lisibles au lieu d'être coincés dans 2 lignes) jusqu'à un plafond (40dvh) au-delà duquel
+  // il défile. La hauteur min (CSS `min-h`) tient le plancher à 2 lignes. Recalculé à chaque
+  // frappe et à l'ouverture (le contenu existant se remet à la bonne hauteur).
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto"; // reset pour relire le scrollHeight réel (sinon il ne rétrécit jamais)
+    const max =
+      typeof window !== "undefined" ? window.innerHeight * 0.4 : el.scrollHeight;
+    el.style.height = `${Math.min(el.scrollHeight, max)}px`;
+  }, [draft, isOpen]);
+
   // Fermeture clavier (Échap) — le flux en cours continue (réouvrir montre le résultat).
   useEffect(() => {
     if (!expanded) return;
@@ -726,7 +739,7 @@ export function CopiloteSheet() {
                   onKeyDown={onKeyDown}
                   rows={2}
                   placeholder="Écris ta demande…"
-                  className="w-full resize-none rounded-button border-[length:--border-width-ink] border-ink bg-surface-note px-4 py-3 font-body text-body text-ink caret-accent outline-accent outline-offset-2 placeholder:text-ink-hint focus-visible:outline-2"
+                  className="min-h-[4.5rem] w-full resize-none overflow-y-auto rounded-button border-[length:--border-width-ink] border-ink bg-surface-note px-4 py-3 font-body text-body text-ink caret-accent outline-accent outline-offset-2 placeholder:text-ink-hint focus-visible:outline-2"
                 />
               </label>
               <button
