@@ -21,8 +21,12 @@ import {
   createContact,
   importContacts,
   composeMessage,
+  archiveContact,
+  archiveContacts,
+  archiveDraftTool,
   MAX_SEED,
   MAX_IMPORT,
+  MAX_ARCHIVE,
   WRITE_TOOL_NAMES,
 } from "@/lib/agent/tools.server";
 import { buildGenerationEvent } from "@/lib/composer/pipeline.server";
@@ -390,12 +394,112 @@ describe("composeMessage — BROUILLON dans la voix, JAMAIS envoyé (inc.3 CAP-2
   });
 });
 
+describe("archiveContact / archiveContacts / archiveDraft — delete RÉVERSIBLE (soft), scope, cap", () => {
+  let db: TestDb;
+  const userA = makeUser({ name: "Alice" });
+  const userB = makeUser({ name: "Bob" });
+  const contactsA = () => contactsRepository(forUserDb(db, userA.id, now));
+  const contactsB = () => contactsRepository(forUserDb(db, userB.id, now));
+  const messagesA = () => messagesRepository(forUserDb(db, userA.id, now));
+
+  beforeEach(async () => {
+    db = await makeTestDb();
+    await seedUsers(db, [userA, userB]);
+  });
+
+  it("archiveContact : SOFT-delete un contact (invisible aux lectures, ligne conservée)", async () => {
+    const c = await contactsA().create({ nom: "À retirer" });
+    const res = await archiveContact(contactsA(), { contactId: c.id });
+    expect(res).toEqual({ archived: true });
+
+    // Disparu des lectures, MAIS toujours présent en base (soft-delete, jamais hard).
+    expect(await contactsA().list()).toHaveLength(0);
+    expect(await contactsA().get(c.id, { includeArchived: true })).toBeDefined();
+  });
+
+  it("archiveContact : id inconnu ou déjà archivé → archived=false (idempotent, no-op)", async () => {
+    expect(await archiveContact(contactsA(), { contactId: "fantome" })).toEqual({
+      archived: false,
+    });
+    const c = await contactsA().create({ nom: "Zoé" });
+    await archiveContact(contactsA(), { contactId: c.id });
+    // 2ᵉ archivage : déjà archivé → no-op.
+    expect(await archiveContact(contactsA(), { contactId: c.id })).toEqual({
+      archived: false,
+    });
+  });
+
+  it("archiveContact : isolement — A ne peut PAS archiver un contact de B", async () => {
+    const cB = await contactsB().create({ nom: "Secret B" });
+    // A cible l'id de B : sa porte scopée ne voit pas la ligne → no-op, B intact.
+    expect(await archiveContact(contactsA(), { contactId: cB.id })).toEqual({
+      archived: false,
+    });
+    expect(await contactsB().get(cB.id)).toBeDefined();
+  });
+
+  it("archiveContacts : archive un LOT, compte les archivages effectifs (ids inconnus exclus)", async () => {
+    const a = await contactsA().create({ nom: "A" });
+    const b = await contactsA().create({ nom: "B" });
+    const res = await archiveContacts(contactsA(), {
+      contactIds: [a.id, b.id, "fantome"],
+    });
+    expect(res).toEqual({ archived: 2, requested: 3, capped: false });
+    expect(await contactsA().list()).toHaveLength(0);
+  });
+
+  it("archiveContacts : clampe un lot déraisonnable à MAX_ARCHIVE (capped), parité MAX_SEED", async () => {
+    expect(MAX_ARCHIVE).toBe(MAX_SEED);
+    const created = await Promise.all(
+      Array.from({ length: MAX_ARCHIVE + 5 }, (_, i) =>
+        contactsA().create({ nom: `P${i}` }),
+      ),
+    );
+    const ids = created.map((c) => c.id);
+    const res = await archiveContacts(contactsA(), { contactIds: ids });
+    expect(res.requested).toBe(MAX_ARCHIVE + 5);
+    expect(res.archived).toBe(MAX_ARCHIVE);
+    expect(res.capped).toBe(true);
+    // L'excédent (5) n'a PAS été archivé : il reste visible.
+    expect(await contactsA().list()).toHaveLength(5);
+  });
+
+  it("archiveDraft : retire un brouillon ; refuse un message ENVOYÉ (corpus préservé)", async () => {
+    const c = await contactsA().create({ nom: "Sophie" });
+    const draft = await messagesA().createDraft({
+      contactId: c.id,
+      canal: "linkedin",
+      texte: "Brouillon à retirer",
+    });
+    expect(await archiveDraftTool(messagesA(), { messageId: draft.id })).toEqual({
+      archived: true,
+    });
+    expect(await messagesA().listForContact(c.id)).toHaveLength(0);
+
+    // Un message ENVOYÉ ne peut pas être retiré par l'agent.
+    const sent = await messagesA().createDraft({
+      contactId: c.id,
+      canal: "linkedin",
+      texte: "Déjà envoyé",
+    });
+    await messagesA().setStatus({ id: sent.id, statut: "envoye" });
+    expect(await archiveDraftTool(messagesA(), { messageId: sent.id })).toEqual({
+      archived: false,
+    });
+    expect(await messagesA().listSentTexts()).toContain("Déjà envoyé");
+  });
+});
+
 describe("WRITE_TOOL_NAMES — les write-tools réels héritent de la sync (inc.3 CAP-4)", () => {
-  it("contient les 3 nouveaux write-tools (seul changement de sync)", () => {
+  it("contient les write-tools (création + archivage), pas le read-tool", () => {
     // CAP-4 : l'ajout au registre suffit à faire hériter la sync d'inc.2, sans code dédié.
     expect(WRITE_TOOL_NAMES.has("createContact")).toBe(true);
     expect(WRITE_TOOL_NAMES.has("composeMessage")).toBe(true);
     expect(WRITE_TOOL_NAMES.has("importContacts")).toBe(true);
+    // Les archive-tools écrivent aussi (archived_at) → héritent de la sync.
+    expect(WRITE_TOOL_NAMES.has("archiveContact")).toBe(true);
+    expect(WRITE_TOOL_NAMES.has("archiveContacts")).toBe(true);
+    expect(WRITE_TOOL_NAMES.has("archiveDraft")).toBe(true);
     // Le read-tool reste hors du registre (pas de refresh sur une lecture).
     expect(WRITE_TOOL_NAMES.has("queryContacts")).toBe(false);
   });

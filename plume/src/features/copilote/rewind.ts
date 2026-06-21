@@ -15,7 +15,11 @@
 //   - contact `created`            → re-archivage SOFT (`contacts.remove`) ;
 //   - contact `merged`/`reactivated` → restauration de l'état antérieur (`prevState`) — JAMAIS un
 //     re-archivage aveugle qui détruirait un contact préexistant (CAP-3) ;
-//   - message (brouillon `created`) → retrait SOFT (`messages.archiveDraft`).
+//   - contact `archived`           → DÉSARCHIVAGE (restaure l'actif via `prevState = {archivedAt:
+//     null}`) — l'inverse d'un `archiveContact` de l'agent ;
+//   - message (brouillon `created`) → retrait SOFT (`messages.archiveDraft`) ;
+//   - message `archived`           → DÉSARCHIVAGE (`messages.restoreDraft`) — inverse d'un
+//     `archiveDraft` de l'agent.
 // AUCUN hard-delete nulle part. Le rewind est lui-même JOURNALISÉ (entrée `op = "rewind"`, audit).
 
 import type {
@@ -29,7 +33,7 @@ import type {
 export type RewindDeps = {
   actionLog: Pick<ActionLogRepository, "entriesToReverse" | "recordRewind">;
   contacts: Pick<ContactsRepository, "remove" | "update">;
-  messages: Pick<MessagesRepository, "archiveDraft">;
+  messages: Pick<MessagesRepository, "archiveDraft" | "restoreDraft">;
 };
 
 /** Bilan d'un rewind (pour la verbalisation côté UI ; ton neutre). */
@@ -72,9 +76,10 @@ export async function replayRewind(
         // Inverse d'une création : re-archivage SOFT (jamais DELETE). Idempotent.
         await deps.contacts.remove(e.entityId);
       } else {
-        // merged / reactivated : on RESTAURE l'état antérieur capturé. `prevState` contient les
-        // champs touchés (et `archivedAt` antérieur pour une réactivation) — le contact retrouve
-        // exactement son état d'avant le tour, sans perte du préexistant.
+        // merged / reactivated / archived : on RESTAURE l'état antérieur capturé. `prevState`
+        // contient les champs touchés (et `archivedAt` antérieur pour une réactivation, ou
+        // `{archivedAt: null}` pour un archivage → DÉSARCHIVAGE) — le contact retrouve exactement
+        // son état d'avant le tour, sans perte du préexistant.
         await deps.contacts.update(
           e.entityId,
           (e.prevState ?? {}) as ContactUpdate,
@@ -82,8 +87,13 @@ export async function replayRewind(
       }
       contactsTouched += 1;
     } else if (e.entityType === "message") {
-      // Inverse d'un brouillon : retrait SOFT (jamais DELETE).
-      await deps.messages.archiveDraft(e.entityId);
+      if (e.op === "archived") {
+        // Inverse d'un archivage de brouillon par l'agent (`archiveDraft` du tool) = désarchivage.
+        await deps.messages.restoreDraft(e.entityId);
+      } else {
+        // op `created` (brouillon rédigé par `composeMessage`) : retrait SOFT (jamais DELETE).
+        await deps.messages.archiveDraft(e.entityId);
+      }
       messagesTouched += 1;
     }
     // entityType "turn" / op "rewind" : exclus par `entriesToReverse` — non ré-inversables.

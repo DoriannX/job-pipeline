@@ -12,7 +12,7 @@
 //   (c) met à jour `contacts.dernier_contact_at` → la froideur (Epic 2) devient vivante.
 // Si une seule de ces écritures échoue, la transaction est ANNULÉE (rollback total).
 
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 
 import { normalizedLevenshtein } from "../domain/edit-distance";
 import type { Canal, MessageStatut } from "../domain/enums";
@@ -145,13 +145,24 @@ export type MessagesRepository = {
    */
   createDraft: (input: CreateDraftInput, journal?: JournalSink) => Promise<Message>;
   /**
-   * RETRAIT SOFT d'un brouillon (copilote inc.4, inverse de `composeMessage` au rewind). Pose
-   * `archived_at` (la porte filtre alors le brouillon des lectures) — JAMAIS de `DELETE`. On ne
-   * retire qu'un message ACTIF (idempotent : déjà archivé ⇒ `false`, aucune écriture). Renvoie
-   * `true` si une ligne a été archivée. Réservé au rewind ; les brouillons UI normaux ne sont
-   * pas concernés.
+   * RETRAIT SOFT d'un brouillon (copilote inc.4, inverse de `composeMessage` au rewind ; aussi
+   * l'action directe du tool `archiveDraft`). Pose `archived_at` (la porte filtre alors le
+   * brouillon des lectures) — JAMAIS de `DELETE`. On ne retire qu'un message ACTIF encore au
+   * statut `brouillon` (idempotent : déjà archivé/promu ⇒ `false`, aucune écriture).
+   * `journal` (op `archived`, `prevState = {archivedAt: null}`) est une SINK optionnelle :
+   * fournie (chemin tool), l'archivage et son entrée `action_log` sont atomiques → rewindable
+   * (l'inverse DÉSARCHIVE via `restoreDraft`). Absente (chemin rewind), non journalisé.
+   * Renvoie `true` si une ligne a été archivée.
    */
-  archiveDraft: (id: string) => Promise<boolean>;
+  archiveDraft: (id: string, journal?: JournalSink) => Promise<boolean>;
+  /**
+   * DÉSARCHIVAGE d'un brouillon (inverse de `archiveDraft` du tool, rejoué au rewind). Lève
+   * `archived_at` sur un message ARCHIVÉ encore au statut `brouillon` — JAMAIS sur un message
+   * promu `envoye` (garde symétrique d'`archiveDraft` : on ne ressuscite pas un brouillon que
+   * l'humain a depuis fait évoluer). Idempotent : un message déjà actif ⇒ `false`. Réservé au
+   * rewind ; jamais un tool d'agent.
+   */
+  restoreDraft: (id: string) => Promise<boolean>;
   /** Messages d'un contact, ordonnés du plus RÉCENT au plus ancien (timeline). */
   listForContact: (contactId: string) => Promise<Message[]>;
   /**
@@ -248,24 +259,58 @@ export function messagesRepository(scoped: ScopedDb): MessagesRepository {
       return journal ? scoped.transaction(run) : run(scoped);
     },
 
-    async archiveDraft(id) {
-      // RETRAIT SOFT (inverse de `composeMessage`) : pose `archived_at` sur un message ACTIF
-      // ENCORE AU STATUT `brouillon`, JAMAIS de `DELETE`. La porte filtrera alors le brouillon
-      // des lectures (listForContact, corpus de voix). Idempotent : un message déjà archivé
-      // matche 0 ligne → `false`.
+    async archiveDraft(id, journal) {
+      // RETRAIT SOFT (inverse de `composeMessage` ; aussi le tool `archiveDraft`) : pose
+      // `archived_at` sur un message ACTIF ENCORE AU STATUT `brouillon`, JAMAIS de `DELETE`. La
+      // porte filtrera alors le brouillon des lectures (listForContact, corpus de voix).
+      // Idempotent : un message déjà archivé matche 0 ligne → `false`.
       //
       // GARDE `statut = 'brouillon'` (défense) : si l'humain a, entre-temps, ÉDITÉ/ENVOYÉ ce
       // message (passage à `envoye` via le parcours UI), il a quitté la sphère « brouillon que
-      // l'agent a rédigé » — le rewind NE DOIT PAS le retirer (sinon on effacerait un vrai
-      // envoyé du corpus de voix et de la timeline). On ne retire donc qu'un brouillon resté tel.
+      // l'agent a rédigé » — on NE le retire PAS (sinon on effacerait un vrai envoyé du corpus
+      // de voix et de la timeline). On ne retire donc qu'un brouillon resté tel.
+      //
+      // `db` = porte scopée OU handle transactionnel (`tx`) si on journalise (chemin tool) :
+      // archivage + entrée `action_log` atomiques (parité `createDraft`).
+      const run = async (db: ScopedDb) => {
+        const ts = now(db.now);
+        const [row] = await db.update(
+          messages,
+          { archivedAt: ts, updatedAt: ts },
+          and(
+            eq(messages.id, id),
+            eq(messages.statut, "brouillon"),
+            isNull(messages.archivedAt),
+          ),
+        );
+        // Journal (op `archived`) UNIQUEMENT si une ligne a bien été archivée : un no-op ne
+        // journalise rien. `prevState = {archivedAt: null}` = l'état avant → inverse = restore.
+        if (row && journal) {
+          await journal(db, {
+            entityType: "message",
+            entityId: row.id,
+            op: "archived",
+            prevState: { archivedAt: null },
+          });
+        }
+        return row !== undefined;
+      };
+      return journal ? scoped.transaction(run) : run(scoped);
+    },
+
+    async restoreDraft(id) {
+      // DÉSARCHIVAGE (inverse d'`archiveDraft` du tool, rejoué au rewind) : lève `archived_at`
+      // sur un message ARCHIVÉ encore `brouillon`. Symétrique exact de la garde d'`archiveDraft`
+      // — si l'humain a promu le message à `envoye` entre-temps, on n'y touche pas (0 ligne →
+      // `false`). Idempotent : un brouillon déjà actif matche 0 ligne → `false`.
       const ts = now(scoped.now);
       const [row] = await scoped.update(
         messages,
-        { archivedAt: ts, updatedAt: ts },
+        { archivedAt: null, updatedAt: ts },
         and(
           eq(messages.id, id),
           eq(messages.statut, "brouillon"),
-          isNull(messages.archivedAt),
+          isNotNull(messages.archivedAt),
         ),
       );
       return row !== undefined;

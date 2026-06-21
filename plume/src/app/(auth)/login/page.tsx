@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth, signIn } from "@/lib/auth";
+import { devSignIn, isDevAuthEnabled } from "@/lib/auth-dev";
 import { Icon } from "@/design/icons";
 import { Plume } from "@/design/illustration/Plume";
 
@@ -16,6 +17,15 @@ export default async function LoginPage() {
   async function continueWithGoogle() {
     "use server";
     await signIn("google", { redirectTo: "/aujourdhui" });
+  }
+
+  // DEV ONLY : connexion sans Google (preview/localhost). La garde côté serveur (`devSignIn`
+  // re-vérifie `isDevAuthEnabled`) double celle du rendu : impossible en production.
+  const devAuth = isDevAuthEnabled();
+  async function continueAsDev() {
+    "use server";
+    await devSignIn();
+    redirect("/aujourdhui");
   }
 
   return (
@@ -40,6 +50,17 @@ export default async function LoginPage() {
           Continuer avec Google
         </button>
       </form>
+
+      {devAuth ? (
+        <form action={continueAsDev}>
+          <button
+            type="submit"
+            className="rounded-button border border-dashed border-ink-soft px-4 py-2 font-body text-button text-ink-soft outline-accent outline-offset-2 focus-visible:outline-2"
+          >
+            Connexion dev (sans Google)
+          </button>
+        </form>
+      ) : null}
     </main>
   );
 }
