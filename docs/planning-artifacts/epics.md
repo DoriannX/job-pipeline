@@ -46,6 +46,7 @@ Découpage complet en epics et stories pour **Plume** (PWA d'outreach réseau, c
 - **FR-13** : Composeur en flow — s'ouvre depuis un Contact ou une carte, jamais comme onglet ; porte toujours le contexte du Contact.
 - **FR-14** : Choix du modèle — Haiku par défaut, Opus sélectionnable, choix persistant par utilisateur.
 - **FR-15** : ~~Mode sans-IA par Contact~~ — **SUPPRIMÉ** (#30 clos, 2026-06-16, aligné UX #18/#19). Pas de mode ni toggle. Ne rien implémenter.
+- **FR-35** : Historique de conversation par Contact (ajout 2026-06-21) — textarea libre brut, saisissable à la création du Contact et éditable ensuite ; quand présent, injecté borné au prompt du Composeur pour une génération **en continuité** (rebondit sur le dernier point en suspens) ; champ intention reste optionnel ; pas de parsing de format ; génération = Composeur, jamais le Copilote.
 
 **Apprentissage de la Voix (4.3)**
 - **FR-16** : Seed de voix optionnel à l'onboarding (coller des messages passés) ; « Passer » évident ; Seed fourni utilisé immédiatement par le Few-shot.
@@ -178,6 +179,7 @@ Découpage complet en epics et stories pour **Plume** (PWA d'outreach réseau, c
 - **FR-32** : **livré sur 2 epics** — Epic 5 (mention permanente Réglages > Confidentialité) + Epic 3 (micro-ligne one-time à la 1re génération, UX-DR21). Ne pas le traiter comme entièrement faisable en Epic 5 seul au sprint planning.
 - **FR-33** : Epic 5 — Onboarding court < 2 min.
 - **FR-34** : Epic 2 — Ajout rapide multiple.
+- **FR-35** : Epic 3 — Historique de Contact injecté à la génération (story 3.10). _(extension FR-32 transparence : historique transmis à Claude explicité.)_
 
 **Couverture : 33/33 FR actifs mappés** (FR-15 supprimé). NFR-1→E3 · NFR-2→E1 · NFR-3→E1+transverse · NFR-4→E5 · NFR-5→E3 · NFR-6→E2+E5.
 
@@ -616,6 +618,35 @@ So that je ne dégrade jamais en silence le seul actif qui compte (la Voix).
 **When** les evals tournent en CI
 **Then** ils utilisent des réponses gelées (`tests/fixtures/claude-canned/`), déterministes, sans appel réseau réel
 **And** ils couvrent le couplage `sanitize()` + prompt (un changement de l'un ne casse pas l'autre en silence)
+
+### Story 3.10: Historique de conversation du Contact → génération en continuité
+
+> **Ajout 2026-06-21 (correct-course, [sprint-change-proposal-2026-06-21](sprint-change-proposal-2026-06-21.md)).** Feature née du brainstorm 2026-06-21. Étend le moat : la génération tient compte des échanges passés. Réutilise l'infra composeur (3.3) + le champ Contact (Epic 2). MVP uniquement ; incréments 2/3 (boutons-intention, écran de confiance, nudge onboarding) et gros morceaux (multi-fils par canal, forward mail) **différés et hors scope de cette story**.
+
+As a utilisateur,
+I want attacher l'historique de mes échanges passés avec un Contact,
+So that le message généré tienne compte du passé et réponde juste.
+
+**Acceptance Criteria:**
+
+**Given** la fiche Contact (et le formulaire de création)
+**When** je saisis ou édite le champ historique (textarea libre, brut, pas de parsing de format)
+**Then** `contacts.historique` (text, nullable) est migré, passé par `sanitize()` à l'écriture, scopé `user_id` ; le champ est éditable à tout moment (FR-35)
+
+**Given** un Contact avec un historique non vide
+**When** je touche Générer dans le Composeur
+**Then** `composeInVoice` injecte un bloc historique **borné** (troncature serveur, parité MAX_SEED/MAX_IMPORT) dans le prompt, à côté de l'idée (optionnelle) et du few-shot voix ; la consigne demande de rebondir sur le dernier point laissé en suspens (continuité, pas simple rappel) (FR-35, AR-7, NFR-1, NFR-5)
+
+**Given** un historique présent
+**When** la génération est lancée
+**Then** la micro-ligne de transparence API reflète que l'historique du Contact est transmis à Claude (FR-32)
+
+**Given** un Contact sans historique
+**When** je génère
+**Then** le comportement actuel (few-shot seul) est **strictement préservé** — aucune régression
+
+**And** `contacts.historique` passe le test cross-tenant 2-users (definition of done)
+**And** génération = **Composeur** (jamais le Copilote) ; le champ intention reste optionnel
 
 ### Jalon R1 — GO / PIVOT (clôt l'Epic 3)
 

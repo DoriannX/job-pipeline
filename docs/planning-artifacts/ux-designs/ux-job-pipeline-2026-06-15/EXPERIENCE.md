@@ -83,6 +83,7 @@ Comportement des composants. L'apparence vit dans `DESIGN.Components`. Rendus : 
 | Hints de gestes | Pied de carte | Micro-indications discrètes (↑ écrire · ‹ › feuilleter · ↓ plus tard) pour rendre les gestes découvrables. |
 | Repère « Relance due » | Fiche contact | Encart `{colors.accent-tint}` : rappelle qu'une relance est due, ton non alarmiste. |
 | Timeline (group d'événements) | Fiche contact | Histoire chronologique des échanges (du plus récent au plus ancien), narrative, jamais une grille de données. Les messages envoyés sont marqués `{colors.accent}`. Sert d'anti-doublon (on voit ce qui a déjà été dit). |
+| Champ historique (FR-35, ajout 2026-06-21) | Fiche contact + formulaire de création | Textarea libre `{colors.field}` (`#EDF6F2`), label FR, éditable à tout moment. L'utilisateur y colle l'historique brut des échanges passés ; vide = comportement actuel (aucune obligation, « Passer » implicite). Nourrit la génération **en continuité** du Composeur. Pas de rouge ; respecte les rayons/espacements figés. Boutons-intention & surlignage des passages utilisés = **incréments ultérieurs** (hors MVP). |
 | Carte de groupe / réglages (`{components.group-card}`) | Réglages | Lignes groupées, une intention par ligne. Tap → détail/toggle/stepper. Groupes « voix » et « confidentialité » portent l'offset accent. |
 | Toggle (`{components.toggle}`) | Réglages | Activé = piste `{colors.accent}`. Rappels push. |
 | Stepper (`{components.stepper}`) | Réglages | Délai de relance par défaut (− / valeur / +), « 5 jours » par défaut. |
