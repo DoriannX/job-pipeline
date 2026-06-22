@@ -37,8 +37,15 @@ import type { Canal } from "@/lib/domain/enums";
  * recette QUAND un historique est présent ; SANS historique, le tour user est IDENTIQUE à
  * v2 (non-régression garantie). On incrémente quand même : la version trace la RECETTE
  * disponible, pas seulement le chemin emprunté. Le préfixe stable (cachable) reste INTACT.
+ *
+ * v4 (story 7.1) : calibrage RÉCENCE/MÉMOIRE (P1/P2 du dogfood) ajouté à l'ouverture du mode
+ * `generate` UNIQUEMENT (bloc `consigne`, tour utilisateur volatil). La génération ne présume
+ * plus l'oubli sur un contact récent et ne minimise plus l'interaction passée ; distance sociale
+ * et mémoire sont traitées comme DEUX axes distincts. Change observable de la recette en `generate`
+ * dès qu'une idée est fournie ; le mode `improve` est IDENTIQUE à v3 (l'humain a déjà écrit, l'IA
+ * n'y devine pas la relation — non-régression garantie). Le préfixe stable (cachable) reste INTACT.
  */
-export const PROMPT_VERSION = 3;
+export const PROMPT_VERSION = 4;
 
 /**
  * Mode de fabrication du tour utilisateur (story 3.4).
@@ -118,6 +125,25 @@ const CONTRAINTE_CANAL: Record<Canal, string> = {
     "Canal SMS : message TRÈS COURT (1 à 2 phrases), va droit au but. " +
     "Aucune formule d'appel ni signature.",
 };
+
+// --- Calibrage RÉCENCE/MÉMOIRE (P1/P2, story 7.1 — dogfood 2026-06-21) -------
+//
+// Consigne CANTONNÉE au mode `generate` (tour utilisateur volatil), JAMAIS au système cachable
+// ni au mode `improve`. En `generate`, l'IA OUVRE la relation à partir de l'idée fournie : c'est
+// là qu'elle dérape (tour 1 du dogfood : entretien récent traduit en « tu m'as oublié »). En
+// `improve`, l'humain a déjà écrit son texte — l'IA n'y devine aucune relation, la règle n'a pas
+// lieu d'être (et la garder hors d'`improve` préserve la non-régression de ce mode).
+//   P1 — récence ≠ oubli : un point de contact concret et récent implique que l'autre se souvient.
+//   P2 — ne pas minimiser : nommer l'interaction au bon niveau (un entretien = un entretien).
+//   Principe : distance sociale (proches/pas proches) et mémoire (se souvient/a oublié) = 2 axes.
+const CALIBRAGE_RECENCE =
+  "Calibre la familiarité sur la RÉCENCE autant que sur la proximité. Un point de contact " +
+  "concret et récent implique que l'autre se souvient : NE présume PAS l'oubli (jamais " +
+  "« tu te souviens de moi ? », jamais t'excuser d'exister) ; référence l'événement en " +
+  "supposant qu'il s'en souvient. Nomme l'interaction au bon niveau (un entretien EST un " +
+  "entretien), ne la minimise pas en « on s'était croisés ». Distance sociale (proches / pas " +
+  "proches) et mémoire (se souvient / a oublié) sont DEUX axes distincts : « pas proches » " +
+  "n'implique PAS « m'a oublié ».";
 
 // --- Instructions système STABLES (préfixe cachable) ------------------------
 //
@@ -233,7 +259,10 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
           "ci-dessus). Reste chaleureux et générique : n'invente AUCUN fait précis " +
           "(pas de projet, d'entreprise, de date ni d'événement imaginaires). Une simple " +
           "reprise de contact qui ouvre la conversation et invite à échanger."
-        : // GÉNÉRER (story 3.3) : mise en forme d'une idée brute.
+        : // GÉNÉRER (story 3.3) : mise en forme d'une idée brute. P1/P2 (story 7.1) calibrent
+          // l'ouverture sur la récence/mémoire — UNIQUEMENT ici (mode `generate`, idée présente),
+          // là où l'IA interprète la relation à partir des faits fournis.
+          `${CALIBRAGE_RECENCE}\n\n` +
           "Idée brute à mettre en forme dans la voix de l'utilisateur :\n" +
           `"""\n${idea}\n"""`;
 

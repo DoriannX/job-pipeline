@@ -156,8 +156,8 @@ const histoEx =
   "Lui : oui ! je te tiens au courant de la date.";
 
 describe("prompt — historique de conversation (story 3.10)", () => {
-  it("PROMPT_VERSION est passée à 3 (recette historique disponible)", () => {
-    expect(PROMPT_VERSION).toBe(3);
+  it("PROMPT_VERSION est au moins 3 (recette historique disponible)", () => {
+    expect(PROMPT_VERSION).toBeGreaterThanOrEqual(3);
   });
 
   it("historique présent → bloc + consigne de continuité dans le TOUR UTILISATEUR", () => {
@@ -281,5 +281,44 @@ describe("prompt — mode improve (story 3.4)", () => {
     expect(userContent("linkedin", "improve")).not.toBe(
       userContent("linkedin", "generate"),
     );
+  });
+});
+
+// --- Calibrage RÉCENCE/MÉMOIRE (story 7.1, P1/P2 dogfood) ------------------
+// On verrouille : (1) PROMPT_VERSION === 4 (AC #6) ; (2) en mode `generate` avec idée, la
+// consigne récence/mémoire est dans le TOUR UTILISATEUR (P1 « pas d'oubli présumé », P2 « ne
+// pas minimiser », deux axes — AC #3/#4/#5) ; (3) le mode `improve` est INCHANGÉ : la consigne
+// n'y apparaît PAS (non-régression P1/P2 hors improve — AC #9) ; (4) la consigne reste hors du
+// SYSTÈME cachable (cache préservé) — elle vit dans le tour user volatil.
+
+describe("prompt — calibrage récence/mémoire (story 7.1)", () => {
+  it("PROMPT_VERSION est passée à 4 (recette récence/mémoire)", () => {
+    expect(PROMPT_VERSION).toBe(4);
+  });
+
+  it("generate (idée présente) → la consigne récence/mémoire est dans le tour utilisateur", () => {
+    const t = userContent("linkedin", "generate");
+    // P1 — ne pas présumer l'oubli (référence l'événement).
+    expect(t).toMatch(/RÉCENCE/i);
+    expect(t).toMatch(/présume PAS l'oubli|ne présume pas l'oubli/i);
+    // P2 — ne pas minimiser l'interaction.
+    expect(t).toMatch(/minimise/i);
+    // Deux axes distincts (distance sociale ≠ mémoire).
+    expect(t).toMatch(/deux axes|axes distincts/i);
+  });
+
+  it("improve → la consigne récence/mémoire est ABSENTE (non-régression P1/P2 hors improve, AC #9)", () => {
+    const t = userContent("linkedin", "improve");
+    expect(t).not.toMatch(/présume PAS l'oubli|ne présume pas l'oubli/i);
+    expect(t).not.toMatch(/axes distincts/i);
+    // Et reste bien la consigne d'amélioration en place.
+    expect(t).toMatch(/retravaille/i);
+  });
+
+  it("la consigne récence/mémoire reste HORS du système cachable (cache préservé)", () => {
+    const { system } = buildPrompt({ ...baseInput, canal: "linkedin" });
+    const systemText = system.map((b) => b.text).join("\n");
+    expect(systemText).not.toMatch(/présume PAS l'oubli|ne présume pas l'oubli/i);
+    expect(systemText).not.toMatch(/axes distincts/i);
   });
 });
