@@ -30,10 +30,7 @@ import { colors } from "@/design/tokens";
 
 import { streamCopilote } from "./stream-client";
 import { rewindTurnAction } from "./rewind.actions";
-import {
-  bootstrapCopiloteAction,
-  type BootstrapTurn,
-} from "./bootstrap.actions";
+import { type BootstrapTurn } from "./bootstrap.actions";
 import {
   listConversationsAction,
   openConversationAction,
@@ -290,9 +287,6 @@ export function CopiloteSheet() {
   // en bas (le bug : chaque delta forçait un scroll). Remis à `true` quand il renvoie un message
   // ou repart manuellement au bas. Réf (pas un state) → pas de re-render à chaque scroll.
   const stickBottomRef = useRef(true);
-  // PHASE 3 : la réhydratation du fil actif (bootstrap) ne court qu'UNE fois, au 1er dépliage du
-  // popup (inutile de charger tant qu'il n'est pas ouvert ; jamais deux fois).
-  const bootstrappedRef = useRef(false);
 
   // Nouvelle conversation (CAP-2/4) : oublie le fil courant (conversationId → null), vide le popup,
   // coupe un flux en cours et réinitialise la saisie. La création PARESSEUSE pose un fil neuf au
@@ -455,31 +449,11 @@ export function CopiloteSheet() {
     };
   }, []);
 
-  // RÉHYDRATATION (CAP-2/5) : au 1er dépliage, on recharge le fil ACTIF depuis le serveur
-  // (bootstrap scopé tenant) et on réaffiche ses tours — texte FINAL uniquement (les chips
-  // tool-use NE sont PAS réhydratées, Non-goal). Pour chaque tour `assistant` porteur d'un
-  // `turnId` (run ayant écrit), on repose l'affordance « annuler ce tour » (CAP-5). Le
-  // `conversationId` est retenu pour les tours suivants. Le bootstrap est doux : un échec laisse
-  // simplement un popup vide (jamais d'alarme). On NE remplace PAS un fil déjà entamé en-session.
-  useEffect(() => {
-    if (!expanded || bootstrappedRef.current) return;
-    bootstrappedRef.current = true;
-    let cancelled = false;
-    void bootstrapCopiloteAction()
-      .then((res) => {
-        // Si l'utilisateur a déjà tapé/envoyé pendant le chargement, on ne piétine pas son fil.
-        if (cancelled || conversationIdRef.current !== null) return;
-        if (!res.conversationId || res.turns.length === 0) return;
-        setConversation(res.conversationId);
-        setItems(mapTurns(res.turns));
-      })
-      .catch(() => {
-        // Échec doux : popup vide, l'utilisateur démarre un nouveau fil.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [expanded, mapTurns, setConversation]);
+  // RÉHYDRATATION AUTO RETIRÉE (story 7-8, finding F14) : au refresh, le copilote démarre
+  // FERMÉ/VIDE — on ne rouvre plus le dernier fil actif d'office (comportement jugé intrusif au
+  // dogfood). La persistance reste intacte : un ancien fil se reprend UNIQUEMENT sur sélection
+  // explicite dans l'historique (`showThreadList` → `openThread`, CAP-4). `mapTurns` sert encore
+  // ce chemin de réouverture explicite.
 
   // Suit l'intention de l'utilisateur : s'il est à ≤ 48px du bas, on « colle » (auto-scroll) ;
   // dès qu'il remonte au-delà, on lâche (il lit tranquillement, le flux ne le rappelle plus).
@@ -1112,8 +1086,10 @@ function Bubble({ item }: { item: Exclude<ChatItem, { kind: "rewind" }> }) {
   }
 
   if (item.kind === "user") {
+    // Locuteur « Moi » (F9) — doublé du signal visuel (alignement droite), a11y.
     return (
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end gap-1">
+        <span className="px-1 font-body text-label text-ink-hint">Moi</span>
         <p className="max-w-[80%] whitespace-pre-wrap rounded-button border-[length:--border-width-ink] border-line bg-surface-chip px-4 py-2 font-body text-body text-ink">
           {item.content}
         </p>
@@ -1121,12 +1097,16 @@ function Bubble({ item }: { item: Exclude<ChatItem, { kind: "rewind" }> }) {
     );
   }
 
-  // Assistant : mascotte + bulle markdown (l'agent structure ses réponses en markdown).
+  // Assistant : mascotte + label « Copilote » (F9) + bulle markdown (l'agent structure ses
+  // réponses en markdown). Le label double le signal visuel (mascotte/alignement gauche), a11y.
   return (
     <div className="flex items-start gap-2">
       <Plume name="feather" size={24} className="mt-1 shrink-0" />
-      <div className="max-w-[80%] rounded-button border-[length:--border-width-ink] border-line bg-surface-note px-4 py-2">
-        <CopiloteMarkdown content={item.content} />
+      <div className="flex flex-col gap-1">
+        <span className="px-1 font-body text-label text-ink-hint">Copilote</span>
+        <div className="max-w-[80%] rounded-button border-[length:--border-width-ink] border-line bg-surface-note px-4 py-2">
+          <CopiloteMarkdown content={item.content} />
+        </div>
       </div>
     </div>
   );
