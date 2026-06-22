@@ -199,6 +199,8 @@ export type CreateContactInput = {
   entreprise?: string | null;
   email?: string | null;
   canalPrefere?: Canal | null;
+  /** Contexte relationnel/historique fourni par l'utilisateur (story 7.3, FR-38), sanitizé à l'écriture. */
+  historique?: string | null;
 };
 
 /** Renvoie `s` trimmé s'il est non vide, sinon `undefined` (vide ≠ valeur). */
@@ -268,7 +270,13 @@ export async function createContact(
   contacts: Pick<ContactsRepository, "create" | "list" | "update">,
   input: CreateContactInput,
   journal?: JournalSink,
+  clean: (s: string) => string = (s) => s,
 ): Promise<CreateContactResult> {
+  // Contexte relationnel capté à la création (story 7.3, FR-38) : nettoyé au point unique
+  // d'écriture (parité seeds / setContactHistorique). Vide ⇒ undefined (comportement inchangé).
+  const histBrut = nonVide(input.historique);
+  const historique = histBrut ? clean(histBrut) : undefined;
+
   // Résolution par nom UNIQUEMENT sans e-mail (la clé `email:` reste prioritaire, AC #5).
   if (!input.email) {
     const cible = await resolveHomonyme(contacts, input);
@@ -284,6 +292,10 @@ export async function createContact(
         ...(entrepriseFournie ? { entreprise: entrepriseFournie } : {}),
         ...(input.canalPrefere != null ? { canalPrefere: input.canalPrefere } : {}),
         ...(reactivation ? { archivedAt: null } : {}),
+        // Contexte de création (7.3) : enrichit l'historique SEULEMENT s'il est vide — jamais
+        // d'écrasement. Pour COMPLÉTER un historique déjà présent, c'est setContactHistorique
+        // (append) le bon outil ; ici on capte le contexte d'une 1ʳᵉ rencontre.
+        ...(historique && !nonVide(cible.historique) ? { historique } : {}),
       };
       // Rien à écrire (ni enrichissement ni réactivation) : la fiche existante EST déjà le
       // résultat. On NE touche PAS `update` — sinon faux `merged` à `prevState` vide + écriture
@@ -311,6 +323,8 @@ export async function createContact(
       entreprise: input.entreprise ?? null,
       canalPrefere: input.canalPrefere ?? null,
       handles: input.email ? { email: input.email } : null,
+      // Contexte relationnel capté à la création (7.3, FR-38), déjà sanitizé ci-dessus.
+      historique: historique ?? null,
       // PROVENANCE VRAIE DONNÉE — saisie unitaire dictée = "manuel" (parité story 2.1).
       // JAMAIS "seed" : la vraie donnée reste trivialement distinguable du test.
       source: "manuel",
@@ -912,6 +926,18 @@ export function buildTools(userId: string, turnId: string): ToolSet {
           .enum(CANAUX)
           .optional()
           .describe("Canal de contact préféré (optionnel)."),
+        historique: z
+          .string()
+          .trim()
+          .min(1)
+          .max(16_000)
+          .optional()
+          .describe(
+            "Contexte relationnel fourni par l'utilisateur : comment il connaît le contact, " +
+              "à quand remonte la dernière interaction, le ton/l'objectif. N'invente RIEN — " +
+              "n'utilise que ce que l'utilisateur a dit. Sert ensuite à générer des messages " +
+              "en continuité (FR-35). Laisse vide si l'utilisateur ne donne pas de contexte.",
+          ),
       }),
       execute: async (args) => {
         try {
@@ -920,6 +946,8 @@ export function buildTools(userId: string, turnId: string): ToolSet {
             gate.contacts,
             args,
             makeJournal("createContact"),
+            // `sanitize` injecté = nettoyage de l'historique au point unique d'écriture (AR-3).
+            sanitize,
           );
         } catch (err) {
           console.error("[agent] createContact a échoué :", err);

@@ -327,6 +327,69 @@ describe("createContact — vraie donnée 'manuel', dédup, scope (inc.3 CAP-1)"
     expect((await repoA().list())[0]!.entreprise).toBe("Acme");
     expect((await repoB().list())[0]!.entreprise).toBeNull();
   });
+
+  // --- Contexte relationnel capté à la création (story 7.3, FR-38) ---
+
+  it("7.3 (AC#2) : crée avec `historique` → champ relationnel persisté", async () => {
+    const res = await createContact(repoA(), {
+      nom: "Sophie Martin",
+      entreprise: "Acme",
+      historique: "Rencontrée à la conf React 2026, elle recrutait un front.",
+    });
+    expect((await repoA().get(res.id))!.historique).toBe(
+      "Rencontrée à la conf React 2026, elle recrutait un front.",
+    );
+  });
+
+  it("7.3 (AC#3) : sans `historique` (ou vide) → null, comportement inchangé", async () => {
+    const r1 = await createContact(repoA(), { nom: "Sans Contexte" });
+    expect((await repoA().get(r1.id))!.historique).toBeNull();
+    const r2 = await createContact(repoA(), { nom: "Blanc", historique: "   " });
+    expect((await repoA().get(r2.id))!.historique).toBeNull();
+  });
+
+  it("7.3 (AC#4) : `historique` sanitizé au point d'écriture (clean injecté)", async () => {
+    const clean = (s: string) => s.replace(/—/g, "-"); // strip du tiret cadratin (tell d'IA)
+    const res = await createContact(
+      repoA(),
+      { nom: "Léa", historique: "Vue hier — elle cherche un poste." },
+      undefined,
+      clean,
+    );
+    expect((await repoA().get(res.id))!.historique).toBe(
+      "Vue hier - elle cherche un poste.",
+    );
+  });
+
+  it("7.3 (AC#5) : fusion homonyme (clé divergente) → enrichit l'historique SI absent", async () => {
+    const r1 = await createContact(repoA(), { nom: "Tom" }); // clé `name:tom|`, pas d'historique
+    await createContact(repoA(), {
+      nom: "Tom",
+      entreprise: "Acme", // clé divergente → résolution par nom → update enrichissant
+      historique: "Ancien collègue chez Acme.",
+    });
+    const rows = await repoA().list();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.id).toBe(r1.id);
+    expect(rows[0]!.historique).toBe("Ancien collègue chez Acme.");
+  });
+
+  it("7.3 (AC#5) : fusion homonyme (clé divergente) → n'ÉCRASE PAS un historique présent", async () => {
+    const r1 = await createContact(repoA(), {
+      nom: "Nina",
+      historique: "Première rencontre au meetup.",
+    }); // clé `name:nina|`
+    await createContact(repoA(), {
+      nom: "Nina",
+      entreprise: "Globex", // clé divergente → résolution par nom → update (enrich-if-absent)
+      historique: "tentative d'écrasement",
+    });
+    const rows = await repoA().list();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.id).toBe(r1.id);
+    expect(rows[0]!.entreprise).toBe("Globex"); // l'entreprise, elle, est enrichie
+    expect(rows[0]!.historique).toBe("Première rencontre au meetup."); // historique préservé
+  });
 });
 
 describe("updateContact — édition de fiche existante, handles fusion, scope (story 7.4 F2/F8)", () => {
