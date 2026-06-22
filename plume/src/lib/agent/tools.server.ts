@@ -1042,8 +1042,12 @@ export function buildTools(userId: string, turnId: string): ToolSet {
         "l'utilisateur (réutilise le Composeur : few-shot de voix + nettoyage anti-IA, " +
         "longueur adaptée au canal). Le brouillon est PERSISTÉ, lié au contact, prêt à " +
         "copier — mais JAMAIS envoyé : c'est l'utilisateur qui envoie depuis l'app. " +
+        "N'appelle ce tool qu'APRÈS avoir capté le contexte relationnel : comment l'utilisateur " +
+        "connaît ce contact, la RÉCENCE de la dernière interaction, et l'objectif du message. " +
+        "Ne devine PAS la relation ; si un élément clé manque ou est ambigu, pose une question " +
+        "d'abord, puis appelle ce tool. Passe les faits captés dans `idea` (n'invente aucun fait). " +
         "Donne `contactId` ; `canal`/`tone` optionnels (canal déduit de la préférence du " +
-        "contact si absent), `idea` = contexte/consigne optionnel pour le message.",
+        "contact si absent), `idea` = contexte/consigne capté pour le message.",
       inputSchema: z.object({
         contactId: z
           .string()
