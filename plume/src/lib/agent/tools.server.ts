@@ -24,6 +24,7 @@ import {
   forUser,
   type Contact,
   type ContactsRepository,
+  type ContactUpdate,
   type MessagesRepository,
   type BulkCreateItem,
   type JournalSink,
@@ -207,17 +208,23 @@ function nonVide(s: string | null | undefined): string | undefined {
 }
 
 /**
- * Résout, parmi les contacts ACTIFS du tenant, un HOMONYME existant que `createContact`
- * doit FUSIONNER plutôt que doubler — UNIQUEMENT quand le repo n'y arriverait pas seul
- * (clés `dedupKey` divergentes). Renvoie `undefined` si aucun homonyme fusionnable, ou si
- * la clé converge déjà (le repo `create` dédupe alors nativement → on laisse passer).
+ * Résout, parmi les contacts du tenant (ACTIFS **ou ARCHIVÉS**), un HOMONYME existant que
+ * `createContact` doit FUSIONNER plutôt que doubler — UNIQUEMENT quand le repo n'y arriverait
+ * pas seul (clés `dedupKey` divergentes). Renvoie `undefined` si aucun homonyme fusionnable, ou
+ * si la clé converge déjà (le repo `create` dédupe ET réactive alors nativement, y compris un
+ * archivé via sa relecture `includeArchived` → on laisse passer).
+ *
+ * Les ARCHIVÉS sont inclus (story 7.6, AC #4) : un homonyme archivé à clé `name:` divergente
+ * (ex. « Jean Dupont @ Acme » archivé, puis « Jean Dupont » sans entreprise) est invisible à
+ * la dédup native du repo → sans cette résolution il créerait une 2ᵉ fiche active au lieu de
+ * réactiver/enrichir l'archivée. `createContact` passe alors `archivedAt:null` → réactivation.
  *
  * Règle de fusion (anti-faux-positif, AC #3) : on ne fusionne que si l'entreprise existante
  * est VIDE, ou l'entreprise fournie est VIDE, ou les deux sont ÉGALES (normalisées). Deux
  * homonymes d'entreprises EXPLICITES DIFFÉRENTES (« Jean Dupont @ Acme » vs « @ Globex »)
  * restent DEUX fiches.
  */
-async function resolveActiveHomonym(
+async function resolveHomonyme(
   contacts: Pick<ContactsRepository, "list">,
   input: CreateContactInput,
 ): Promise<Contact | undefined> {
@@ -225,8 +232,9 @@ async function resolveActiveHomonym(
   const cibleEntreprise = normalizeName(input.entreprise);
   const cibleCle = computeDedupKey({ nom: input.nom, entreprise: input.entreprise });
   // `list()` est DÉJÀ scopée au tenant (porte `forUser`) → isolement cross-tenant gratuit
-  // (AC #8) : un homonyme chez un autre user n'est jamais visible ici.
-  for (const c of await contacts.list()) {
+  // (AC #8) : un homonyme chez un autre user n'est jamais visible ici. `includeArchived` :
+  // on doit voir les archivés pour les RÉACTIVER au lieu d'en créer un doublon (AC #4).
+  for (const c of await contacts.list({ includeArchived: true })) {
     if (normalizeName(c.nom) !== cibleNom) continue;
     const ce = normalizeName(c.entreprise);
     const fusionnable = ce === "" || cibleEntreprise === "" || ce === cibleEntreprise;
@@ -263,26 +271,37 @@ export async function createContact(
 ): Promise<CreateContactResult> {
   // Résolution par nom UNIQUEMENT sans e-mail (la clé `email:` reste prioritaire, AC #5).
   if (!input.email) {
-    const cible = await resolveActiveHomonym(contacts, input);
+    const cible = await resolveHomonyme(contacts, input);
     if (cible) {
       // Entreprise canonique = la valeur NON VIDE l'emporte (le vide n'écrase jamais une
       // entreprise déjà connue — parité merge `createContactRow`). On ENRICHIT via `update`
       // journalisé (op `merged`/`reactivated`, `prevState` capturé → rewind exact, AC #6).
       const entrepriseFournie = nonVide(input.entreprise);
-      const row = await contacts.update(
-        cible.id,
-        {
-          ...(entrepriseFournie ? { entreprise: entrepriseFournie } : {}),
-          ...(input.canalPrefere != null ? { canalPrefere: input.canalPrefere } : {}),
-        },
-        journal,
-      );
-      const fiche = row ?? cible;
-      return {
-        id: fiche.id,
-        nom: fiche.nom,
-        entreprise: fiche.entreprise ?? entrepriseFournie ?? null,
+      // Cible archivée ⇒ on la RÉACTIVE (`archivedAt:null`) → `update` journalise `reactivated`
+      // (parité `createContactRow`, AC #4). Active ⇒ simple enrichissement `merged`.
+      const reactivation = cible.archivedAt != null;
+      const patch: ContactUpdate = {
+        ...(entrepriseFournie ? { entreprise: entrepriseFournie } : {}),
+        ...(input.canalPrefere != null ? { canalPrefere: input.canalPrefere } : {}),
+        ...(reactivation ? { archivedAt: null } : {}),
       };
+      // Rien à écrire (ni enrichissement ni réactivation) : la fiche existante EST déjà le
+      // résultat. On NE touche PAS `update` — sinon faux `merged` à `prevState` vide + écriture
+      // `updatedAt` inutile dans le journal rewindable.
+      if (Object.keys(patch).length === 0) {
+        return { id: cible.id, nom: cible.nom, entreprise: cible.entreprise ?? null };
+      }
+      const row = await contacts.update(cible.id, patch, journal);
+      // `update` a touché 0 ligne ⇒ la cible a disparu entre `list()` et l'écriture (course /
+      // archivage concurrent). On NE masque PAS l'échec en faux succès : on retombe sur le
+      // chemin `create` ci-dessous (qui crée/dédupe + journalise franchement).
+      if (row) {
+        return {
+          id: row.id,
+          nom: row.nom,
+          entreprise: row.entreprise ?? entrepriseFournie ?? null,
+        };
+      }
     }
   }
 

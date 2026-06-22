@@ -74,7 +74,12 @@ export type ContactsRepository = {
     items: BulkCreateItem[],
     journal?: JournalSink,
   ) => Promise<BulkCreateResult>;
-  list: () => Promise<Contact[]>;
+  /**
+   * Liste les contacts du tenant. Par défaut, seuls les ACTIFS (la porte filtre
+   * `archived_at IS NULL`). `includeArchived` lève ce masque — réservé aux parcours de
+   * résolution/fusion (story 7.6 : réactiver un homonyme archivé à clé `name:` divergente).
+   */
+  list: (opts?: { includeArchived?: boolean }) => Promise<Contact[]>;
   /**
    * Lit un contact ACTIF par id (les archivés sont invisibles). `includeArchived`
    * vise aussi un archivé — réservé aux parcours de réactivation/fusion d'import.
@@ -390,9 +395,10 @@ export function contactsRepository(scoped: ScopedDb): ContactsRepository {
       return journal ? scoped.transaction(run) : run(scoped);
     },
 
-    async list() {
+    async list(opts) {
       // Soft-delete : la PORTE filtre déjà `archived_at IS NULL` pour cette table.
-      return scoped.findMany(contacts);
+      // `includeArchived` (résolution d'homonyme story 7.6) lève ce masque.
+      return scoped.findMany(contacts, undefined, undefined, opts);
     },
 
     async get(id, opts) {

@@ -290,6 +290,32 @@ describe("createContact — vraie donnée 'manuel', dédup, scope (inc.3 CAP-1)"
     expect(await repoB().list()).toHaveLength(2);
   });
 
+  it("F11 (AC#4) : homonyme ARCHIVÉ à clé divergente → RÉACTIVÉ + enrichi, jamais dupliqué", async () => {
+    // « Jean Dupont @ Acme » (clé `name:jean dupont|acme`) puis ARCHIVÉ (soft-delete).
+    const res = await createContact(repoA(), { nom: "Jean Dupont", entreprise: "Acme" });
+    expect(await repoA().remove(res.id)).toBe(true);
+    expect(await repoA().list()).toHaveLength(0); // archivé → invisible par défaut
+
+    // Re-mention SANS entreprise (clé `name:jean dupont|`, DIVERGENTE) sans e-mail :
+    // sans le durcissement AC#4, la résolution ignorait les archivés → 2ᵉ fiche active.
+    const res2 = await createContact(repoA(), { nom: "Jean Dupont" });
+
+    const rows = await repoA().list();
+    expect(rows).toHaveLength(1); // 1 SEULE fiche active : l'archivée est RÉACTIVÉE
+    expect(res2.id).toBe(res.id); // même fiche (pas un doublon)
+    expect(rows[0]!.entreprise).toBe("Acme"); // l'entreprise connue est préservée
+  });
+
+  it("F11 (AC#4, enrichissement à la réactivation) : archivé sans entreprise → réactivé AVEC l'entreprise fournie", async () => {
+    const res = await createContact(repoA(), { nom: "Lea Bernard" });
+    expect(await repoA().remove(res.id)).toBe(true);
+    // Réactivation + enrichissement (clé divergente : `name:lea bernard|` → `|globex`).
+    await createContact(repoA(), { nom: "Lea Bernard", entreprise: "Globex" });
+    const rows = await repoA().list();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.entreprise).toBe("Globex");
+  });
+
   it("F11 (AC#8) : la résolution par nom est SCOPÉE tenant (aucune fusion cross-tenant)", async () => {
     // Même personne « divergente » chez A ET chez B : chacun garde SA fiche unique.
     await createContact(repoA(), { nom: "Sam" });
