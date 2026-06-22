@@ -19,6 +19,7 @@ import {
   queryContacts,
   seedContacts,
   createContact,
+  updateContact,
   importContacts,
   composeMessage,
   archiveContact,
@@ -325,6 +326,134 @@ describe("createContact — vraie donnée 'manuel', dédup, scope (inc.3 CAP-1)"
     expect(await repoB().list()).toHaveLength(1);
     expect((await repoA().list())[0]!.entreprise).toBe("Acme");
     expect((await repoB().list())[0]!.entreprise).toBeNull();
+  });
+});
+
+describe("updateContact — édition de fiche existante, handles fusion, scope (story 7.4 F2/F8)", () => {
+  let db: TestDb;
+  const userA = makeUser({ name: "Alice" });
+  const userB = makeUser({ name: "Bob" });
+  // Horloge MONOTONE : une vraie écriture FAIT AVANCER `updatedAt` ; un no-op le laisse à sa valeur
+  // de création → c'est ainsi qu'on prouve « aucune écriture » (AC #5) sans journal injecté ici.
+  let tick = 0;
+  const clock: Clock = () => 1_700_000_000_000 + tick++ * 1000;
+  const repoA = () => contactsRepository(forUserDb(db, userA.id, clock));
+  const repoB = () => contactsRepository(forUserDb(db, userB.id, clock));
+
+  beforeEach(async () => {
+    db = await makeTestDb();
+    await seedUsers(db, [userA, userB]);
+    tick = 0;
+  });
+
+  it("AC#1 : édite l'entreprise, laisse les autres champs intacts", async () => {
+    const c = await repoA().create({ nom: "Sophie Martin", canalPrefere: "linkedin" });
+    const res = await updateContact(repoA(), { contactId: c.id, entreprise: "Acme" });
+    expect(res).toEqual({ id: c.id, nom: "Sophie Martin", entreprise: "Acme" });
+    const row = (await repoA().list())[0]!;
+    expect(row.entreprise).toBe("Acme");
+    expect(row.canalPrefere).toBe("linkedin"); // intact
+    expect(row.nom).toBe("Sophie Martin"); // intact
+  });
+
+  it("AC#1 : édite le canal préféré", async () => {
+    const c = await repoA().create({ nom: "Léo", canalPrefere: "linkedin" });
+    await updateContact(repoA(), { contactId: c.id, canalPrefere: "whatsapp" });
+    expect((await repoA().get(c.id))!.canalPrefere).toBe("whatsapp");
+  });
+
+  it("AC#9 : édite les notes (remplacement simple)", async () => {
+    const c = await repoA().create({ nom: "Léo", notes: "ancien" });
+    await updateContact(repoA(), { contactId: c.id, notes: "rencontré au salon X" });
+    expect((await repoA().get(c.id))!.notes).toBe("rencontré au salon X");
+  });
+
+  it("AC#2 : ajout d'un canal handles → FUSION non destructive (linkedin préservé)", async () => {
+    const c = await repoA().create({
+      nom: "Amoussou",
+      handles: { linkedin: "linkedin.com/in/amoussous" },
+    });
+    await updateContact(repoA(), {
+      contactId: c.id,
+      handles: { phone: "+33612345678" },
+    });
+    expect((await repoA().get(c.id))!.handles).toEqual({
+      linkedin: "linkedin.com/in/amoussous",
+      phone: "+33612345678",
+    });
+  });
+
+  it("AC#3 : remplace un canal présent + ajoute un autre, PRÉSERVE le 3e", async () => {
+    const c = await repoA().create({
+      nom: "Amoussou",
+      handles: { linkedin: "ancien", email: "a@b.fr" },
+    });
+    await updateContact(repoA(), {
+      contactId: c.id,
+      handles: { linkedin: "nouveau", whatsapp: "+33600000000" },
+    });
+    expect((await repoA().get(c.id))!.handles).toEqual({
+      linkedin: "nouveau",
+      email: "a@b.fr", // préservé
+      whatsapp: "+33600000000",
+    });
+  });
+
+  it("AC#4 : id inconnu → throw, AUCUNE écriture", async () => {
+    await expect(
+      updateContact(repoA(), { contactId: "inexistant", entreprise: "Acme" }),
+    ).rejects.toThrow("Contact introuvable pour ce tenant.");
+    expect(await repoA().list()).toHaveLength(0);
+  });
+
+  it("AC#4 : id d'un AUTRE tenant est invisible → throw, aucune fuite", async () => {
+    const cB = await repoB().create({ nom: "Contact de B" });
+    // A tente d'éditer un id qui appartient à B : la porte scopée le masque → throw.
+    await expect(
+      updateContact(repoA(), { contactId: cB.id, entreprise: "Pirate" }),
+    ).rejects.toThrow("Contact introuvable pour ce tenant.");
+    // La fiche de B est intacte.
+    expect((await repoB().get(cB.id))!.entreprise).toBeNull();
+  });
+
+  it("AC#5 : patch vide (champs absents) → no-op, fiche renvoyée telle quelle", async () => {
+    const c = await repoA().create({ nom: "Inchangé", entreprise: "Acme" });
+    const before = (await repoA().get(c.id))!.updatedAt;
+    const res = await updateContact(repoA(), { contactId: c.id });
+    expect(res).toEqual({ id: c.id, nom: "Inchangé", entreprise: "Acme" });
+    // Aucune écriture : `updatedAt` n'a pas bougé.
+    expect((await repoA().get(c.id))!.updatedAt).toBe(before);
+  });
+
+  it("AC#5 : handles identiques → no-op (pas de faux merged)", async () => {
+    const c = await repoA().create({
+      nom: "Léo",
+      handles: { linkedin: "x", email: "y@z.fr" },
+    });
+    const before = (await repoA().get(c.id))!.updatedAt;
+    await updateContact(repoA(), {
+      contactId: c.id,
+      handles: { linkedin: "x" }, // déjà présent à l'identique
+    });
+    expect((await repoA().get(c.id))!.updatedAt).toBe(before); // aucune écriture
+    expect((await repoA().get(c.id))!.handles).toEqual({ linkedin: "x", email: "y@z.fr" });
+  });
+
+  it("AC#5 : valeur scalaire identique → no-op", async () => {
+    const c = await repoA().create({ nom: "Léo", entreprise: "Acme" });
+    const before = (await repoA().get(c.id))!.updatedAt;
+    await updateContact(repoA(), { contactId: c.id, entreprise: "Acme" });
+    expect((await repoA().get(c.id))!.updatedAt).toBe(before);
+  });
+
+  it("entreprise/notes vides ('') ne CLÔTURENT pas un champ rempli (nonVide)", async () => {
+    const c = await repoA().create({ nom: "Léo", entreprise: "Acme", notes: "garder" });
+    const before = (await repoA().get(c.id))!.updatedAt;
+    await updateContact(repoA(), { contactId: c.id, entreprise: "  ", notes: "" });
+    const row = (await repoA().get(c.id))!;
+    expect(row.entreprise).toBe("Acme"); // pas effacé
+    expect(row.notes).toBe("garder"); // pas effacé
+    expect(row.updatedAt).toBe(before); // no-op
   });
 });
 
