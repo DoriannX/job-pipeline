@@ -19,14 +19,16 @@
 // CAP-3 (erreur in-band) : une erreur mid-stream arrive comme une bulle d'erreur DOUCE
 // (teinte de la famille, jamais rouge alarme), pas un flux tronqué pris pour un succès.
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
 
 import { Icon } from "@/design/icons";
 import { BTN_PRIMARY } from "@/design/buttons";
 import { Plume } from "@/design/illustration/Plume";
 import { colors } from "@/design/tokens";
+
+import { loadComposerContextAction } from "@/features/composer/actions";
 
 import { streamCopilote } from "./stream-client";
 import { rewindTurnAction } from "./rewind.actions";
@@ -68,6 +70,11 @@ const ANCHOR_MARGIN_X = 48; // 24 (marge gauche) + 24 (ancrage droite)
 const ANCHOR_MARGIN_Y = 120; // 96 (ancrage bas) + 24 (marge haut)
 const RESIZE_STEP_PX = 24; // pas du resize clavier (échelle d'espacement figée)
 
+// Param d'URL de PRÉ-CHARGEMENT (story 7.2, FR-36) : « Écrire avec l'IA » sur la fiche pose
+// `?copilote=<contactId>`. Le sheet (monté dans le layout) le lit, ouvre le panneau et amorce
+// le champ « Écris un message à [nom] », puis CONSOMME le param (parité `?compose`).
+const COPILOTE_PARAM = "copilote";
+
 // FSM minimale : au repos, ou un tour en cours (le champ se verrouille, plume « réfléchit »).
 type Status = "idle" | "streaming";
 
@@ -87,8 +94,9 @@ type ChatItem =
   // rewindable (retenu en-session). « Annuler ce tour » = action humaine → mauve.
   | { id: number; kind: "rewind"; turnId: string; status: RewindStatus };
 
-export function CopiloteSheet() {
+function CopilotePanel({ preloadContactId }: { preloadContactId: string | null }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Un SEUL élément `motion.div` (toujours monté) MORPHE entre l'icône et le panneau via
   // Motion `layout` (FLIP : Motion MESURE la boîte en pixels et anime par transform →
@@ -454,6 +462,53 @@ export function CopiloteSheet() {
   // dogfood). La persistance reste intacte : un ancien fil se reprend UNIQUEMENT sur sélection
   // explicite dans l'historique (`showThreadList` → `openThread`, CAP-4). `mapTurns` sert encore
   // ce chemin de réouverture explicite.
+
+  // PRÉ-CHARGEMENT EXPLICITE (story 7.2, FR-36) : « Écrire avec l'IA » sur la fiche pose
+  // `?copilote=<contactId>`. C'est le SEUL déclencheur d'ouverture automatique du copilote
+  // (≠ réhydratation au refresh nu, retirée en 7-8) — il vient d'une intention humaine claire.
+  // On résout le nom serveur-side (scopé tenant, `loadComposerContextAction`), on OUVRE le
+  // panneau, et on amorce le champ « Écris un message à [nom] » UNIQUEMENT si le brouillon est
+  // vide (on ne piétine jamais une saisie en cours, AC#5). Échec de résolution (id invalide /
+  // hors-tenant) → ouverture DOUCE sans amorce (AC#6), jamais d'erreur dure. Le param est
+  // CONSOMMÉ aussitôt (router.replace sans le param) → pas de re-déclenchement au refresh
+  // (parité `ComposerSheet.close`, F14). AUCUN envoi automatique : l'utilisateur garde la main.
+  const consumePreloadRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!preloadContactId) return;
+    // Garde anti-double-application (StrictMode / re-render) : un id n'est traité qu'une fois.
+    if (consumePreloadRef.current === preloadContactId) return;
+    consumePreloadRef.current = preloadContactId;
+
+    let actif = true;
+
+    // 1. Ouvre le panneau tout de suite (l'ouverture ne dépend pas de la résolution du nom).
+    openPanel();
+
+    // 2. Consomme le param IMMÉDIATEMENT (retire `copilote`, préserve les autres) pour qu'un
+    //    refresh ne ré-ouvre pas le copilote (F14). On ne dépend pas de la résolution du nom.
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete(COPILOTE_PARAM);
+    const query = params.toString();
+    router.replace(query ? `?${query}` : "?", { scroll: false });
+
+    // 3. Résout le nom puis amorce le champ — seulement si le brouillon est vide (non destructif).
+    void loadComposerContextAction(preloadContactId)
+      .then((ctx) => {
+        if (!actif || !ctx) return; // échec/hors-tenant : ouverture douce, pas d'amorce (AC#6)
+        setDraft((prev) =>
+          prev.trim().length === 0 ? `Écris un message à ${ctx.nom}` : prev,
+        );
+      })
+      .catch(() => {
+        // Échec doux : le panneau reste ouvert sans amorce (jamais d'erreur dure).
+      });
+
+    return () => {
+      actif = false;
+    };
+    // `openPanel` est stable (useCallback) ; on ne dépend que du contactId à pré-charger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preloadContactId]);
 
   // Suit l'intention de l'utilisateur : s'il est à ≤ 48px du bas, on « colle » (auto-scroll) ;
   // dès qu'il remonte au-delà, on lâche (il lit tranquillement, le flux ne le rappelle plus).
@@ -1158,6 +1213,30 @@ function RewindAffordance({
         </span>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Lecture du param `?copilote=` sous Suspense (exigence `useSearchParams`). Le copilote
+ * reste TOUJOURS monté (icône flottante) ; ce gate ne fait que TRANSMETTRE l'id à pré-charger
+ * quand « Écrire avec l'IA » l'a posé. Absent ⇒ `null` (comportement nominal inchangé).
+ */
+function CopiloteGate() {
+  const searchParams = useSearchParams();
+  const preloadContactId = searchParams.get(COPILOTE_PARAM);
+  return <CopilotePanel preloadContactId={preloadContactId} />;
+}
+
+/**
+ * Coquille montée UNE fois dans le layout. La lecture du param `?copilote=` vit sous
+ * `<Suspense>` (exigence `useSearchParams`, parité `ComposerSheet`). `fallback={null}` =
+ * rien tant que React n'a pas lu les params (le copilote apparaît dès la résolution).
+ */
+export function CopiloteSheet() {
+  return (
+    <Suspense fallback={null}>
+      <CopiloteGate />
+    </Suspense>
   );
 }
 
