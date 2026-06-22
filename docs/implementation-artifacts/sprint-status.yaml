@@ -51,7 +51,7 @@
 #   dialogue) + rejouent R1 sur la voie conversationnelle. R1 reste le risque n.1.
 
 generated: 2026-06-16
-last_updated: 2026-06-22
+last_updated: 2026-06-22  # 7-1 ready-for-dev (story créée, cœur du pivot conversationnel)
 project: job-pipeline
 project_key: NOKEY
 tracking_system: file-system
@@ -132,12 +132,12 @@ development_status:
   # PROCHAINE ACTION : bmad-create-story sur 7-6 (contexte frais) pour detailler les AC.
   # AC des 7-x = stubs (cadrage correct-course) ; a detailler story par story avant dev.
   epic-7: in-progress
-  7-1-rediger-en-conversationnel-full-migrer-la-generation-dans-le-copilote: backlog
+  7-1-rediger-en-conversationnel-full-migrer-la-generation-dans-le-copilote: ready-for-dev
   7-2-choix-ia-manuel-par-message: backlog
   7-3-capter-le-contexte-relationnel-a-la-creation-de-contact: backlog
-  7-4-write-tool-updatecontact-handles-confirmation-rewind: backlog   # F2 / F8
+  7-4-write-tool-updatecontact-handles-confirmation-rewind: done   # F2 / F8 — code-review done 2026-06-22 (effacement null ajouté)
   7-5-write-tool-duplicatecontact-dedup: backlog                       # F4
-  7-6-durcir-idempotence-createcontact: ready-for-dev                  # F11 (bug)
+  7-6-durcir-idempotence-createcontact: done                          # F11 (bug) — code-review done 2026-06-22 (AC#4 corrigé)
   7-7-migrer-le-registre-modele-sonnet-vers-le-copilote: backlog       # F13
   7-8-quick-wins-ui-copilote: backlog                                  # F7 F9 F12 F14
   7-9-controle-du-tour-stop-edition-message: backlog                   # F5 F6
