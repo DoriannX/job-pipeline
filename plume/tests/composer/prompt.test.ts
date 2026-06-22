@@ -311,8 +311,30 @@ describe("prompt — calibrage récence/mémoire (story 7.1)", () => {
     const t = userContent("linkedin", "improve");
     expect(t).not.toMatch(/présume PAS l'oubli|ne présume pas l'oubli/i);
     expect(t).not.toMatch(/axes distincts/i);
+    // RÉCENCE = marqueur le plus discriminant du calibrage : son absence verrouille la frontière.
+    expect(t).not.toMatch(/RÉCENCE/i);
     // Et reste bien la consigne d'amélioration en place.
     expect(t).toMatch(/retravaille/i);
+  });
+
+  it("generate SANS idée (ceinture) → garde anti-oubli présente, MAIS pas le calibrage complet", () => {
+    // L'agent peut appeler composeMessage sans `idea` ; la ceinture déterministe (review 7.1)
+    // empêche le grovel même dans ce cas, sans pour autant inventer un événement.
+    const t = String(
+      (
+        buildPrompt({ ...baseInput, idea: "", canal: "linkedin" }).messages[0] as {
+          content: string;
+        }
+      ).content,
+    );
+    // Garde P1 (« ne présume pas l'oubli ») présente même sans idée.
+    expect(t).toMatch(/présume PAS l'oubli|ne présume pas l'oubli/i);
+    // Mais PAS le calibrage complet : aucune référence d'événement (n'inventerait un fait),
+    // donc RÉCENCE et les « deux axes » restent hors de cette branche.
+    expect(t).not.toMatch(/RÉCENCE/i);
+    expect(t).not.toMatch(/deux axes|axes distincts/i);
+    // Reste une prise de contact générique.
+    expect(t).toMatch(/prise de contact/i);
   });
 
   it("la consigne récence/mémoire reste HORS du système cachable (cache préservé)", () => {
