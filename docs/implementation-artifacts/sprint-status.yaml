@@ -34,14 +34,24 @@
 # - Developer typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 #
-# SPRINT MVP SCOPE (per implementation-readiness-report-2026-06-16):
-# - Build order: Epic 1 -> 2 -> 3 -> [Jalon R1 GO/PIVOT] -> 4 -> 5
+# SPRINT MVP SCOPE (revise 2026-06-22, post pivot copilote conversationnel) :
+# - Build order : Epic 1 -> 2 -> 3 -> Epic 7 (copilote = surface IA unique)
+#                 -> [Jalon R1 REDEFINI : GO/PIVOT sur la voie conversationnelle] -> 4 -> 5
+#   RAISON : le pivot (2026-06-21) redefinit la boucle produit centrale. Le Jalon R1
+#   mesure le moat ; sa metrique SM-1 (edit-distance genere->envoye) est CADUQUE en
+#   conversationnel. On ne peut pas mesurer R1 (donc pas decider GO Epic 4-6) avant
+#   d'avoir construit la voie conversationnelle (Epic 7). => Epic 7 AVANT Epic 4.
 # - Epic 6 (push) = OUT OF MVP SPRINT SCOPE. Trigger = 1er user non-founder, pas une date.
-# - Intra-epic order: 3.9 after 3.2/3.3/3.6 ; 4.3 extends 4.1.
+# - Intra-epic order Epic 7 (priorite dogfood) : 7-6 (bug F11) -> 7-4 (F2/F8) ->
+#   7-1 (coeur pivot) -> 7-8 (quick-wins) -> 7-3 -> 7-2 -> 7-9 -> 7-5 -> 7-7 -> 7-10.
+# - Intra-epic order Epic 4 : 4.3 extends 4.1.
 # - Multi-epic FRs (FR-32, FR-14, FR-16) : ne marquer 'done' que pieces completes.
+# - GATE avant Epic 4 (a faire PENDANT/APRES Epic 7, PAS une story de dev) :
+#   PM/Architecte redefinissent SM-1 (ex. % messages envoyes sans reecriture apres
+#   dialogue) + rejouent R1 sur la voie conversationnelle. R1 reste le risque n.1.
 
 generated: 2026-06-16
-last_updated: 2026-06-21
+last_updated: 2026-06-22
 project: job-pipeline
 project_key: NOKEY
 tracking_system: file-system
@@ -86,6 +96,9 @@ development_status:
   epic-3-retrospective: optional
 
   # ---- Epic 4: Aujourd'hui & relances zero-fuite (filet in-app) ----
+  # SEQUENCE APRES Epic 7 (decision sprint-planning 2026-06-22). NE PAS demarrer
+  # avant : (1) Epic 7 livre la voie conversationnelle, (2) R1/SM-1 redefini et
+  # rejoue GO sur cette voie. PIVOT R1 => rouvrir le mecanisme de Voix avant Epic 4.
   epic-4: backlog
   4-1-file-du-jour-priorisee-ecran-par-defaut: backlog
   4-2-swipe-deck-action-first-equivalents-tap: backlog
@@ -107,3 +120,26 @@ development_status:
   6-1-abonnement-web-push-permission-evenement-gagne: backlog
   6-2-cron-scheduler-envoi-push-best-effort: backlog
   epic-6-retrospective: optional
+
+  # ---- Epic 7: Copilote - surface IA unique (PIVOT dogfood 2026-06-21) ----
+  # Le copilote absorbe TOUTE la redaction assistee (conversationnel full) ;
+  # l'app garde TOUT le manuel. Composeur one-shot "Generer" deprecie (FR-6->FR-14/FR-35 re-routes).
+  # Stories-stubs : AC detailles via create-story/spec au sprint-planning.
+  # SEQUENCEMENT TRANCHE (sprint-planning 2026-06-22) : Epic 7 AVANT Epic 4 (conditionne R1).
+  # Source : docs/planning-artifacts/sprint-change-proposal-2026-06-21-pivot-copilote.md
+  # Ordre dev (priorite dogfood) : 7-6 (bug F11) -> 7-4 (F2/F8) -> 7-1 (pivot) -> 7-8 (quick-wins)
+  #   -> 7-3 -> 7-2 -> 7-9 -> 7-5 -> 7-7 -> 7-10.
+  # PROCHAINE ACTION : bmad-create-story sur 7-6 (contexte frais) pour detailler les AC.
+  # AC des 7-x = stubs (cadrage correct-course) ; a detailler story par story avant dev.
+  epic-7: in-progress
+  7-1-rediger-en-conversationnel-full-migrer-la-generation-dans-le-copilote: backlog
+  7-2-choix-ia-manuel-par-message: backlog
+  7-3-capter-le-contexte-relationnel-a-la-creation-de-contact: backlog
+  7-4-write-tool-updatecontact-handles-confirmation-rewind: backlog   # F2 / F8
+  7-5-write-tool-duplicatecontact-dedup: backlog                       # F4
+  7-6-durcir-idempotence-createcontact: ready-for-dev                  # F11 (bug)
+  7-7-migrer-le-registre-modele-sonnet-vers-le-copilote: backlog       # F13
+  7-8-quick-wins-ui-copilote: backlog                                  # F7 F9 F12 F14
+  7-9-controle-du-tour-stop-edition-message: backlog                   # F5 F6
+  7-10-canal-discord: backlog                                          # F10
+  epic-7-retrospective: optional
