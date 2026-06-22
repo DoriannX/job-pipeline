@@ -185,7 +185,7 @@ Découpage complet en epics et stories pour **Plume** (PWA d'outreach réseau, c
 
 ## Epic List
 
-*6 epics par valeur. Ordre = build order ; aucun epic ne requiert un epic futur pour fonctionner. Roadmap v1/v2/SaaS = PRD §14 (hors epics).*
+*8 epics par valeur. Ordre = build order ; aucun epic ne requiert un epic futur pour fonctionner. Roadmap v1/v2/SaaS = PRD §14 (hors epics). Epic 7 (copilote) et Epic 8 (Campagne) issus de pivots post-MVP : voir leurs origines respectives ci-dessous.*
 
 **Definition of done transverse :** chaque epic qui crée une table étend le **test cross-tenant 2-users** à cette table (AR-2) ; aucune query Drizzle nue (barrière ESLint).
 
@@ -216,6 +216,10 @@ Notification push best-effort quand une Relance est due (Web Push/VAPID via serv
 ### Epic 7: Copilote — surface IA unique (PIVOT dogfood 2026-06-21)
 Le **copilote conversationnel** devient la **seule** surface d'IA : toute la rédaction assistée y vit (l'IA pose toujours des questions avant de rédiger, et à la création d'un contact) ; l'application ne porte plus que le **manuel**. Le composeur one-shot « Générer » disparaît comme concept. Cet epic intègre officiellement le copilote (construit hors-epics via `docs/specs/spec-copilote-phase-1/2/3`) à la structure BMad, **re-route** l'infra du moat (sanitize, few-shot, `generation_events`, envoi) et absorbe les findings du dogfood. **Séquencement vs Epic 4 à trancher au sprint-planning** (conditionne le Jalon R1, à redéfinir pour la voie conversationnelle).
 **FRs covered:** FR-36, FR-37, FR-38, FR-39 (nouveaux) + re-route FR-7, FR-8, FR-9, FR-13, FR-14, FR-35 — _détail [sprint-change-proposal-2026-06-21-pivot-copilote.md](sprint-change-proposal-2026-06-21-pivot-copilote.md)_
+
+### Epic 8: Campagne — copilote de sourcing piloté par objectif (qui contacter, et quand)
+Répondre à la question qui vient *avant* la rédaction : **qui contacter maintenant, et pourquoi ?** Le founder donne un objectif en langage naturel au copilote ; après un mini-cadrage, une **campagne active** transforme l'objectif en une **liste du jour courte (3-5)**, chacun avec son *pourquoi* (scoring de pertinence LLM + signaux internes gratuits + signal job-change PDL borné), puis bascule en rédaction avec l'angle pré-chargé. Sourcing et rédaction **en un seul geste**, sur le réseau existant uniquement (jamais de scraping). Enrichment PDL **opt-in juste-à-temps, borné par l'objectif, à quota dur**. **Séquencé après la clôture d'Epic 7** (réutilise la surface copilote FR-36→39).
+**FRs covered:** FR-40 → FR-55 (16 nouveaux) + NFR-7 → NFR-10 — _détail [prd-campagne-2026-06-22/prd.md](prds/prd-campagne-2026-06-22/prd.md)_
 
 ---
 
@@ -954,3 +958,41 @@ Le sélecteur de modèle migre du composeur vers le copilote. Ajouter le 3ᵉ pa
 ### Hors epic (traçé ailleurs)
 - **F1 (process)** — garde-fou migrations (apply/check au boot dev OU check CI schéma↔migrations) → `deferred-work.md`. Non lié au pivot.
 - **F3** — compléter le tableau verdicts composeur → matière à itération prompt (portée par 7.1), pas une story.
+
+---
+
+## Epic 8: Campagne — copilote de sourcing piloté par objectif (qui contacter, et quand)
+
+> **Origine :** [prd-campagne-2026-06-22/prd.md](prds/prd-campagne-2026-06-22/prd.md) (status `final`), issu du [brief Campagne](briefs/brief-campagne-2026-06-22/brief.md). Décisions D1→D16 (brief) + P0→P11 (PRD) dans leurs decision-logs. Mémoire : `feature-campagne-qui-contacter`.
+
+Plume sait **écrire** dans la voix et **suivre** les relances ; il ne répond jamais à *qui contacter, et quand*. **Campagne** transforme un objectif NL en routine de contact ciblée : objectif cadré → liste du jour 3-5 (chacun avec son *pourquoi*) → message pré-chargé. Net-new infra : table `campagnes`, intégration **PDL serveur-only** (job-change), scoring LLM borné, instrumentation timing, feedback négatif.
+
+> **⚠️ Stories-stubs — AC à détailler via `bmad-create-story` / `bmad-spec` au sprint-planning.** Section = cadrage (correct-course recadrage 2026-06-22), pas des stories prêtes-dev.
+
+> **⚠️ Pré-requis de séquencement.** NE PAS démarrer avant : (1) clôture d'Epic 7 (Campagne réutilise la surface copilote FR-36→39 + le moat rédaction) ; (2) Jalon R1 GO confirmé (idem porte Epic 4). Open Questions PRD à trancher avant dev : **valeur du quota dur PDL** (NFR-7) et **intervalle de re-check enrichment** (FR-43).
+
+> **⚠️ Garde-fou légal (RGPD art. 14).** L'opt-in (FR-51) protège le founder ; le **contact enrichi** est un tiers non-consentant. Toléré au dogfood single-user, **bloquant avant SaaS** : information du tiers + `legal_basis` + DPA. Voir [PRD §note PM](prds/prd-campagne-2026-06-22/prd.md).
+
+### Story 8.1: Campagne active — objectif NL + cadrage + cycle d'état
+Objectif en langage naturel au copilote, **1-2 questions de cadrage** avant activation ; l'objectif cadré devient une **campagne active persistante** (table `campagnes`, scopée `user_id`). **Une seule active à la fois** : états `active | en_pause | close`, transitions nommées **idempotentes**, `close` terminal, lancer une nouvelle met l'actuelle en pause sans perte. _FR-40, FR-41, NFR-10._
+
+### Story 8.2: Scoring de pertinence LLM borné + evals
+Chaque contact du réseau reçoit un score de pertinence relatif à l'objectif actif, calculé par **LLM** (clé Claude serveur-only), **borné par la campagne**. Reproductibilité évaluée sur la **stabilité du classement** (non-déterministe par nature) via un panier d'évals figé (esprit Story 3.9). _FR-42, NFR-9._
+
+### Story 8.3: Liste du jour dans le copilote + signaux internes gratuits
+Liste **courte 3-5** présentée conversationnellement, chaque entrée en **carte structurée inline** (nom + froideur + *pourquoi* + bouton Écrire). **Split hybride :** l'app calcule le signal brut déterministe, le copilote le met en mots. Cadence **1x/jour + à la demande**. Réintègre les **dormants** liés à l'objectif **OU** porteurs d'un signal de timing. Signaux zéro-API : froideur (Epic 2) + relance en suspens (Epic 4). _FR-44, FR-45, FR-46, FR-49._
+
+### Story 8.4: Dialogue sur la liste — écarter → feedback
+Le founder peut, en conversation : **demander pourquoi** (transparence du signal), **écarter** un contact. Écarter le retire **et** réinjecte un **signal négatif** (exemple-en-contexte borné par campagne, pas un modèle entraîné) ; un fait durable (« a quitté la data ») est conservé **au niveau du contact**. _FR-47, FR-48._
+
+### Story 8.5: Enrichment job-change PDL — opt-in, bornage, quota dur
+Détection du changement de poste via **People Data Labs** (serveur-only), **uniquement sur les contacts liés à l'objectif** (FR-52), à partir des handles existants — **jamais de scraping** (réseau-only, FR-55). **Opt-in OFF par défaut**, consentement demandé pile avant le 1er appel, mémorisé, **révocable** (Réglages > Confidentialité → stoppe tout appel futur). 3 garde-fous coût cumulatifs : borne objectif + cache/re-check à intervalle + **quota dur numérique** (refus au-delà). _FR-43, FR-51, FR-52, FR-55, NFR-7, NFR-8._
+
+### Story 8.6: Provenance & transparence enrichment
+Tout contact enrichi porte sa provenance / base légale (`source`, `imported_at`, `legal_basis`, AR-16). L'app explicite **ce qui est transmis et à qui** (PDL pour l'enrichment, Claude pour scoring/rédaction) — extension de la transparence API (FR-32 / UX-DR21). Effacement cross-user prêt. _FR-53._
+
+### Story 8.7: Pré-chargement de l'angle en rédaction
+Choisir un contact dans la liste (« écris à X ») **bascule le copilote en rédaction** avec l'**angle pré-chargé par l'objectif** : sourcing et rédaction en un geste. Réutilise le moat rédaction Epic 7 (few-shot voix, sanitize, generation_events). _FR-50._
+
+### Story 8.8: Instrumentation réponse × timing (north star)
+Horodate le **signal détecté** et l'**envoi**, dérive un booléen **`bien_timé`** (parti dans les N jours d'un signal, N = 7/14 à trancher), relie au statut `répondu`. Permet de comparer le **taux de réponse bien-timé vs baseline**. _FR-54._

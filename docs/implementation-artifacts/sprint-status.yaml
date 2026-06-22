@@ -51,7 +51,7 @@
 #   dialogue) + rejouent R1 sur la voie conversationnelle. R1 reste le risque n.1.
 
 generated: 2026-06-16
-last_updated: 2026-06-22  # 7-1 ready-for-dev (story créée, cœur du pivot conversationnel)
+last_updated: 2026-06-22  # 7-3 done (PR #34) ; next = 7-2 ; recadrage correct-course : Epic 8 (Campagne) intégré + lignée copilote-phase-N documentée
 project: job-pipeline
 project_key: NOKEY
 tracking_system: file-system
@@ -132,14 +132,46 @@ development_status:
   # PROCHAINE ACTION : bmad-create-story sur 7-6 (contexte frais) pour detailler les AC.
   # AC des 7-x = stubs (cadrage correct-course) ; a detailler story par story avant dev.
   epic-7: in-progress
-  7-1-rediger-en-conversationnel-full-migrer-la-generation-dans-le-copilote: ready-for-dev
+  7-1-rediger-en-conversationnel-full-migrer-la-generation-dans-le-copilote: done   # cœur pivot — dev + code-review mergés (PR #32, 2026-06-22)
   7-2-choix-ia-manuel-par-message: backlog
-  7-3-capter-le-contexte-relationnel-a-la-creation-de-contact: backlog
+  7-3-capter-le-contexte-relationnel-a-la-creation-de-contact: done   # FR-38 — PR #34 mergé 2026-06-22
   7-4-write-tool-updatecontact-handles-confirmation-rewind: done   # F2 / F8 — code-review done 2026-06-22 (effacement null ajouté)
   7-5-write-tool-duplicatecontact-dedup: backlog                       # F4
   7-6-durcir-idempotence-createcontact: done                          # F11 (bug) — code-review done 2026-06-22 (AC#4 corrigé)
   7-7-migrer-le-registre-modele-sonnet-vers-le-copilote: backlog       # F13
-  7-8-quick-wins-ui-copilote: backlog                                  # F7 F9 F12 F14
+  7-8-quick-wins-ui-copilote: done                                     # F9+F14 livrés, F7+F12 caducs — PR #33 mergé 2026-06-22
   7-9-controle-du-tour-stop-edition-message: backlog                   # F5 F6
   7-10-canal-discord: backlog                                          # F10
   epic-7-retrospective: optional
+
+  # ---- Lignée copilote-phase-N (HORS sprint-status par conception) ----
+  # Le moteur du copilote a ete construit AVANT le pivot Epic 7, sur une lignee de specs
+  # parallele `docs/specs/spec-copilote-phase-N`, volontairement non trackee ici (epic-3
+  # etait deja done). Toutes DONE. Listees pour la tracabilite, ne PAS leur donner de statut :
+  #   - spec-copilote-phase-1-agent-chat            : done (boucle tool-use serveur, /api/agent/chat)
+  #   - spec-copilote-phase-2                       : done (UI popup chat)
+  #   - story-copilote-phase-3a-persistance         : done (CAP-1/2/3/5 persistance serveur)
+  #   - story-copilote-phase-3b-multi-fils          : done (CAP-4/6 multi-fils + retention)
+  #   - spec-resize-fenetre-copilote                : done (poignee resize en-session)
+  # Epic 7 (ci-dessus) INTEGRE officiellement cette lignee a la structure BMad.
+
+  # ---- Epic 8: Campagne - copilote de sourcing pilote par objectif (qui contacter, et quand) ----
+  # Repondre a la question AVANT la redaction : qui contacter maintenant, et pourquoi ?
+  # Objectif NL cadre -> campagne active -> liste du jour 3-5 (chacun son pourquoi) -> redaction.
+  # Net-new : table `campagnes`, enrichment PDL serveur-only (job-change), scoring LLM borne,
+  #   instrumentation timing, feedback negatif. Reseau-only, jamais de scraping.
+  # Source : docs/planning-artifacts/prds/prd-campagne-2026-06-22/prd.md (status final).
+  # SEQUENCEMENT : APRES cloture Epic 7 + Jalon R1 GO (reutilise la surface copilote FR-36->39).
+  # Stories-stubs : AC a detailler via create-story/spec avant dev (cf. epics.md Epic 8).
+  # OPEN QUESTIONS bloquantes avant dev : valeur du quota dur PDL (NFR-7) + intervalle re-check (FR-43).
+  # GARDE-FOU LEGAL : opt-in protege le founder, PAS le tiers enrichi (RGPD art.14) -> bloquant avant SaaS.
+  epic-8: backlog
+  8-1-campagne-active-objectif-nl-cadrage-cycle-etat: backlog          # FR-40 FR-41 NFR-10
+  8-2-scoring-pertinence-llm-borne-evals: backlog                      # FR-42 NFR-9
+  8-3-liste-du-jour-copilote-signaux-internes: backlog                 # FR-44 FR-45 FR-46 FR-49
+  8-4-dialogue-liste-ecarter-feedback: backlog                         # FR-47 FR-48
+  8-5-enrichment-job-change-pdl-optin-quota-dur: backlog               # FR-43 FR-51 FR-52 FR-55 NFR-7 NFR-8
+  8-6-provenance-transparence-enrichment: backlog                      # FR-53
+  8-7-prechargement-angle-redaction: backlog                           # FR-50
+  8-8-instrumentation-reponse-timing-north-star: backlog               # FR-54
+  epic-8-retrospective: optional
