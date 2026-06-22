@@ -213,6 +213,10 @@ Rendre l'app installable, résiliente, privée et accueillante : PWA installable
 Notification push best-effort quand une Relance est due (Web Push/VAPID via service worker ; iOS exige la PWA à l'écran d'accueil). Topologie déjà verrouillée par l'architecture (Vercel Cron managé → route handler authentifié `CRON_SECRET` → `next_actions` dues → `web-push`). **Build hors sprint MVP** : déclenché au premier utilisateur non-fondateur, pas à une date. La garantie zéro-fuite (Epic 4) ne dépend pas de cet epic.
 **FRs covered:** FR-26 (+ AR-14 Vercel Cron + web-push/VAPID)
 
+### Epic 7: Copilote — surface IA unique (PIVOT dogfood 2026-06-21)
+Le **copilote conversationnel** devient la **seule** surface d'IA : toute la rédaction assistée y vit (l'IA pose toujours des questions avant de rédiger, et à la création d'un contact) ; l'application ne porte plus que le **manuel**. Le composeur one-shot « Générer » disparaît comme concept. Cet epic intègre officiellement le copilote (construit hors-epics via `docs/specs/spec-copilote-phase-1/2/3`) à la structure BMad, **re-route** l'infra du moat (sanitize, few-shot, `generation_events`, envoi) et absorbe les findings du dogfood. **Séquencement vs Epic 4 à trancher au sprint-planning** (conditionne le Jalon R1, à redéfinir pour la voie conversationnelle).
+**FRs covered:** FR-36, FR-37, FR-38, FR-39 (nouveaux) + re-route FR-7, FR-8, FR-9, FR-13, FR-14, FR-35 — _détail [sprint-change-proposal-2026-06-21-pivot-copilote.md](sprint-change-proposal-2026-06-21-pivot-copilote.md)_
+
 ---
 
 ## Epic 1: Socle, identité & design-system
@@ -424,6 +428,8 @@ So that j'enrichis mon réseau en masse sans bloquer l'usage.
 **Then** elle est ignorée sans bloquer l'import ; un `ImportReport {created, merged, skipped, reasons}` s'affiche en carte-bilan non bloquante dans Réseau (UX-DR16)
 
 ## Epic 3: Le moat, bout en bout — composer, envoyer, mesurer, historiser
+
+> **⚠️ PIVOT 2026-06-21 (dogfood) — surface IA one-shot dépréciée.** La génération assistée migre du composeur one-shot vers le **copilote conversationnel** (Epic 7). L'infra reste **réutilisée, pas jetée** : `sanitize()` (AR-3), few-shot voix (FR-10/16/17), `generation_events`/SM-1 (AR-8), envoi + timeline (FR-18→21). FR-7/8/9/13/14/35 re-routés vers le copilote. Le shipped reste accessible le temps de la migration. **Jalon R1 / SM-1 à redéfinir** pour la voie conversationnelle. Cf. [sprint-change-proposal-2026-06-21-pivot-copilote.md](sprint-change-proposal-2026-06-21-pivot-copilote.md).
 
 L'epic qui **prouve le moat de bout en bout**, et le premier jalon dogfoodable. Composer (champ unique, Générer/Améliorer streaming, `sanitize()` anti-Tells, few-shot, seed + apprentissage, Haiku/Opus, fallback hors-ligne) PUIS envoyer (Copier → marquer Envoyé, texte figé, cycle de statut) PUIS mesurer (`generation_events` écrit transactionnellement avec l'envoi = instrumentation SM-1). Revue humaine obligatoire, aucun auto-send. La boucle générer → envoyer → mesurer vit dans **un seul epic** : sinon le moat serait *ressenti* sans être *mesuré*. _(FR-15 supprimé.)_
 
@@ -900,3 +906,51 @@ So that je suis ramené dans Plume au bon moment.
 **When** le dispatch a lieu
 **Then** il est best-effort et n'altère pas la garantie zéro-fuite (tenue in-app, Epic 4) (FR-27)
 **And** le service worker affiche la notification (« Relance due : X »)
+
+## Epic 7: Copilote — surface IA unique (PIVOT dogfood 2026-06-21)
+
+> **Origine :** [sprint-change-proposal-2026-06-21-pivot-copilote.md](sprint-change-proposal-2026-06-21-pivot-copilote.md), issu du [compte-rendu dogfood](../implementation-artifacts/compte-rendu-test-dogfood-copilote.md). Mémoire : `copilote-pivot-conversationnel`.
+
+Le **copilote conversationnel** devient la **seule** surface d'IA : toute la rédaction assistée y vit (l'IA pose **toujours** des questions avant de rédiger, et à la création d'un contact) ; l'application ne porte plus que le **manuel**. Le composeur one-shot « Générer » disparaît comme concept ; son infra (sanitize, few-shot, `generation_events`, envoi) est **re-routée**, pas jetée. Cet epic intègre officiellement le copilote (construit hors-epics via `docs/specs/spec-copilote-phase-1/2/3`) à la structure BMad, et absorbe les findings F1→F14 du dogfood.
+
+> **⚠️ Stories-stubs — AC à détailler via `bmad-create-story` / `bmad-spec` au sprint-planning.** Cette section est un **cadrage** (correct-course « Cadrage + stubs »), pas des stories prêtes-dev. Priorité dev dogfood : **7-6 (bug F11) → 7-4 (F2/F8) → 7-1 (pivot) → 7-8 (quick-wins)**.
+
+> **⚠️ Jalon R1 / SM-1 à redéfinir.** La distance d'édition généré→envoyé (SM-1) n'a plus de sens littéral en conversationnel. PM/Architecte : redéfinir la métrique (ex. % de messages envoyés sans réécriture après le dialogue) et **rejouer R1 sur la nouvelle voie** avant d'investir Epic 4-6.
+
+### Story 7.1: Rédiger en conversationnel full — migrer la génération dans le copilote
+Router la rédaction assistée (Générer/Améliorer, canal-aware, few-shot voix, `sanitize()`, historique de contact) à travers le **flux conversationnel** du copilote : l'IA pose toujours des questions ciblées avant de rédiger. Réutilise l'infra Epic 3 (`composeInVoice`, sanitize, generation_events). Porte les corrections de prompt **P1** (récence ≠ oubli) / **P2** (ne pas minimiser l'interaction). _Re-route FR-7, FR-8, FR-9, FR-13, FR-35._
+
+### Story 7.2: Choix IA / manuel par message
+L'utilisateur décide, message par message, s'il passe par le copilote (IA) ou écrit lui-même dans l'app (manuel). Pas d'imposition. _Nouveau FR-36._
+
+### Story 7.3: Capter le contexte relationnel à la création de contact
+À la création d'un contact, le copilote pose des questions (comment tu le connais, dernière interaction, ton) et alimente le champ historique/contexte — réutilisé pour chaque message futur. _Nouveau FR-38._
+
+### Story 7.4: Write-tool `updateContact` (+ handles) — confirmation + rewind  ⭐ F2/F8
+Tool d'édition de fiche existante (entreprise, canal préféré, `handles` {linkedin, email, phone, whatsapp}, notes, historique). Résolution via `queryContacts` (id réel), **annonce NOM + champ(s) ciblé(s) + confirmation utilisateur obligatoire** avant écriture. Ajout à `WRITE_TOOL_NAMES` (→ `didWrite` → `router.refresh`). Journalisation `action_log` (`prev_state`) pour le **rewind**. Fusion non-destructive des `handles`. _Nouveau FR-39._
+
+### Story 7.5: Write-tool `duplicateContact` — gestion dédup  F4
+Dupliquer une fiche existante (variante proche). Confirmation (source + ce qui change). Gère la tension avec `uq_contacts_user_dedup` : force une `dedup_key` distincte ou refuse/explique la copie pure. Mutualise résolution + `action_log`/rewind avec 7.4. _Nouveau FR-39._
+
+### Story 7.6: Durcir l'idempotence de `createContact`  🐛 F11
+Bug : une demande de création unique a produit deux contacts (viole `uq_contacts_user_dedup`). Durcir : dédoublonner via `dedupKey` avant insert (réactiver si existant) et/ou empêcher un second `createContact` identique dans le même tour tool-use. Investiguer `tools.server.ts` + repository contacts.
+
+### Story 7.7: Migrer le registre de modèle (palier Sonnet) vers le copilote  F13
+Le sélecteur de modèle migre du composeur vers le copilote. Ajouter le 3ᵉ palier **Sonnet** (« équilibré ») entre Haiku (« rapide », défaut conservé) et Opus (« soigné »). Mapping + libellé FR + UI côté copilote.
+
+### Story 7.8: Quick-wins UI copilote  F7 / F9 / F12 / F14
+- **F7** — rendre le markdown des tours **réhydratés** (même composant que le stream live) → liens fiches cliquables après reload.
+- **F9** — afficher le locuteur (« Moi » / « Copilote » + style par `role`).
+- **F12** — retirer l'icône étincelle redondante du composeur (doublon du bouton « Générer »).
+- **F14** — au refresh, copilote **fermé/vide** (couper la réhydratation auto CAP-2 ; reprise d'un fil seulement sur sélection explicite dans l'historique).
+
+### Story 7.9: Contrôle du tour — Stop + édition de message  F5 / F6
+- **F5** — bouton **Stop** : `AbortController` côté client + `abortSignal` propagé à `streamText` ; décider du sort de la persistance d'un tour interrompu.
+- **F6** — rééditer un message `user` passé + relancer (réécriture du fil aval vs fork) — à cadrer en spec.
+
+### Story 7.10: Canal Discord  F10
+Étendre l'union `Canal` (`@/lib/domain/enums`) avec `discord` + `ContactHandles.discord` + libellé `copy.ts` + UI (sélecteur + saisie handle) + copilote. Auditer tous les `switch`/validations exhaustifs sur `Canal`.
+
+### Hors epic (traçé ailleurs)
+- **F1 (process)** — garde-fou migrations (apply/check au boot dev OU check CI schéma↔migrations) → `deferred-work.md`. Non lié au pivot.
+- **F3** — compléter le tableau verdicts composeur → matière à itération prompt (portée par 7.1), pas une story.
