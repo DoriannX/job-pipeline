@@ -27,6 +27,7 @@ import {
   archiveDraftTool,
   createContact,
   importContacts,
+  updateContact,
 } from "@/lib/agent/tools.server";
 import { replayRewind } from "@/features/copilote/rewind";
 import type { Clock } from "@/lib/domain/time";
@@ -165,6 +166,33 @@ describe("rewind — undo exact, soft, journalisé (CAP-2/CAP-3)", () => {
     await replayRewind(deps(), "t1");
     expect(await contactsRepo().get(a.id)).toBeUndefined();
     expect((await contactsRepo().get(a.id, { includeArchived: true }))!.archivedAt).not.toBeNull();
+  });
+
+  it("7.4 (AC#6) : rewind d'updateContact RESTAURE l'état antérieur EXACT (handles complets inclus)", async () => {
+    // t1 crée la fiche (handles linkedin) ; t2 l'édite (entreprise + ajoute phone, garde linkedin).
+    const c = await createContact(
+      contactsRepo(),
+      { nom: "Amoussou", entreprise: "Acme" },
+      journal("t1", "createContact"),
+    );
+    await contactsRepo().update(c.id, { handles: { linkedin: "ancien" } }); // état de départ (non journalisé)
+    await updateContact(
+      contactsRepo(),
+      { contactId: c.id, entreprise: "Globex", handles: { phone: "+33612345678" } },
+      journal("t2", "updateContact"),
+    );
+    // Après édition : entreprise écrasée + handles fusionnés (linkedin préservé).
+    const edited = (await contactsRepo().get(c.id))!;
+    expect(edited.entreprise).toBe("Globex");
+    expect(edited.handles).toEqual({ linkedin: "ancien", phone: "+33612345678" });
+
+    // Rewind du SEUL tour d'édition (t2) : restaure l'antérieur, n'archive PAS la fiche.
+    const summary = await replayRewind(deps(), "t2");
+    expect(summary.turnIds).toEqual(["t2"]); // t1 (création) non touché
+    const restored = (await contactsRepo().get(c.id))!;
+    expect(restored).toBeDefined(); // toujours active
+    expect(restored.entreprise).toBe("Acme"); // valeur antérieure
+    expect(restored.handles).toEqual({ linkedin: "ancien" }); // handles COMPLETS d'avant (phone disparu)
   });
 
   it("RÉACTIVATION : rewind restaure l'archivedAt antérieur EXACT ; un actif préexistant est intact (CAP-3)", async () => {

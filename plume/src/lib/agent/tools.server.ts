@@ -323,6 +323,109 @@ export async function createContact(
 }
 
 // ---------------------------------------------------------------------------
+// updateContact (CAP-EDIT, story 7.4 — F2/F8) — MODIFIE une fiche existante dictée en
+// langage naturel : entreprise, canal préféré, notes, coordonnées `handles`. JAMAIS le
+// nom (touche la dedupKey → décision produit séparée) ni l'historique (tool dédié 3.10).
+// ---------------------------------------------------------------------------
+
+/** Coordonnées par canal (forme du champ `handles`), dérivée du domaine. */
+type Handles = NonNullable<Contact["handles"]>;
+
+/** Arguments validés d'`updateContact` (frontière zod du tool). `historique`/`nom` exclus. */
+export type UpdateContactInput = {
+  contactId: string;
+  entreprise?: string | null;
+  canalPrefere?: Canal | null;
+  notes?: string | null;
+  handles?: Handles | null;
+};
+
+/** Projection d'un contact modifié, renvoyée à l'agent (borne les tokens). */
+export type UpdateContactResult = {
+  id: string;
+  nom: string;
+  entreprise: string | null;
+};
+
+/** Canaux de `handles` (clés de l'objet `ContactHandles`) — pour itérer sans `any`. */
+const HANDLE_CANAUX = ["linkedin", "email", "phone", "whatsapp"] as const;
+
+/**
+ * LOGIQUE PURE d'`updateContact`, testable hors serveur : reçoit un repository DÉJÀ scopé au
+ * tenant. Résout le contact (scopé → isolement cross-tenant gratuit, AC #4) ; un id inconnu /
+ * hors tenant / archivé lève AVANT toute écriture (parité `composeMessage`/`setContactHistorique`).
+ *
+ * ⚠️ F8 : `ContactsRepository.update` REMPLACE `handles` en bloc (repositories.ts) — la fusion
+ * NON destructive doit donc se faire ICI : on lit `contact.handles` (déjà chargé) et on passe
+ * `{ ...existant, ...fourni }` au repo, sans jamais écraser un canal déjà rempli qu'on ne touche
+ * pas. Conséquence bénéfique : `prevState.handles` capture l'objet COMPLET d'avant → rewind exact.
+ *
+ * Garde patch-vide (AC #5) : si rien ne change réellement (aucun champ fourni / vides, ou handles
+ * identiques), on N'APPELLE PAS `update` (pas de faux `merged`, pas de bruit journal) — on renvoie
+ * la fiche courante. Sinon `contacts.update(id, patch, journal)` journalise op `merged` (rewindable,
+ * AC #6) — aucun nouveau chemin d'écriture, aucune op inventée.
+ */
+export async function updateContact(
+  contacts: Pick<ContactsRepository, "get" | "update">,
+  input: UpdateContactInput,
+  journal?: JournalSink,
+): Promise<UpdateContactResult> {
+  const contact = await contacts.get(input.contactId);
+  if (!contact) {
+    // Contact inconnu / hors tenant / archivé : on refuse AVANT toute écriture (sécu + AC #4).
+    throw new Error("Contact introuvable pour ce tenant.");
+  }
+
+  // Patch = UNIQUEMENT les champs qui CHANGENT réellement (anti-faux-`merged`, AC #5).
+  const patch: ContactUpdate = {};
+
+  // Scalaires texte : `nonVide` traite ""/espaces comme « non fourni » (ne clôt jamais un champ).
+  const entreprise = nonVide(input.entreprise);
+  if (entreprise !== undefined && entreprise !== (contact.entreprise ?? undefined)) {
+    patch.entreprise = entreprise;
+  }
+  const notes = nonVide(input.notes); // remplacement simple — `notes` = pense-bête perso (AC #9)
+  if (notes !== undefined && notes !== (contact.notes ?? undefined)) {
+    patch.notes = notes;
+  }
+  // canalPrefere = enum (pas de `nonVide`) : seul un changement effectif entre dans le patch.
+  if (input.canalPrefere != null && input.canalPrefere !== contact.canalPrefere) {
+    patch.canalPrefere = input.canalPrefere;
+  }
+
+  // Handles — FUSION NON DESTRUCTIVE (AC #2, #3) : on n'injecte que les canaux fournis NON vides,
+  // et seulement si AU MOINS un diffère de l'existant (sinon handles identiques → pas de patch).
+  if (input.handles) {
+    const existant: Handles = contact.handles ?? {};
+    const fournis: Handles = {};
+    let change = false;
+    for (const canal of HANDLE_CANAUX) {
+      const v = nonVide(input.handles[canal]);
+      if (v === undefined) continue; // canal absent / vide : on ne l'injecte pas
+      fournis[canal] = v;
+      if (existant[canal] !== v) change = true;
+    }
+    if (change) {
+      // { ...existant, ...fournis } : les canaux non touchés sont PRÉSERVÉS (F8, AC #2/#3).
+      patch.handles = { ...existant, ...fournis };
+    }
+  }
+
+  // Garde patch-vide (AC #5) : rien n'a changé → no-op, on renvoie la cible telle quelle.
+  if (Object.keys(patch).length === 0) {
+    return { id: contact.id, nom: contact.nom, entreprise: contact.entreprise ?? null };
+  }
+
+  const row = await contacts.update(contact.id, patch, journal);
+  if (!row) {
+    // `update` a touché 0 ligne : la cible a disparu entre `get()` et l'écriture (course /
+    // archivage concurrent). On NE masque PAS l'échec en faux succès (parité createContact).
+    throw new Error("Contact introuvable pour ce tenant.");
+  }
+  return { id: row.id, nom: row.nom, entreprise: row.entreprise ?? null };
+}
+
+// ---------------------------------------------------------------------------
 // importContacts (CAP-3) — crée N vrais contacts en bloc depuis un vrac STRUCTURÉ par
 // l'agent. Le tool ne parse PAS de texte libre : il reçoit des contacts déjà structurés.
 // ---------------------------------------------------------------------------
@@ -655,6 +758,9 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "createContact",
   "composeMessage",
   "importContacts",
+  // updateContact (story 7.4, F2/F8) : édite une fiche existante (champs + handles) → la fiche /
+  // galerie Réseau relit la vérité serveur après coup (router.refresh) par sa seule présence ici.
+  "updateContact",
   // setContactHistorique (story 3.10) : écrit `contacts.historique` → la fiche relit la vérité
   // serveur après coup (router.refresh) par sa seule présence ici.
   "setContactHistorique",
@@ -819,6 +925,69 @@ export function buildTools(userId: string, turnId: string): ToolSet {
           console.error("[agent] createContact a échoué :", err);
           return {
             error: "Création du contact momentanément indisponible. Réessaie plus tard.",
+          };
+        }
+      },
+    }),
+
+    // --- updateContact (CAP-EDIT, story 7.4) : MODIFIE une fiche existante (champs + handles). ---
+    updateContact: tool({
+      description:
+        "Modifie une fiche contact EXISTANTE : entreprise, canal préféré, notes, et/ou " +
+        "coordonnées (handles : LinkedIn, e-mail, téléphone, WhatsApp). Les coordonnées sont " +
+        "FUSIONNÉES de façon non destructive : ajouter un canal n'écrase jamais ceux déjà " +
+        "remplis (donne uniquement les canaux à poser/mettre à jour). Ne modifie NI le nom NI " +
+        "l'historique (l'historique a son propre outil setContactHistorique). " +
+        "RÉSOUS D'ABORD LE CONTACT via queryContacts (id réel, jamais inventé), puis ANNONCE à " +
+        "l'utilisateur le NOM (et l'entreprise) du contact ET le(s) champ(s) que tu vas modifier, " +
+        "et n'écris qu'après son accord — jamais sur une demande ambiguë.",
+      inputSchema: z.object({
+        contactId: z
+          .string()
+          .trim()
+          .min(1)
+          .max(64)
+          .describe("Id du contact à modifier (obtenu via queryContacts)."),
+        entreprise: z
+          .string()
+          .trim()
+          .max(200)
+          .optional()
+          .describe("Nouvelle entreprise (optionnel)."),
+        canalPrefere: z
+          .enum(CANAUX)
+          .optional()
+          .describe("Nouveau canal préféré (optionnel)."),
+        notes: z
+          .string()
+          .trim()
+          .max(2000)
+          .optional()
+          .describe("Notes perso (remplace les notes existantes) (optionnel)."),
+        handles: z
+          .object({
+            linkedin: z.string().trim().max(320).optional(),
+            email: z.string().trim().email().max(320).optional(),
+            phone: z.string().trim().max(64).optional(),
+            whatsapp: z.string().trim().max(64).optional(),
+          })
+          .optional()
+          .describe(
+            "Coordonnées à ajouter/mettre à jour (fusion non destructive ; donne seulement les canaux concernés).",
+          ),
+      }),
+      execute: async (args) => {
+        try {
+          const gate = await forUser(userId);
+          return await updateContact(
+            gate.contacts,
+            args,
+            makeJournal("updateContact"),
+          );
+        } catch (err) {
+          console.error("[agent] updateContact a échoué :", err);
+          return {
+            error: "Modification du contact momentanément indisponible. Réessaie plus tard.",
           };
         }
       },

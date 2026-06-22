@@ -18,7 +18,7 @@ import {
   forUserDb,
   type JournalSink,
 } from "@/lib/db";
-import { createContact, importContacts } from "@/lib/agent/tools.server";
+import { createContact, importContacts, updateContact } from "@/lib/agent/tools.server";
 import type { Clock } from "@/lib/domain/time";
 
 import { actionLog, contacts, makeTestDb, seedUsers, type TestDb } from "./harness";
@@ -209,5 +209,41 @@ describe("action_log — capture prevState pour merge/réactivation (CAP-3)", ()
     const rows = await logRows();
     expect(rows).toHaveLength(1); // SEULE l'entrée du tour 1 — aucun faux `merged` au tour 2
     expect(rows[0]!.turnId).toBe("t1");
+  });
+
+  it("7.4 (AC#6) : updateContact journalise op='merged' + prevState des champs écrasés (handles inclus)", async () => {
+    const c = await repo().create({
+      nom: "Amoussou",
+      entreprise: "Acme",
+      handles: { linkedin: "ancien" },
+    });
+    await updateContact(
+      repo(),
+      { contactId: c.id, entreprise: "Globex", handles: { phone: "+33612345678" } },
+      makeJournal("t2", "updateContact"),
+    );
+
+    const rows = await logRows();
+    expect(rows).toHaveLength(1); // seule l'édition est journalisée (création directe non journalisée)
+    const merged = rows.find((r) => r.turnId === "t2");
+    expect(merged?.op).toBe("merged");
+    expect(merged?.toolName).toBe("updateContact");
+    // prevState capture l'ANTÉRIEUR de chaque champ écrasé → rewind exact (handles COMPLET d'avant).
+    const prev = merged?.prevState as {
+      entreprise?: string | null;
+      handles?: { linkedin?: string };
+    };
+    expect(prev.entreprise).toBe("Acme");
+    expect(prev.handles).toEqual({ linkedin: "ancien" });
+  });
+
+  it("7.4 (AC#5) : updateContact no-op n'écrit AUCUNE entrée de journal", async () => {
+    const c = await repo().create({ nom: "Inchangé", entreprise: "Acme" });
+    await updateContact(
+      repo(),
+      { contactId: c.id, entreprise: "Acme" }, // identique → no-op
+      makeJournal("t2", "updateContact"),
+    );
+    expect(await logRows()).toHaveLength(0); // aucun faux `merged`
   });
 });

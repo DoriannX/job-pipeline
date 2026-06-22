@@ -23,6 +23,7 @@ describe("le rewind/undo n'est jamais exposé à l'agent (Constraint inc.4)", ()
         "queryContacts",
         "seedContacts",
         "createContact",
+        "updateContact",
         "importContacts",
         "composeMessage",
         "setContactHistorique",
@@ -47,6 +48,7 @@ describe("le rewind/undo n'est jamais exposé à l'agent (Constraint inc.4)", ()
       "importContacts",
       "seedContacts",
       "setContactHistorique",
+      "updateContact",
     ]);
     expect(WRITE_TOOL_NAMES.has("rewind")).toBe(false);
   });
