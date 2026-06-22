@@ -83,7 +83,19 @@ export type ContactsRepository = {
     id: string,
     opts?: { includeArchived?: boolean },
   ) => Promise<Contact | undefined>;
-  update: (id: string, data: ContactUpdate) => Promise<Contact | undefined>;
+  /**
+   * Met à jour les champs FOURNIS d'un contact (recalcule `dedupKey` si un champ-clé bouge).
+   * `journal` (copilote — fusion par résolution de nom, story 7.6) est une SINK optionnelle :
+   * fournie, la mutation s'exécute dans UNE transaction et l'entrée `action_log` (op `merged`,
+   * ou `reactivated` si `archivedAt` repasse à `null` ; `prevState` = valeurs antérieures des
+   * champs écrasés) y est écrite ATOMIQUEMENT → l'enrichissement devient rewindable (parité
+   * `create`). Absente ⇒ chemin hérité non journalisé (UI manuelle, import, rewind), inchangé.
+   */
+  update: (
+    id: string,
+    data: ContactUpdate,
+    journal?: JournalSink,
+  ) => Promise<Contact | undefined>;
   /**
    * SOFT-DELETE (archivage) d'un contact ACTIF : pose `archived_at`, jamais de `DELETE`.
    * `journal` (copilote — archiveContact) est une SINK optionnelle : fournie, l'archivage
@@ -389,51 +401,97 @@ export function contactsRepository(scoped: ScopedDb): ContactsRepository {
       return scoped.findFirst(contacts, eq(contacts.id, id), opts);
     },
 
-    async update(id, data) {
-      // On ne touche que les champs fournis ; `updatedAt` est rafraîchi via l'horloge.
-      // `id`/`userId` ne sont jamais dans `data` (le type ContactUpdate les exclut),
-      // et l'historique (createdAt, dernierContactAt non fourni) reste intact.
-      const set: Record<string, unknown> = { updatedAt: now(scoped.now) };
-      if (data.nom !== undefined) set.nom = data.nom;
-      if (data.entreprise !== undefined) set.entreprise = data.entreprise;
-      if (data.canalPrefere !== undefined) set.canalPrefere = data.canalPrefere;
-      if (data.handles !== undefined) set.handles = data.handles;
-      if (data.notes !== undefined) set.notes = data.notes;
-      if (data.historique !== undefined) set.historique = data.historique;
-      if (data.dernierContactAt !== undefined)
-        set.dernierContactAt = data.dernierContactAt;
-      if (data.source !== undefined) set.source = data.source;
-      if (data.importedAt !== undefined) set.importedAt = data.importedAt;
-      if (data.legalBasis !== undefined) set.legalBasis = data.legalBasis;
-      // Réactivation explicite (fusion d'import) : on autorise `archived_at` dans le set.
-      if (data.archivedAt !== undefined) set.archivedAt = data.archivedAt;
+    async update(id, data, journal) {
+      // Construit le `set` (champs FOURNIS uniquement) et recalcule `dedupKey` si un champ-clé
+      // bouge (nom/entreprise/email des handles). `db` = porte scopée normale OU handle
+      // transactionnel (`tx`) quand on journalise. Renvoie aussi la ligne ANTÉRIEURE (lue
+      // includeArchived pour capturer `archivedAt`) quand on en a besoin (clé ou journal).
+      const applique = async (
+        db: ScopedDb,
+      ): Promise<{ row: Contact | undefined; current: Contact | undefined }> => {
+        // On ne touche que les champs fournis ; `updatedAt` est rafraîchi via l'horloge.
+        // `id`/`userId` ne sont jamais dans `data` (le type ContactUpdate les exclut),
+        // et l'historique (createdAt, dernierContactAt non fourni) reste intact.
+        const set: Record<string, unknown> = { updatedAt: now(db.now) };
+        if (data.nom !== undefined) set.nom = data.nom;
+        if (data.entreprise !== undefined) set.entreprise = data.entreprise;
+        if (data.canalPrefere !== undefined) set.canalPrefere = data.canalPrefere;
+        if (data.handles !== undefined) set.handles = data.handles;
+        if (data.notes !== undefined) set.notes = data.notes;
+        if (data.historique !== undefined) set.historique = data.historique;
+        if (data.dernierContactAt !== undefined)
+          set.dernierContactAt = data.dernierContactAt;
+        if (data.source !== undefined) set.source = data.source;
+        if (data.importedAt !== undefined) set.importedAt = data.importedAt;
+        if (data.legalBasis !== undefined) set.legalBasis = data.legalBasis;
+        // Réactivation explicite (fusion d'import) : on autorise `archived_at` dans le set.
+        if (data.archivedAt !== undefined) set.archivedAt = data.archivedAt;
 
-      // Si un champ qui DÉTERMINE la clé de dédup change (nom, entreprise, email
-      // des handles), on la recalcule à partir de la ligne courante fusionnée avec
-      // les changements, pour garder l'index unique cohérent (AR-9). On lit la ligne
-      // en INCLUANT les archivés (une fusion d'import peut viser un contact archivé).
-      const touchesKey =
-        data.nom !== undefined ||
-        data.entreprise !== undefined ||
-        data.handles !== undefined;
-      if (touchesKey) {
-        const current = await scoped.findFirst(contacts, eq(contacts.id, id), {
-          includeArchived: true,
-        });
-        if (current) {
-          const nom = data.nom ?? current.nom;
-          const entreprise =
-            data.entreprise !== undefined ? data.entreprise : current.entreprise;
-          const email =
-            data.handles !== undefined
-              ? data.handles?.email
-              : current.handles?.email;
-          set.dedupKey = computeDedupKey({ nom, entreprise, email });
+        // Si un champ qui DÉTERMINE la clé de dédup change (nom, entreprise, email des
+        // handles), on la recalcule à partir de la ligne courante fusionnée avec les
+        // changements (AR-9). On a aussi besoin de la ligne courante pour le `prevState`
+        // journalisé → on la lit dès que la clé bouge OU que `journal` est fourni.
+        const touchesKey =
+          data.nom !== undefined ||
+          data.entreprise !== undefined ||
+          data.handles !== undefined;
+        let current: Contact | undefined;
+        if (touchesKey || journal) {
+          current = await db.findFirst(contacts, eq(contacts.id, id), {
+            includeArchived: true,
+          });
+          if (current && touchesKey) {
+            const nom = data.nom ?? current.nom;
+            const entreprise =
+              data.entreprise !== undefined ? data.entreprise : current.entreprise;
+            const email =
+              data.handles !== undefined
+                ? data.handles?.email
+                : current.handles?.email;
+            set.dedupKey = computeDedupKey({ nom, entreprise, email });
+          }
         }
+
+        const [row] = await db.update(contacts, set, eq(contacts.id, id));
+        return { row, current };
+      };
+
+      // Chemin hérité NON journalisé (UI manuelle, import, rewind) : comportement inchangé.
+      if (!journal) {
+        const { row } = await applique(scoped);
+        return row;
       }
 
-      const [row] = await scoped.update(contacts, set, eq(contacts.id, id));
-      return row;
+      // Chemin JOURNALISÉ (copilote — fusion par résolution de nom, story 7.6) : mutation +
+      // entrée `action_log` dans UNE transaction (parité `create`) → fusion rewindable.
+      return scoped.transaction(async (db) => {
+        const { row, current } = await applique(db);
+        if (row && current) {
+          // `prevState` = valeur ANTÉRIEURE de chaque champ écrasé (le rewind la restaure,
+          // jamais un re-archivage aveugle — CAP-3). On capture les MÊMES champs que le merge
+          // de `createContactRow` pour une journalisation strictement parallèle.
+          const prevState: ActionLogPrevState = {};
+          if (data.entreprise !== undefined) prevState.entreprise = current.entreprise;
+          if (data.canalPrefere !== undefined)
+            prevState.canalPrefere = current.canalPrefere;
+          if (data.handles !== undefined) prevState.handles = current.handles;
+          if (data.notes !== undefined) prevState.notes = current.notes;
+          if (data.historique !== undefined) prevState.historique = current.historique;
+          if (data.dernierContactAt !== undefined)
+            prevState.dernierContactAt = current.dernierContactAt;
+          // Réactivation = `archivedAt` repasse de non-null à null ; son inverse restaure
+          // l'`archivedAt` antérieur. Sinon simple enrichissement = op `merged`.
+          const reactivated = data.archivedAt === null && current.archivedAt != null;
+          if (reactivated) prevState.archivedAt = current.archivedAt;
+          await journal(db, {
+            entityType: "contact",
+            entityId: row.id,
+            op: reactivated ? "reactivated" : "merged",
+            prevState,
+          });
+        }
+        return row;
+      });
     },
 
     async remove(id, journal) {

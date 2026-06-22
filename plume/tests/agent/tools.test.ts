@@ -242,6 +242,64 @@ describe("createContact — vraie donnée 'manuel', dédup, scope (inc.3 CAP-1)"
     expect(await repoA().remove(res.id)).toBe(true);
     expect(await repoA().list()).toHaveLength(0);
   });
+
+  // --- Durcissement idempotence F11 (story 7.6) : clés `name:` divergentes ---
+
+  it("F11 (AC#1) : 2 émissions même personne, l'une SANS entreprise puis l'autre AVEC → 1 fiche, entreprise retenue", async () => {
+    // REPRO du bug : tour 1 sans entreprise (clé `name:sophie martin|`), tour 2 avec
+    // (clé `name:sophie martin|acme`) → clés divergentes → 2 fiches sur le code d'origine.
+    await createContact(repoA(), { nom: "Sophie Martin" });
+    await createContact(repoA(), { nom: "Sophie Martin", entreprise: "Acme" });
+    const rows = await repoA().list();
+    expect(rows).toHaveLength(1);
+    // L'entreprise NON VIDE fournie l'emporte (le vide n'écrase pas, ici il enrichit).
+    expect(rows[0]!.entreprise).toBe("Acme");
+  });
+
+  it("F11 (AC#1, ordre inverse) : AVEC entreprise puis SANS → 1 fiche, entreprise préservée", async () => {
+    await createContact(repoA(), { nom: "Sophie Martin", entreprise: "Acme" });
+    await createContact(repoA(), { nom: "sophie martin" }); // re-mention sans entreprise
+    const rows = await repoA().list();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.entreprise).toBe("Acme"); // le vide n'efface jamais le connu
+  });
+
+  it("F11 (AC#3) : homonymes d'entreprises EXPLICITES DIFFÉRENTES → 2 fiches (anti-faux-positif)", async () => {
+    await createContact(repoA(), { nom: "Jean Dupont", entreprise: "Acme" });
+    await createContact(repoA(), { nom: "Jean Dupont", entreprise: "Globex" });
+    const rows = await repoA().list();
+    expect(rows).toHaveLength(2);
+    expect(rows.map((c) => c.entreprise).sort()).toEqual(["Acme", "Globex"]);
+  });
+
+  it("F11 (AC#2) : casse/accents divergents sans entreprise → 1 fiche (non régressé)", async () => {
+    await createContact(repoA(), { nom: "Élise Martin" });
+    await createContact(repoA(), { nom: "elise  martin" });
+    expect(await repoA().list()).toHaveLength(1);
+  });
+
+  it("F11 (AC#5) : avec e-mail, la clé `email:` prime — la résolution par nom ne s'applique PAS", async () => {
+    // Même e-mail, entreprises divergentes → dédup par e-mail (1 fiche), inchangé.
+    await createContact(repoA(), { nom: "Léo", email: "leo@x.test" });
+    await createContact(repoA(), { nom: "Léo", entreprise: "Acme", email: "leo@x.test" });
+    expect(await repoA().list()).toHaveLength(1);
+    // Un appel AVEC e-mail NE déclenche PAS la résolution par nom : sa clé `email:` vit dans
+    // un espace distinct de la fiche name-keyée homonyme → 2 fiches (email prioritaire, AC#5).
+    await createContact(repoB(), { nom: "Mia" }); // clé `name:mia|`
+    await createContact(repoB(), { nom: "Mia", email: "mia@x.test" }); // clé `email:` → distincte
+    expect(await repoB().list()).toHaveLength(2);
+  });
+
+  it("F11 (AC#8) : la résolution par nom est SCOPÉE tenant (aucune fusion cross-tenant)", async () => {
+    // Même personne « divergente » chez A ET chez B : chacun garde SA fiche unique.
+    await createContact(repoA(), { nom: "Sam" });
+    await createContact(repoA(), { nom: "Sam", entreprise: "Acme" });
+    await createContact(repoB(), { nom: "Sam" });
+    expect(await repoA().list()).toHaveLength(1);
+    expect(await repoB().list()).toHaveLength(1);
+    expect((await repoA().list())[0]!.entreprise).toBe("Acme");
+    expect((await repoB().list())[0]!.entreprise).toBeNull();
+  });
 });
 
 describe("importContacts — vrac → bulkCreate, dédup, cap, scope (inc.3 CAP-3)", () => {

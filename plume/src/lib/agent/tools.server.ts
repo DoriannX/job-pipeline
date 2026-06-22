@@ -22,12 +22,14 @@ import { z } from "zod";
 import {
   actionLogRepository,
   forUser,
+  type Contact,
   type ContactsRepository,
   type MessagesRepository,
   type BulkCreateItem,
   type JournalSink,
 } from "@/lib/db";
 import { CANAUX, type Canal } from "@/lib/domain/enums";
+import { computeDedupKey, normalizeName } from "@/lib/domain/dedup";
 import type { Tone } from "@/features/composer/generation";
 import { clampHistorique, composeInVoice } from "@/lib/composer/pipeline.server";
 import { sanitize } from "@/lib/copy";
@@ -198,18 +200,92 @@ export type CreateContactInput = {
   canalPrefere?: Canal | null;
 };
 
+/** Renvoie `s` trimmé s'il est non vide, sinon `undefined` (vide ≠ valeur). */
+function nonVide(s: string | null | undefined): string | undefined {
+  const t = (s ?? "").trim();
+  return t.length > 0 ? t : undefined;
+}
+
+/**
+ * Résout, parmi les contacts ACTIFS du tenant, un HOMONYME existant que `createContact`
+ * doit FUSIONNER plutôt que doubler — UNIQUEMENT quand le repo n'y arriverait pas seul
+ * (clés `dedupKey` divergentes). Renvoie `undefined` si aucun homonyme fusionnable, ou si
+ * la clé converge déjà (le repo `create` dédupe alors nativement → on laisse passer).
+ *
+ * Règle de fusion (anti-faux-positif, AC #3) : on ne fusionne que si l'entreprise existante
+ * est VIDE, ou l'entreprise fournie est VIDE, ou les deux sont ÉGALES (normalisées). Deux
+ * homonymes d'entreprises EXPLICITES DIFFÉRENTES (« Jean Dupont @ Acme » vs « @ Globex »)
+ * restent DEUX fiches.
+ */
+async function resolveActiveHomonym(
+  contacts: Pick<ContactsRepository, "list">,
+  input: CreateContactInput,
+): Promise<Contact | undefined> {
+  const cibleNom = normalizeName(input.nom);
+  const cibleEntreprise = normalizeName(input.entreprise);
+  const cibleCle = computeDedupKey({ nom: input.nom, entreprise: input.entreprise });
+  // `list()` est DÉJÀ scopée au tenant (porte `forUser`) → isolement cross-tenant gratuit
+  // (AC #8) : un homonyme chez un autre user n'est jamais visible ici.
+  for (const c of await contacts.list()) {
+    if (normalizeName(c.nom) !== cibleNom) continue;
+    const ce = normalizeName(c.entreprise);
+    const fusionnable = ce === "" || cibleEntreprise === "" || ce === cibleEntreprise;
+    if (!fusionnable) continue; // entreprise explicite différente → fiche distincte (AC #3)
+    // Clé déjà convergente ⇒ `create` fusionne nativement (journalisé) : rien à résoudre ici.
+    if (computeDedupKey({ nom: c.nom, entreprise: c.entreprise }) === cibleCle) {
+      return undefined;
+    }
+    return c; // clé divergente MAIS même personne → cible de fusion enrichissante
+  }
+  return undefined;
+}
+
 /**
  * LOGIQUE PURE de `createContact`, testable hors serveur : reçoit un repository DÉJÀ
  * scopé au tenant. Délègue au VRAI `contactsRepository.create` (jamais d'insert direct —
  * Archi #1), en taguant `source="manuel"` (VRAIE donnée, JAMAIS `"seed"`). La dédup par
  * `dedupKey` du repository fait fusionner une collision au lieu de doubler ; le contact
  * reste réversible par le soft-delete existant.
+ *
+ * DURCISSEMENT IDEMPOTENCE (story 7.6, bug F11) : SANS e-mail, deux émissions de
+ * `createContact` pour la MÊME personne avec une `entreprise` DIVERGENTE (présente d'un
+ * côté, absente de l'autre) calculent deux `dedupKey` `name:` DIFFÉRENTES → le repo ne
+ * voit aucune collision et crée DEUX fiches. On résout donc d'abord un homonyme ACTIF par
+ * nom normalisé et on ENRICHIT la fiche existante (fusion JOURNALISÉE → rewindable, AC #6),
+ * au lieu de créer une ligne à clé divergente. AVEC e-mail, la clé `email:` reste
+ * prioritaire et la dédup du repo est inchangée (AC #5). Fix SCOPÉ au tool : `createContactRow`
+ * (partagé par UI manuelle / seed / import) n'est PAS touché (AC #7).
  */
 export async function createContact(
-  contacts: Pick<ContactsRepository, "create">,
+  contacts: Pick<ContactsRepository, "create" | "list" | "update">,
   input: CreateContactInput,
   journal?: JournalSink,
 ): Promise<CreateContactResult> {
+  // Résolution par nom UNIQUEMENT sans e-mail (la clé `email:` reste prioritaire, AC #5).
+  if (!input.email) {
+    const cible = await resolveActiveHomonym(contacts, input);
+    if (cible) {
+      // Entreprise canonique = la valeur NON VIDE l'emporte (le vide n'écrase jamais une
+      // entreprise déjà connue — parité merge `createContactRow`). On ENRICHIT via `update`
+      // journalisé (op `merged`/`reactivated`, `prevState` capturé → rewind exact, AC #6).
+      const entrepriseFournie = nonVide(input.entreprise);
+      const row = await contacts.update(
+        cible.id,
+        {
+          ...(entrepriseFournie ? { entreprise: entrepriseFournie } : {}),
+          ...(input.canalPrefere != null ? { canalPrefere: input.canalPrefere } : {}),
+        },
+        journal,
+      );
+      const fiche = row ?? cible;
+      return {
+        id: fiche.id,
+        nom: fiche.nom,
+        entreprise: fiche.entreprise ?? entrepriseFournie ?? null,
+      };
+    }
+  }
+
   const row = await contacts.create(
     {
       nom: input.nom,

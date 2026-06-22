@@ -173,4 +173,28 @@ describe("action_log — capture prevState pour merge/réactivation (CAP-3)", ()
       archivedAt,
     );
   });
+
+  it("F11 (AC#6) : fusion par RÉSOLUTION DE NOM (clé divergente) journalise op='merged', PAS un faux 'created'", async () => {
+    // Story 7.6 : SANS e-mail, l'enrichissement passe par `update` journalisé (pas `create`).
+    // tour 1 = création (clé `name:sophie|`), tour 2 = même personne AVEC entreprise → la
+    // résolution par nom fusionne dans la 1ʳᵉ fiche au lieu de doubler à clé divergente.
+    await createContact(repo(), { nom: "Sophie" }, makeJournal("t1", "createContact"));
+    await createContact(
+      repo(),
+      { nom: "Sophie", entreprise: "Acme" },
+      makeJournal("t2", "createContact"),
+    );
+
+    expect(await repo().list()).toHaveLength(1); // 1 fiche, pas 2
+    const rows = await logRows();
+    expect(rows).toHaveLength(2);
+    const t1 = rows.find((r) => r.turnId === "t1");
+    const t2 = rows.find((r) => r.turnId === "t2");
+    expect(t1?.op).toBe("created");
+    // L'enrichissement est un MERGE (jamais un faux `created`) → rewindable.
+    expect(t2?.op).toBe("merged");
+    expect(t2?.toolName).toBe("createContact");
+    // prevState capture l'entreprise ANTÉRIEURE (vide/null) → le rewind la restaurera.
+    expect((t2?.prevState as { entreprise?: string | null }).entreprise ?? null).toBeNull();
+  });
 });
