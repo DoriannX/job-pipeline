@@ -33,10 +33,21 @@ export function ContactDetailActions({ contact }: ContactDetailActionsProps) {
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  // Ouvre le Composeur EN FLOW (story 3.1) : on pose `?compose=<id>` SANS quitter la fiche
-  // (même path préservé). Le ComposerSheet, monté une fois dans le layout, lit ce param et
-  // monte la bottom-sheet. C'est le point d'entrée dogfoodable (la File du jour = Epic 4).
-  function ecrire() {
+  // Choix IA / manuel PAR MESSAGE (story 7.2, FR-36) : la fiche propose DEUX entrées
+  // d'écriture explicites — l'app porte le manuel, le copilote porte l'IA (pivot 2026-06-21).
+  // On ne quitte jamais la fiche : on pose un seul param de query (path préservé), lu par la
+  // surface montée une fois dans le layout (ComposerSheet pour `?compose`, CopiloteSheet pour
+  // `?copilote`). Aucune n'est imposée — l'utilisateur tranche message par message.
+
+  // « Écrire avec l'IA » → ouvre le COPILOTE pré-chargé sur ce contact (amorce « Écris un
+  // message à [nom] » ; il pose ensuite ses questions de contexte). Aucun envoi automatique.
+  function ecrireAvecIA() {
+    router.push(`${pathname}?copilote=${contact.id}`, { scroll: false });
+  }
+
+  // « Écrire moi-même » → ouvre le COMPOSEUR manuel-only (flux `?compose` existant) : saisie,
+  // canal, brouillon immortel, Copier, Marquer envoyé. Plus aucune affordance de génération IA.
+  function ecrireMoiMeme() {
     router.push(`${pathname}?compose=${contact.id}`, { scroll: false });
   }
 
@@ -88,15 +99,28 @@ export function ContactDetailActions({ contact }: ContactDetailActionsProps) {
 
   return (
     <>
-      {/* — Écrire — action PRIMAIRE chunky (mauve plein) : ouvre le Composeur en flow. — */}
-      <button
-        type="button"
-        onClick={ecrire}
-        className="inline-flex w-fit items-center gap-2 self-center rounded-button border-[length:--border-width-ink] border-ink bg-accent px-6 py-3 font-body text-button font-bold text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2"
-      >
-        <Icon name="sparkle" size={20} />
-        Écrire
-      </button>
+      {/* — DEUX entrées d'écriture (story 7.2, FR-36). Aucune n'est imposée. —
+          « Écrire avec l'IA » = action PRIMAIRE chunky (mauve plein) → copilote pré-chargé.
+          « Écrire moi-même » = action SECONDAIRE lisible (contour encre) → composeur manuel.
+          Les deux portent un libellé FR + une icône maison (jamais d'emoji). */}
+      <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+        <button
+          type="button"
+          onClick={ecrireAvecIA}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-accent px-6 py-3 font-body text-button font-bold text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2 sm:w-fit"
+        >
+          <Icon name="sparkle" size={20} />
+          Écrire avec l&apos;IA
+        </button>
+        <button
+          type="button"
+          onClick={ecrireMoiMeme}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-button border-[length:--border-width-ink] border-ink bg-surface-card px-6 py-3 font-body text-button font-bold text-ink shadow-[var(--shadow-button-secondary)] outline-accent outline-offset-2 focus-visible:outline-2 sm:w-fit"
+        >
+          <Icon name="edit" size={20} />
+          Écrire moi-même
+        </button>
+      </div>
 
       <div className="flex items-center gap-3">
         <button
