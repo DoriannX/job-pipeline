@@ -115,6 +115,12 @@ export type CreateDraftInput = {
   canal: Canal;
   /** Texte du brouillon = sortie SANITIZÉE finale du pipeline voix (NOT NULL, AR-5). */
   texte: string;
+  /**
+   * `false` = brouillon tapé MAIN (story 7-2, « Enregistrer le brouillon » du composeur) :
+   * `genere_par_ia=false`, `texte_genere=null` (pas de sortie IA à conserver pour SM-1).
+   * Défaut `true` = brouillon rédigé par l'agent (parité historique).
+   */
+  genereParIa?: boolean;
 };
 
 /** Entrée de `markSent` — la frontière du repository (jamais `userId`, imposé par la porte). */
@@ -232,13 +238,15 @@ export function messagesRepository(scoped: ScopedDb): MessagesRepository {
         // sortie IA, non encore éditée — si l'humain l'édite puis l'envoie plus tard, la
         // distance d'édition généré→envoyé (SM-1) reste calculable. JAMAIS d'`envoye_at`,
         // JAMAIS de `generation_events`, JAMAIS de `dernier_contact_at` (non contacté).
+        const ia = input.genereParIa ?? true;
         const [message] = await db.insert(messages, {
           contactId: input.contactId,
           canal: input.canal,
           texte: input.texte,
-          texteGenere: input.texte,
+          // Sortie IA conservée pour SM-1 UNIQUEMENT si l'IA a rédigé ; brouillon manuel ⇒ null.
+          texteGenere: ia ? input.texte : null,
           statut: "brouillon",
-          genereParIa: true,
+          genereParIa: ia,
           envoyeAt: null,
           createdAt: ts,
           updatedAt: ts,

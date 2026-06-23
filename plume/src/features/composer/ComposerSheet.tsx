@@ -37,7 +37,7 @@ import {
   saveDraft,
 } from "@/lib/offline/localStore";
 
-import { markSentAction } from "@/features/messages/send";
+import { markSentAction, markDraftAction } from "@/features/messages/send";
 
 import {
   loadComposerContextAction,
@@ -257,6 +257,30 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
     }
   }
 
+  // Enregistrer le brouillon (story 7-2) : garde le texte tapé MAIN en brouillon dans la
+  // timeline — sans l'envoyer. Restera éditable (Modifier) et promouvable « envoyé ». Mirror
+  // de `marquerEnvoye` ; à succès on efface le brouillon local (il vit désormais en base) + ferme.
+  async function enregistrerBrouillon() {
+    if (sending) return;
+    if (text.trim().length === 0) return;
+
+    setSending(true);
+    setSoftError(null);
+    try {
+      const result = await markDraftAction({ contactId, texte: text, canal });
+      if (!result.ok) {
+        setSoftError(result.error);
+        setSending(false);
+        return;
+      }
+      await deleteDraft(contactId).catch(() => {});
+      close();
+    } catch {
+      setSoftError("L'enregistrement a échoué. Réessaie dans un instant.");
+      setSending(false);
+    }
+  }
+
   const nom = context?.nom ?? "ce contact";
   const champVide = text.trim().length === 0;
   // « Marquer Envoyé » est dispo dès que le champ est non vide ⇒ un message TAPÉ MAIN est
@@ -381,6 +405,13 @@ function ComposerSheetPanel({ contactId }: ComposerSheetPanelProps) {
               label="Copier"
               onClick={copier}
               disabled={champVide}
+            />
+            {/* Enregistrer le brouillon (story 7-2) : garde le texte en brouillon, sans envoyer. */}
+            <IconAction
+              icon="edit"
+              label="Enregistrer le brouillon"
+              onClick={enregistrerBrouillon}
+              disabled={sendDisabled}
             />
             {/* Marquer Envoyé : commit FINAL (FR-21/FR-18). Dispo dès que le champ est non
                 vide — un message tapé main est envoyable directement. */}
