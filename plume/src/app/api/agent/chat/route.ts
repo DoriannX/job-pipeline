@@ -76,6 +76,10 @@ export async function POST(request: Request): Promise<Response> {
       conversationId: conversationId ?? null,
       message,
       repos: { conversations: gate.conversations, chatMessages: gate.chatMessages },
+      // F5 (story 7-9) : on propage le signal de la requête. Quand le client clique « Stop »,
+      // son `AbortController` annule le `fetch` → `request.signal` s'abort → `streamText` cesse
+      // et aucun tour `assistant` partiel n'est persisté (le tour `user`, écrit avant, reste).
+      abortSignal: request.signal,
     });
   } catch (err) {
     const message =

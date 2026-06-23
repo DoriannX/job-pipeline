@@ -181,6 +181,13 @@ export async function runAgentChat(opts: {
   tools?: ToolSet;
   /** Injection test : repos de persistance. Défaut = porte `forUser(userId)`. */
   repos?: RunAgentChatRepos;
+  /**
+   * F5 (story 7-9) — signal d'annulation propagé depuis la route (`req.signal`). Quand le client
+   * clique « Stop », son `AbortController` annule le `fetch` → `req.signal` s'abort → on coupe
+   * `streamText` ET on NE persiste PAS de tour `assistant` partiel (le tour `user`, écrit avant le
+   * stream, RESTE). Absent (tests, appels internes) ⇒ comportement inchangé.
+   */
+  abortSignal?: AbortSignal;
 }): Promise<Response> {
   // Résolu AVANT `streamText` : un `AgentConfigError` (clé absente) doit remonter pour être
   // attrapé par l'appelant (erreur douce), pas se perdre dans le flux. Async ⇒ rejet de la
@@ -235,6 +242,10 @@ export async function runAgentChat(opts: {
     system: SYSTEM_PROMPT,
     messages,
     tools,
+    // F5 (story 7-9) : le signal de la route est propagé au SDK → la génération CESSE dès
+    // l'abort (le provider est coupé). Annulation volontaire ≠ erreur : le client gère déjà
+    // `signal.aborted` (jamais de bulle rouge).
+    abortSignal: opts.abortSignal,
     stopWhen: stepCountIs(MAX_STEPS),
     onStepFinish: (step) => {
       if (step.toolCalls.some((call) => WRITE_TOOL_NAMES.has(call.toolName))) {
@@ -247,6 +258,11 @@ export async function runAgentChat(opts: {
     // SDK AWAIT ce callback avant de clore le flux → la persistance est garantie terminée à la fin
     // du tour. Une persistance qui échouerait ne doit pas tuer le flux déjà rendu : on la protège.
     onFinish: async ({ text }) => {
+      // F5 (story 7-9) — SORT DU TOUR INTERROMPU : à l'abort, on NE persiste PAS le tour
+      // `assistant` (transcript propre — ni bulle vide ni tronquée en DB). Le tour `user`,
+      // écrit AVANT le stream, reste (c'est une vraie demande). Stop ≠ rewind : aucune mutation
+      // write-tool éventuellement engagée n'est défaite ici (l'humain garde le rewind séparé).
+      if (opts.abortSignal?.aborted) return;
       try {
         await chatMessages.append({
           conversationId,

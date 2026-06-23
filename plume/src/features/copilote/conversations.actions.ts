@@ -9,18 +9,22 @@
 // FRONTIÈRE MOAT : le titre renommé ne passe PAS par `sanitize()` (c'est du transcript d'assistance,
 // pas du corpus d'outreach). Réversibilité : archive = SOFT (`archived_at`), JAMAIS de hard-delete.
 
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
 import { forUser, MAX_CONTEXT_TURNS, type ConversationSummary } from "@/lib/db";
 
 import type { BootstrapResult } from "./bootstrap.actions";
+import { replayRewind } from "./rewind";
 
 /** Bornes anti-DoS à la frontière (parité `MAX_CONTENT`/`MAX_ID` de la route). */
 const MAX_ID = 64;
 const MAX_TITRE = 120;
+const MAX_CONTENT = 8_000; // parité `MAX_CONTENT` de la route agent
 const idSchema = z.string().trim().min(1).max(MAX_ID);
 const titreSchema = z.string().trim().min(1).max(MAX_TITRE);
+const contentSchema = z.string().trim().min(1).max(MAX_CONTENT);
 
 /** Résultat DOUX d'une action de mutation de fil. */
 export type ConversationActionResult = { ok: boolean };
@@ -119,10 +123,99 @@ export async function openConversationAction(
       turns: rows.map((m) => ({
         role: m.role,
         content: m.content,
+        messageId: m.id,
         ...(m.turnId ? { turnId: m.turnId } : {}),
       })),
     };
   } catch {
     return { conversationId: null, turns: [] };
+  }
+}
+
+/** Résultat DOUX de l'édition d'un message : le fil tronqué + son id, ou un échec verbalisé. */
+export type EditMessageResult =
+  | { ok: true; thread: BootstrapResult }
+  | { ok: false; error: string };
+
+/**
+ * F6 (story 7-9) — ÉDITION D'UN MESSAGE `user` + RÉÉCRITURE DU FIL AVAL (pas de fork). Met à jour le
+ * contenu du message, SUPPRIME (hard-delete) tous les tours postérieurs du fil, et — pour chaque tour
+ * `assistant` tronqué AYANT écrit (porteur d'un `turnId`) — REJOUE `replayRewind` (réutilise l'inverse
+ * existant, ne le duplique pas) pour ne pas laisser de mutations orphelines (contacts/brouillons).
+ *
+ * ATOMICITÉ : rewinds + édition + troncature vivent dans UNE transaction scopée (parité rewind) —
+ * tout-ou-rien. Scopé tenant via `forUser` + appartenance du fil vérifiée (`findById`) : un fil/message
+ * d'autrui est invisible. Renvoie le fil tronqué (forme `BootstrapResult`, comme `openConversationAction`)
+ * pour que le client réaffiche directement, puis relance la génération depuis le message édité.
+ */
+export async function editMessageAction(
+  conversationId: string,
+  messageId: string,
+  newContent: string,
+): Promise<EditMessageResult> {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) return { ok: false, error: "Session requise." };
+
+  const parsedConvo = idSchema.safeParse(conversationId);
+  const parsedMessage = idSchema.safeParse(messageId);
+  const parsedContent = contentSchema.safeParse(newContent);
+  if (!parsedConvo.success || !parsedMessage.success || !parsedContent.success) {
+    return { ok: false, error: "Demande invalide." };
+  }
+
+  try {
+    const gate = await forUser(userId);
+
+    // APPARTENANCE : un fil d'un autre tenant (ou archivé) est invisible → on refuse en douceur,
+    // jamais de fuite ni de troncature cross-tenant.
+    const owned = await gate.conversations.findById(parsedConvo.data);
+    if (!owned) return { ok: false, error: "Conversation introuvable." };
+
+    // ATOMICITÉ : la troncature du transcript ET le rewind des mutations des tours effacés
+    // s'exécutent dans UNE transaction scopée (parité rewind, AR-8). On tronque d'abord (qui rend
+    // les `turnId` des tours `assistant` supprimés), puis on rejoue leur inverse — tout dans la même
+    // transaction, donc l'ordre n'altère pas l'atomicité (le rewind lit `action_log`, indépendant du
+    // transcript). Un échec (à n'importe quelle étape) annule TOUT (jamais de troncature sans rewind).
+    const remaining = await gate.transaction(async (tx) => {
+      const { remaining, truncatedTurnIds } = await tx.chatMessages.editAndTruncate(
+        parsedConvo.data,
+        parsedMessage.data,
+        parsedContent.data,
+      );
+      for (const turnId of truncatedTurnIds) {
+        // Idempotent par construction (un tour déjà annulé renvoie un bilan à zéro). Réutilise
+        // l'inverse journalisé existant — aucune logique d'inverse dupliquée ici.
+        await replayRewind(
+          { actionLog: tx.actionLog, contacts: tx.contacts, messages: tx.messages },
+          turnId,
+        );
+      }
+      return remaining;
+    });
+
+    // Fil tronqué introuvable (message ciblé inconnu/hors-fil) → échec doux (le client ne relance pas).
+    if (remaining.length === 0) {
+      return { ok: false, error: "Message introuvable." };
+    }
+
+    // Sync héritée d'inc.2 : la galerie Réseau (server component) relit la vérité serveur après les
+    // rewinds (contacts ré-archivés). Aucun nouveau mécanisme de sync.
+    revalidatePath("/reseau");
+
+    return {
+      ok: true,
+      thread: {
+        conversationId: owned.id,
+        turns: remaining.map((m) => ({
+          role: m.role,
+          content: m.content,
+          messageId: m.id,
+          ...(m.turnId ? { turnId: m.turnId } : {}),
+        })),
+      },
+    };
+  } catch {
+    return { ok: false, error: "L'édition a échoué. Réessaie dans un instant." };
   }
 }

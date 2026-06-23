@@ -38,6 +38,7 @@ import {
   openConversationAction,
   renameConversationAction,
   archiveConversationAction,
+  editMessageAction,
 } from "./conversations.actions";
 import { CopiloteMarkdown } from "./CopiloteMarkdown";
 
@@ -85,7 +86,9 @@ type ToolStatus = "running" | "done" | "error";
 // honnête — ex. un write-tool qui a échoué/n'a rien commis, ou un tour déjà annulé), ou échec.
 type RewindStatus = "idle" | "running" | "done" | "noop" | "error";
 type ChatItem =
-  | { id: number; kind: "user"; content: string }
+  // `messageId` (F6, story 7-9) : id PERSISTÉ du message, présent sur un tour réhydraté/tronqué —
+  // condition de l'affordance « Rééditer » (on ne réédite qu'un message connu en DB).
+  | { id: number; kind: "user"; content: string; messageId?: string }
   | { id: number; kind: "assistant"; content: string; pending?: boolean }
   | { id: number; kind: "error"; content: string }
   // Chip d'outil (façon Claude) : `toolCallId` corrèle début ↔ fin du flux.
@@ -132,6 +135,9 @@ function CopilotePanel({ preloadContactId }: { preloadContactId: string | null }
   const [editing, setEditing] = useState<{ id: string; titre: string } | null>(
     null,
   );
+  // F6 (story 7-9) — id du message `user` en cours de réédition inline (`null` = aucune). Seul un
+  // message porteur d'un `messageId` (réhydraté/tronqué) est rééditable ; bloqué pendant le streaming.
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
 
   // Taille EN-SESSION du panneau ouvert, en pixels. `null` = taille par défaut figée
   // (`PANEL_W`/`PANEL_H` sont des chaînes CSS `min()/calc()` non interpolables). Dès le 1er
@@ -319,7 +325,12 @@ function CopilotePanel({ preloadContactId }: { preloadContactId: string | null }
     const out: ChatItem[] = [];
     for (const turn of turns) {
       if (turn.role === "user") {
-        out.push({ id: nextId.current++, kind: "user", content: turn.content });
+        out.push({
+          id: nextId.current++,
+          kind: "user",
+          content: turn.content,
+          ...(turn.messageId ? { messageId: turn.messageId } : {}),
+        });
       } else {
         out.push({
           id: nextId.current++,
@@ -556,31 +567,34 @@ function CopilotePanel({ preloadContactId }: { preloadContactId: string | null }
     return () => document.removeEventListener("keydown", onKey);
   }, [expanded, closePanel]);
 
-  const send = useCallback(() => {
-    const content = draft.trim();
-    // Garde SYNCHRONE de ré-entrance (cf. `streamingRef`) : bloque la double-frappe Entrée.
-    if (content.length === 0 || streamingRef.current) return;
-    streamingRef.current = true;
-    // Envoyer un message = intention claire de suivre la réponse → on recolle au bas.
-    stickBottomRef.current = true;
+  // Lance UN tour de génération pour `content`. `pushUserBubble` = faut-il ajouter une bulle `user`
+  // (envoi normal) ou non (relance après édition, où le fil tronqué — message édité INCLUS — a déjà
+  // remplacé `items`). RÉUTILISÉ par `send` ET par la relance post-édition (F6), pour ne pas
+  // dupliquer le chemin de streaming. Garde SYNCHRONE de ré-entrance (`streamingRef`).
+  const runTurn = useCallback(
+    (content: string, pushUserBubble: boolean) => {
+      if (content.length === 0 || streamingRef.current) return;
+      streamingRef.current = true;
+      // Lancer un tour = intention claire de suivre la réponse → on recolle au bas.
+      stickBottomRef.current = true;
 
-    const controller = new AbortController();
-    abortRef.current = controller;
+      const controller = new AbortController();
+      abortRef.current = controller;
 
-    const userItem: ChatItem = { id: newId(), kind: "user", content };
+      // PHASE 3 (CAP-3) : le client n'envoie PLUS l'historique — le serveur est la source de vérité
+      // du contexte (il recharge le fil persisté, scopé tenant). On n'envoie que le NOUVEAU message
+      // `user` + l'id du fil retenu (`null` au 1er message d'un fil neuf → le serveur le crée et
+      // renvoie son id in-band via `onConversation`).
 
-    // PHASE 3 (CAP-3) : le client n'envoie PLUS l'historique — le serveur est la source de vérité
-    // du contexte (il recharge le fil persisté, scopé tenant). On n'envoie que le NOUVEAU message
-    // `user` + l'id du fil retenu (`null` au 1er message d'un fil neuf → le serveur le crée et
-    // renvoie son id in-band via `onConversation`).
+      // Nouveau tour : aucune bulle assistant encore ouverte, rien de produit.
+      currentAssistantIdRef.current = null;
+      producedAssistantRef.current = false;
 
-    // Nouveau tour : aucune bulle assistant encore ouverte, rien de produit.
-    currentAssistantIdRef.current = null;
-    producedAssistantRef.current = false;
-
-    setItems((prev) => [...prev, userItem]);
-    setDraft("");
-    setStatus("streaming");
+      if (pushUserBubble) {
+        const userItem: ChatItem = { id: newId(), kind: "user", content };
+        setItems((prev) => [...prev, userItem]);
+      }
+      setStatus("streaming");
 
     const finishTurn = () => {
       streamingRef.current = false;
@@ -694,7 +708,62 @@ function CopilotePanel({ preloadContactId }: { preloadContactId: string | null }
       },
       controller.signal,
     );
-  }, [draft, router, setConversation]);
+    },
+    [router, setConversation],
+  );
+
+  // Envoi normal : amorce un tour avec le brouillon (puis le vide). Bulle `user` ajoutée.
+  const send = useCallback(() => {
+    const content = draft.trim();
+    if (content.length === 0 || streamingRef.current) return;
+    setDraft("");
+    runTurn(content, true);
+  }, [draft, runTurn]);
+
+  // F5 (story 7-9) — STOP : coupe le flux en cours côté client (le `fetch` est annulé → la route
+  // annule `streamText` serveur, qui NE persiste PAS d'assistant partiel). Annulation VOLONTAIRE ≠
+  // erreur (aucune bulle rouge). On retire la bulle assistant `pending` non aboutie (transcript
+  // propre, pas de bulle vide figée) et on repasse à `idle`. Le tour `user` reste (déjà persisté).
+  const stopTurn = useCallback(() => {
+    abortRef.current?.abort();
+    streamingRef.current = false;
+    currentAssistantIdRef.current = null;
+    setItems((prev) =>
+      prev.filter(
+        (it) => !(it.kind === "assistant" && it.pending && it.content.length === 0),
+      ).map((it) =>
+        it.kind === "assistant" && it.pending ? { ...it, pending: false } : it,
+      ),
+    );
+    setStatus("idle");
+  }, []);
+
+  // F6 (story 7-9) — RÉÉDITER un message `user` passé + RELANCER (réécriture du fil aval). Bloqué
+  // pendant le streaming (AC#9). Coupe un flux éventuel, persiste l'édition + tronque le fil aval
+  // (rewind des mutations des tours effacés côté serveur), remplace les items par le fil tronqué,
+  // puis RELANCE la génération avec le texte édité (réutilise `runTurn`, sans re-pousser de bulle).
+  const editMessage = useCallback(
+    (messageId: string, newContent: string) => {
+      const content = newContent.trim();
+      if (content.length === 0 || streamingRef.current) return;
+      const conversationId = conversationIdRef.current;
+      if (!conversationId) return; // pas de fil persisté → rien à rééditer
+
+      // Coupe un flux éventuel AVANT de muter le fil (cohérence d'état).
+      abortRef.current?.abort();
+      streamingRef.current = false;
+      setEditingMessageId(null);
+
+      void editMessageAction(conversationId, messageId, content).then((res) => {
+        if (!res.ok) return; // échec doux : le fil reste en l'état (jamais d'erreur dure)
+        // Le fil tronqué (message édité INCLUS) remplace les items, puis on relance la génération
+        // depuis le message édité — SANS re-pousser de bulle `user` (déjà dans le fil tronqué).
+        setItems(mapTurns(res.thread.turns));
+        runTurn(content, false);
+      });
+    },
+    [mapTurns, runTurn],
+  );
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Entrée = envoyer ; Maj+Entrée = nouvelle ligne.
@@ -928,8 +997,29 @@ function CopilotePanel({ preloadContactId }: { preloadContactId: string | null }
                       item={it}
                       onRewind={() => rewindTurn(it.turnId, it.id)}
                     />
+                  ) : it.kind === "user" &&
+                    it.messageId &&
+                    editingMessageId === it.messageId ? (
+                    // F6 : éditeur inline d'un message `user` (réécriture du fil aval à la validation).
+                    <UserMessageEditor
+                      key={it.id}
+                      initial={it.content}
+                      onCommit={(text) => editMessage(it.messageId as string, text)}
+                      onCancel={() => setEditingMessageId(null)}
+                    />
                   ) : (
-                    <Bubble key={it.id} item={it} />
+                    <Bubble
+                      key={it.id}
+                      item={it}
+                      editable={
+                        !streaming && it.kind === "user" && Boolean(it.messageId)
+                      }
+                      onEdit={
+                        it.kind === "user" && it.messageId
+                          ? () => setEditingMessageId(it.messageId as string)
+                          : undefined
+                      }
+                    />
                   ),
                 )
               )}
@@ -965,15 +1055,28 @@ function CopilotePanel({ preloadContactId }: { preloadContactId: string | null }
                   className="min-h-[4.5rem] w-full resize-none overflow-y-auto rounded-button border-[length:--border-width-ink] border-ink bg-surface-note px-4 py-3 font-body text-body text-ink caret-accent outline-accent outline-offset-2 placeholder:text-ink-hint focus-visible:outline-2"
                 />
               </label>
-              <button
-                type="button"
-                onClick={send}
-                disabled={sendDisabled}
-                aria-label="Envoyer"
-                className={BTN_PRIMARY}
-              >
-                <Icon name="arrow-up" size={20} />
-              </button>
+              {streaming ? (
+                // F5 (story 7-9) — STOP : visible UNIQUEMENT pendant un tour en cours. Coupe le flux
+                // (le tour `user` reste, aucun assistant partiel persisté). Mauve = action, FR.
+                <button
+                  type="button"
+                  onClick={stopTurn}
+                  aria-label="Arrêter la génération"
+                  className={BTN_PRIMARY}
+                >
+                  Stop
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={send}
+                  disabled={sendDisabled}
+                  aria-label="Envoyer"
+                  className={BTN_PRIMARY}
+                >
+                  <Icon name="arrow-up" size={20} />
+                </button>
+              )}
             </div>
               </>
             )}
@@ -1122,7 +1225,17 @@ function ThreadListView({
 }
 
 /** Une bulle du fil. Assistant à gauche (mascotte, markdown), user à droite, chip d'outil, erreur douce. */
-function Bubble({ item }: { item: Exclude<ChatItem, { kind: "rewind" }> }) {
+function Bubble({
+  item,
+  editable = false,
+  onEdit,
+}: {
+  item: Exclude<ChatItem, { kind: "rewind" }>;
+  // F6 (story 7-9) : un message `user` réhydraté (porteur d'un `messageId`) est rééditable hors
+  // streaming. `onEdit` ouvre l'éditeur inline (géré par le parent via `editingMessageId`).
+  editable?: boolean;
+  onEdit?: () => void;
+}) {
   if (item.kind === "tool") {
     return <ToolChip item={item} />;
   }
@@ -1148,6 +1261,17 @@ function Bubble({ item }: { item: Exclude<ChatItem, { kind: "rewind" }> }) {
         <p className="max-w-[80%] whitespace-pre-wrap rounded-button border-[length:--border-width-ink] border-line bg-surface-chip px-4 py-2 font-body text-body text-ink">
           {item.content}
         </p>
+        {editable && onEdit ? (
+          // F6 — « Rééditer » : rouvre ce message en édition (réécrit le fil aval à la validation).
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex items-center gap-1 px-1 font-body text-label font-bold text-mint-deep outline-accent outline-offset-2 focus-visible:outline-2"
+          >
+            <Icon name="edit" size={14} />
+            Rééditer
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -1162,6 +1286,54 @@ function Bubble({ item }: { item: Exclude<ChatItem, { kind: "rewind" }> }) {
         <div className="max-w-[80%] rounded-button border-[length:--border-width-ink] border-line bg-surface-note px-4 py-2">
           <CopiloteMarkdown content={item.content} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * F6 (story 7-9) — éditeur INLINE d'un message `user` : textarea pré-rempli + Annuler / Valider.
+ * À la validation, le parent réécrit le fil AVAL (tronque les tours suivants + rewind de leurs
+ * mutations + relance). L'état (brouillon d'édition) est LOCAL au composant → aucune fuite dans
+ * l'état global du panneau. « Valider » est inactif si le texte est vide ou inchangé.
+ */
+function UserMessageEditor({
+  initial,
+  onCommit,
+  onCancel,
+}: {
+  initial: string;
+  onCommit: (text: string) => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState(initial);
+  const valid = text.trim().length > 0 && text.trim() !== initial.trim();
+  return (
+    <div className="flex w-full flex-col items-end gap-1">
+      <span className="px-1 font-body text-label text-ink-hint">Moi · édition</span>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={2}
+        autoFocus
+        className="w-full resize-none rounded-button border-[length:--border-width-ink] border-ink bg-surface-note px-4 py-2 font-body text-body text-ink caret-accent outline-accent outline-offset-2 focus-visible:outline-2"
+      />
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-2 py-1 font-body text-label font-bold text-ink-soft outline-accent outline-offset-2 focus-visible:outline-2"
+        >
+          Annuler
+        </button>
+        <button
+          type="button"
+          onClick={() => onCommit(text)}
+          disabled={!valid}
+          className="inline-flex items-center gap-1 rounded-button border-[length:--border-width-ink] border-ink bg-accent px-3 py-1 font-body text-label font-bold text-accent-on shadow-[var(--shadow-button-primary)] outline-accent outline-offset-2 focus-visible:outline-2 disabled:opacity-70"
+        >
+          Valider et relancer
+        </button>
       </div>
     </div>
   );

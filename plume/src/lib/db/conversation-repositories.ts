@@ -9,7 +9,7 @@
 // n'est NI `action_log` (mutations, pont = `turn_id`) NI `messages` (outreach du moat) ; PAS de
 // `sanitize()` sur `content`/`titre` (réservé au corpus d'outreach).
 
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull } from "drizzle-orm";
 
 import { chatMessages, conversations } from "./schema";
 import type { ScopedDb } from "./scoped";
@@ -130,6 +130,19 @@ async function purgeBeyond(scoped: ScopedDb): Promise<number> {
   return oldest.length;
 }
 
+/**
+ * Bilan d'un `editAndTruncate` (F6, story 7-9) : le fil tronqué (du plus ancien au plus récent,
+ * message édité INCLUS, comme `listForConversation`) + les tours `assistant` SUPPRIMÉS qui
+ * portaient un `turnId` (= avaient écrit via write-tools) — à rewinder AVANT cet appel pour ne pas
+ * laisser de mutations orphelines (l'action s'en charge ; le repo ne touche QUE le transcript).
+ */
+export type EditAndTruncateResult = {
+  /** Fil après troncature (created_at croissant), ou `[]` si le message ciblé est introuvable. */
+  remaining: ChatMessageRow[];
+  /** `turn_id` des tours `assistant` postérieurs SUPPRIMÉS (mutations à défaire en amont). */
+  truncatedTurnIds: string[];
+};
+
 /** Contrat du repository des TOURS de dialogue (auto-scopé par tenant). */
 export type ChatMessagesRepository = {
   /** Persiste UN tour (`user` ou texte `assistant` FINAL) rattaché au fil. */
@@ -142,6 +155,20 @@ export type ChatMessagesRepository = {
     conversationId: string,
     opts?: { limit?: number },
   ) => Promise<ChatMessageRow[]>;
+  /**
+   * F6 (story 7-9) — ÉDITION + RÉÉCRITURE DU FIL AVAL (pas de fork), dans UNE transaction scopée :
+   *   1. met à jour le `content` du message `messageId` ;
+   *   2. HARD-delete (jamais d'`archived_at` — la table n'en a pas) tous les tours POSTÉRIEURS du
+   *      même fil (`created_at > ref.created_at`).
+   * Scopé `forUser` : un message/fil d'un autre tenant est invisible (no-op, `remaining: []`). Le
+   * message ciblé doit appartenir au fil donné. Renvoie le fil tronqué + les `turnId` des tours
+   * `assistant` supprimés (l'appelant les a déjà rewindés AVANT — cohérence des mutations).
+   */
+  editAndTruncate: (
+    conversationId: string,
+    messageId: string,
+    newContent: string,
+  ) => Promise<EditAndTruncateResult>;
 };
 
 /** Construit le repository des fils au-dessus d'une porte scopée. */
@@ -255,6 +282,55 @@ export function chatMessagesRepository(
       return limit != null && rows.length > limit
         ? rows.slice(rows.length - limit)
         : rows;
+    },
+
+    async editAndTruncate(conversationId, messageId, newContent) {
+      // ATOMICITÉ (F6) : édition + troncature du fil aval dans UNE transaction scopée — tout-ou-rien
+      // (parité rewind). Le handle tx est re-scopé au MÊME tenant : un message/fil d'autrui reste
+      // invisible (no-op). Hard-delete assumé (la table n'a pas d'`archived_at` ; la troncature EST
+      // une suppression voulue du transcript). Les mutations des tours supprimés sont rewindées EN
+      // AMONT par l'action — ici on ne touche QUE le transcript (séparation transcript ↔ journal).
+      return scoped.transaction(async (tx) => {
+        // Référence : le message ciblé DANS ce fil (scopé tenant ∧ fil ∧ id). Introuvable
+        // (id inconnu, autre fil, autre tenant) ⇒ no-op honnête, fil inchangé.
+        const ref = await tx.findFirst(
+          chatMessages,
+          and(
+            eq(chatMessages.conversationId, conversationId),
+            eq(chatMessages.id, messageId),
+          ),
+        );
+        if (!ref) return { remaining: [], truncatedTurnIds: [] };
+
+        // Tours POSTÉRIEURS (created_at strictement supérieur) — à supprimer. On les LIT d'abord
+        // pour remonter les `turnId` des tours `assistant` ayant écrit (rewind en amont, déjà fait).
+        const refTs = ref.createdAt ?? 0;
+        const deleted = await tx.delete(
+          chatMessages,
+          and(
+            eq(chatMessages.conversationId, conversationId),
+            gt(chatMessages.createdAt, refTs),
+          ),
+        );
+        const truncatedTurnIds = deleted
+          .filter((m) => m.role === "assistant" && m.turnId)
+          .map((m) => m.turnId as string);
+
+        // Édition du contenu du message ciblé (scopé). PAS de `sanitize()` (frontière moat).
+        await tx.update(
+          chatMessages,
+          { content: newContent },
+          eq(chatMessages.id, messageId),
+        );
+
+        // Fil tronqué relu (created_at croissant), message édité inclus — forme `listForConversation`.
+        const remaining = await tx.findMany(
+          chatMessages,
+          eq(chatMessages.conversationId, conversationId),
+          [asc(chatMessages.createdAt)],
+        );
+        return { remaining, truncatedTurnIds };
+      });
     },
   };
 }
