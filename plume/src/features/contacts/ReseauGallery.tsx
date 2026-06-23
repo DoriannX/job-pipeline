@@ -183,15 +183,22 @@ export function ReseauGallery({
                 className="flex flex-col items-center gap-2 rounded-card px-1 py-2 text-center outline-accent outline-offset-2 focus-visible:outline-2"
               >
                 <Plume name="blob" tint={contact.coldness} size={84} />
-                <span className="line-clamp-2 font-display text-body font-semibold leading-tight tracking-[-0.01em] text-ink">
-                  {contact.nom}
-                </span>
-                {/* Entreprise sous le nom : distingue deux homonymes (ex. fiche dupliquée). */}
-                {contact.entreprise ? (
-                  <span className="line-clamp-1 font-body text-label text-ink-soft">
-                    {contact.entreprise}
+                {/* Nom sur 2 lignes FIXES (prénom / reste) → toujours la même hauteur, donc
+                    entreprise + pastille + actions alignées d'une carte à l'autre. Chaque ligne
+                    `truncate` pour rester sur UNE ligne (un nom très long ne déborde pas). */}
+                <span className="flex flex-col font-display text-body font-semibold leading-tight tracking-[-0.01em] text-ink">
+                  <span className="truncate">
+                    {contact.nom.trim().split(/\s+/)[0]}
                   </span>
-                ) : null}
+                  <span className="truncate">
+                    {contact.nom.trim().split(/\s+/).slice(1).join(" ") || " "}
+                  </span>
+                </span>
+                {/* Entreprise sous le nom : distingue deux homonymes (ex. fiche dupliquée).
+                    Slot TOUJOURS réservé (espace insécable si vide) pour garder l'alignement. */}
+                <span className="line-clamp-1 min-h-[1lh] font-body text-label text-ink-soft">
+                  {contact.entreprise ?? " "}
+                </span>
                 <ColdTag state={contact.coldness} />
               </Link>
               {/* Actions par contact (capacités 2.1, accessibles sans attendre la fiche
