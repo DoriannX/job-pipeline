@@ -14,6 +14,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { contactsRepository, messagesRepository, forUserDb } from "@/lib/db";
 import type { Clock } from "@/lib/domain/time";
 import type { Canal } from "@/lib/domain/enums";
+import type { Tone } from "@/features/composer/generation";
 
 import {
   queryContacts,
@@ -596,7 +597,7 @@ describe("composeMessage — BROUILLON dans la voix, JAMAIS envoyé (inc.3 CAP-2
   // du moat (texte sanitizé) SANS toucher Anthropic.
   const composeWith =
     (raw: string) =>
-    async (p: { idea: string; canal: Canal; tone: "rapide" | "soigne" }) => ({
+    async (p: { idea: string; canal: Canal; tone: Tone }) => ({
       event: buildGenerationEvent({
         rawText: raw,
         idea: p.idea,
@@ -649,6 +650,42 @@ describe("composeMessage — BROUILLON dans la voix, JAMAIS envoyé (inc.3 CAP-2
       { contactId: c.id },
     );
     expect(res.canal).toBe("sms");
+  });
+
+  it("transmet le tone au pipeline — palier équilibré (Sonnet) ; défaut = rapide (story 7.7, F13)", async () => {
+    const c = await contactsA().create({ nom: "Léo", canalPrefere: "sms" });
+    let seenTone: Tone | undefined;
+    const recordTone =
+      () =>
+      async (p: { idea: string; canal: Canal; tone: Tone }) => {
+        seenTone = p.tone;
+        return {
+          event: buildGenerationEvent({
+            rawText: "ok",
+            idea: p.idea,
+            canal: p.canal,
+            tone: p.tone,
+            modelId: "test-model",
+            voiceExamplesRef: [],
+            tokens: { input: 0, output: 0 },
+          }),
+        };
+      };
+
+    // Tone explicite « equilibre » → transmis tel quel au pipeline (→ Sonnet via MODEL_BY_TONE).
+    await composeMessage(
+      { contacts: contactsA(), messages: messagesA(), compose: recordTone() },
+      { contactId: c.id, tone: "equilibre" },
+    );
+    expect(seenTone).toBe("equilibre");
+
+    // Aucun tone fourni → défaut « rapide » (Haiku reste défaut, décision dogfood).
+    seenTone = undefined;
+    await composeMessage(
+      { contacts: contactsA(), messages: messagesA(), compose: recordTone() },
+      { contactId: c.id },
+    );
+    expect(seenTone).toBe("rapide");
   });
 
   it("transmet l'historique du contact au pipeline voix (génération en continuité, story 3.10)", async () => {
