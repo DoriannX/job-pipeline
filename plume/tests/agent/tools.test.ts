@@ -20,6 +20,7 @@ import {
   seedContacts,
   createContact,
   updateContact,
+  duplicateContact,
   importContacts,
   composeMessage,
   archiveContact,
@@ -938,5 +939,92 @@ describe("selectTrustedTurns — conversation multi-tour bien formée (inc.3)", 
     ]);
     // Tous écartés (assistant en tête) → vide → la route répond 400, aucune génération.
     expect(trusted).toHaveLength(0);
+  });
+});
+
+describe("duplicateContact — variante proche + dédup (story 7.5, F4)", () => {
+  let db: TestDb;
+  const userA = makeUser({ name: "Alice" });
+  const userB = makeUser({ name: "Bob" });
+  const repoA = () => contactsRepository(forUserDb(db, userA.id, now));
+  const repoB = () => contactsRepository(forUserDb(db, userB.id, now));
+
+  beforeEach(async () => {
+    db = await makeTestDb();
+    await seedUsers(db, [userA, userB]);
+  });
+
+  it("AC#1 : duplique en changeant l'entreprise → 2 fiches à clés distinctes, source intacte", async () => {
+    const src = await createContact(repoA(), { nom: "Jean Dupont", entreprise: "Acme" });
+    const copie = await duplicateContact(repoA(), {
+      sourceContactId: src.id,
+      entreprise: "Globex",
+    });
+    const rows = await repoA().list();
+    expect(rows).toHaveLength(2);
+    expect(copie.id).not.toBe(src.id);
+    expect(rows.map((c) => c.entreprise).sort()).toEqual(["Acme", "Globex"]);
+    // Source INCHANGÉE.
+    expect((await repoA().get(src.id))!.entreprise).toBe("Acme");
+  });
+
+  it("AC#2 : copie PURE (aucun changement distinctif) → refus, 1 seule fiche", async () => {
+    const src = await createContact(repoA(), { nom: "Jean Dupont", entreprise: "Acme" });
+    await expect(
+      duplicateContact(repoA(), { sourceContactId: src.id }),
+    ).rejects.toThrow(/identique|précise|existant/i);
+    expect(await repoA().list()).toHaveLength(1);
+  });
+
+  it("AC#3 : changement d'email → copie à clé email: distincte ; source garde son absence d'email", async () => {
+    const src = await createContact(repoA(), { nom: "Léa", entreprise: "Acme" });
+    const copie = await duplicateContact(repoA(), {
+      sourceContactId: src.id,
+      email: "lea@globex.test",
+    });
+    const rows = await repoA().list();
+    expect(rows).toHaveLength(2);
+    const copieRow = rows.find((c) => c.id === copie.id)!;
+    expect(copieRow.handles?.email).toBe("lea@globex.test");
+    // La source n'a jamais reçu d'email (jamais mutée).
+    expect((await repoA().get(src.id))!.handles?.email ?? null).toBeNull();
+  });
+
+  it("AC#2/#3 : email déjà présent chez un AUTRE contact → refus (pas de fusion surprise)", async () => {
+    await createContact(repoA(), { nom: "Autre", email: "pris@x.test" });
+    const src = await createContact(repoA(), { nom: "Jean", entreprise: "Acme" });
+    await expect(
+      duplicateContact(repoA(), { sourceContactId: src.id, email: "pris@x.test" }),
+    ).rejects.toThrow(/identique|existant/i);
+    expect(await repoA().list()).toHaveLength(2); // aucun 3e contact créé
+  });
+
+  it("AC#4 : source inconnue / cross-tenant → throw avant écriture (isolement)", async () => {
+    const srcB = await createContact(repoB(), { nom: "Secret B", entreprise: "Bcorp" });
+    // A ne voit pas la fiche de B → source introuvable, aucune écriture chez A.
+    await expect(
+      duplicateContact(repoA(), { sourceContactId: srcB.id, entreprise: "Acme" }),
+    ).rejects.toThrow(/introuvable/i);
+    expect(await repoA().list()).toHaveLength(0);
+    expect(await repoB().list()).toHaveLength(1); // B intact
+  });
+
+  it("AC#5 : copie les notes + handles non-email, JAMAIS l'historique ni l'email de la source", async () => {
+    const src = await createContact(repoA(), { nom: "Mia", entreprise: "Acme" });
+    // Enrichir la source : notes, handles (linkedin + email), historique.
+    await repoA().update(src.id, {
+      notes: "rencontrée au salon",
+      handles: { linkedin: "in/mia", email: "mia@acme.test" },
+      historique: "déjà discuté du poste",
+    });
+    const copie = await duplicateContact(repoA(), {
+      sourceContactId: src.id,
+      entreprise: "Globex",
+    });
+    const copieRow = (await repoA().get(copie.id))!;
+    expect(copieRow.notes).toBe("rencontrée au salon"); // notes copiées
+    expect(copieRow.handles?.linkedin).toBe("in/mia"); // handle non-email copié
+    expect(copieRow.handles?.email ?? null).toBeNull(); // email NON copié
+    expect(copieRow.historique ?? null).toBeNull(); // historique NON copié
   });
 });
