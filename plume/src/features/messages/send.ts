@@ -100,3 +100,55 @@ export async function markSentAction(
     };
   }
 }
+
+/** Entrée de « Enregistrer le brouillon » — texte tapé MAIN gardé en brouillon (story 7-2). */
+export type MarkDraftInput = {
+  contactId: string;
+  /** Texte courant du champ. */
+  texte: string;
+  /** Canal retenu dans le composeur. */
+  canal: Canal;
+};
+
+export type MarkDraftResult =
+  | { ok: true; messageId: string }
+  | { ok: false; error: string };
+
+/**
+ * Enregistre le texte du composeur MANUEL comme Message BROUILLON (jamais envoyé,
+ * `genere_par_ia=false`). Pendant manuel de `markSentAction` : le brouillon vit dans la
+ * timeline « Votre histoire », reste ÉDITABLE (Modifier, story 7-2) et promouvable « envoyé »
+ * via la pastille de statut. Échec doux (le champ est préservé côté client).
+ */
+export async function markDraftAction(
+  input: MarkDraftInput,
+): Promise<MarkDraftResult> {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) {
+    return { ok: false, error: "Session requise." };
+  }
+
+  const texte = input.texte?.trim() ?? "";
+  if (!input.contactId || texte.length === 0) {
+    return { ok: false, error: "Écris un message avant de l'enregistrer." };
+  }
+
+  try {
+    const db = await forUser(userId);
+    const message = await db.messages.createDraft({
+      contactId: input.contactId,
+      canal: input.canal,
+      texte,
+      genereParIa: false,
+    });
+    // La timeline de la fiche change (nouveau brouillon).
+    revalidatePath(`/reseau/${input.contactId}`);
+    return { ok: true, messageId: message.id };
+  } catch {
+    return {
+      ok: false,
+      error: "L'enregistrement a échoué. Réessaie dans un instant.",
+    };
+  }
+}

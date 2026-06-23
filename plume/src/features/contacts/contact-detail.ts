@@ -225,9 +225,12 @@ export function timelineItems(
     at: m.envoyeAt ?? m.createdAt ?? null,
     accent: m.statut === "envoye",
     updatedAt: m.updatedAt,
-    // Un Message ENVOYÉ avec un jeton de version est rouvrable via Modifier (story 3.7).
-    // Sans jeton (ancien message d'avant la migration), on ne propose pas l'édition
-    // optimiste (aucun `expectedUpdatedAt` fiable) : il reste read-only, jamais cassé.
-    editable: m.statut === "envoye" && m.updatedAt !== null,
+    // Éditable via Modifier : un BROUILLON (libre, story 7-2/pivot) OU un ENVOYÉ rouvert
+    // (verrou optimiste 3.7). `editSent` ne filtre PAS le statut (update par id+jeton, statut
+    // préservé) → éditer un brouillon le garde brouillon. Statuts terminaux (répondu/ignoré)
+    // restent figés. Sans jeton (ancien message) : read-only, jamais cassé.
+    editable:
+      (m.statut === "brouillon" || m.statut === "envoye") &&
+      m.updatedAt !== null,
   }));
 }

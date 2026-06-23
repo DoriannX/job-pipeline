@@ -843,6 +843,28 @@ describe("archiveContact / archiveContacts / archiveDraft — delete RÉVERSIBLE
     });
     expect(await messagesA().listSentTexts()).toContain("Déjà envoyé");
   });
+
+  it("createDraft : `genereParIa` distingue brouillon IA (texte_genere gardé) vs manuel (null) — story 7-2", async () => {
+    const c = await contactsA().create({ nom: "Sophie" });
+    // Défaut = brouillon agent : genere_par_ia true, texte_genere conservé (SM-1).
+    const ia = await messagesA().createDraft({
+      contactId: c.id,
+      canal: "linkedin",
+      texte: "Brouillon IA",
+    });
+    expect(ia.genereParIa).toBe(true);
+    expect(ia.texteGenere).toBe("Brouillon IA");
+    // Manuel (story 7-2) : genere_par_ia false, AUCUNE sortie IA à conserver.
+    const manuel = await messagesA().createDraft({
+      contactId: c.id,
+      canal: "sms",
+      texte: "Tapé main",
+      genereParIa: false,
+    });
+    expect(manuel.genereParIa).toBe(false);
+    expect(manuel.texteGenere).toBeNull();
+    expect(manuel.statut).toBe("brouillon");
+  });
 });
 
 describe("WRITE_TOOL_NAMES — les write-tools réels héritent de la sync (inc.3 CAP-4)", () => {
