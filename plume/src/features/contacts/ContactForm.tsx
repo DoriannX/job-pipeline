@@ -20,6 +20,7 @@ const CANAL_LABEL: Record<Canal, string> = {
   email: "E-mail",
   whatsapp: "WhatsApp",
   sms: "SMS",
+  discord: "Discord",
 };
 
 // Champs handles affichés (clé technique + libellé + placeholder doux).
@@ -29,6 +30,7 @@ const HANDLE_FIELDS: { key: ContactHandle; label: string; placeholder: string }[
     { key: "email", label: "E-mail", placeholder: "prenom@exemple.fr" },
     { key: "phone", label: "Téléphone", placeholder: "06 12 34 56 78" },
     { key: "whatsapp", label: "WhatsApp", placeholder: "numéro WhatsApp" },
+    { key: "discord", label: "Discord", placeholder: "pseudo Discord" },
   ];
 
 const CANAL_ICON: Record<Canal, IconName> = {
@@ -36,6 +38,7 @@ const CANAL_ICON: Record<Canal, IconName> = {
   email: "email",
   whatsapp: "whatsapp",
   sms: "sms",
+  discord: "discord",
 };
 
 /** Valeurs initiales (édition) ; toutes optionnelles (ajout = vide). */

@@ -362,7 +362,7 @@ export type UpdateContactResult = {
 };
 
 /** Canaux de `handles` (clés de l'objet `ContactHandles`) — pour itérer sans `any`. */
-const HANDLE_CANAUX = ["linkedin", "email", "phone", "whatsapp"] as const;
+const HANDLE_CANAUX = ["linkedin", "email", "phone", "whatsapp", "discord"] as const;
 
 /**
  * LOGIQUE PURE d'`updateContact`, testable hors serveur : reçoit un repository DÉJÀ scopé au
@@ -1098,6 +1098,7 @@ export function buildTools(userId: string, turnId: string): ToolSet {
             email: z.string().trim().email().max(320).optional(),
             phone: z.string().trim().max(64).optional(),
             whatsapp: z.string().trim().max(64).optional(),
+            discord: z.string().trim().max(64).optional(),
           })
           .optional()
           .describe(
@@ -1168,6 +1169,7 @@ export function buildTools(userId: string, turnId: string): ToolSet {
             email: z.string().trim().email().max(320).optional(),
             phone: z.string().trim().max(64).optional(),
             whatsapp: z.string().trim().max(64).optional(),
+            discord: z.string().trim().max(64).optional(),
           })
           .optional()
           .describe(

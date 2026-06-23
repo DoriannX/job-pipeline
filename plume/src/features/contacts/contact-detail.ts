@@ -51,6 +51,7 @@ const HANDLE_LABEL: Record<ContactHandle, string> = {
   email: "E-mail",
   phone: "Téléphone",
   whatsapp: "WhatsApp",
+  discord: "Discord",
 };
 
 /** Icône maison de chaque coordonnée (le canal SMS s'illustre par l'icône `sms`). */
@@ -59,6 +60,7 @@ const HANDLE_ICON: Record<ContactHandle, IconName> = {
   email: "email",
   phone: "sms",
   whatsapp: "whatsapp",
+  discord: "discord",
 };
 
 // Le canal préféré est une valeur `Canal` (linkedin/email/whatsapp/sms) ; le handle
@@ -68,10 +70,11 @@ const CANAL_TO_HANDLE: Record<Canal, ContactHandle> = {
   email: "email",
   whatsapp: "whatsapp",
   sms: "phone",
+  discord: "discord",
 };
 
 /** Ordre d'affichage par défaut des canaux (avant remontée du préféré). */
-const HANDLE_ORDER: ContactHandle[] = ["linkedin", "email", "phone", "whatsapp"];
+const HANDLE_ORDER: ContactHandle[] = ["linkedin", "email", "phone", "whatsapp", "discord"];
 
 /**
  * Liste ORDONNÉE des canaux RENSEIGNÉS d'un contact, prête à afficher.
@@ -117,6 +120,7 @@ const CANAL_LABEL: Record<Canal, string> = {
   email: "E-mail",
   whatsapp: "WhatsApp",
   sms: "SMS",
+  discord: "Discord",
 };
 
 /** Icône maison de chaque canal (l'icône `sms` illustre le SMS). */
@@ -125,6 +129,7 @@ const CANAL_ICON: Record<Canal, IconName> = {
   email: "email",
   whatsapp: "whatsapp",
   sms: "sms",
+  discord: "discord",
 };
 
 /** Libellé FR de chaque statut (la valeur stockée reste non traduite, clé stable AR-5). */

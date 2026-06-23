@@ -6,7 +6,7 @@ import type { ColdState } from "@/design/tokens";
 import type { Canal } from "@/lib/domain/enums";
 
 /** Clés des coordonnées par canal (JSON `handles`). */
-export type ContactHandle = "linkedin" | "email" | "phone" | "whatsapp";
+export type ContactHandle = "linkedin" | "email" | "phone" | "whatsapp" | "discord";
 
 /** Vue d'un Contact passée du serveur au client (sérialisable). */
 export type ContactView = {

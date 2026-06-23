@@ -38,6 +38,7 @@ const SENTENCE_TARGET: Partial<Record<Canal, { min: number; max: number }>> = {
   linkedin: { min: 2, max: 4 },
   whatsapp: { min: 1, max: 2 },
   sms: { min: 1, max: 2 },
+  discord: { min: 1, max: 2 },
 };
 
 /** Nombre minimal de blocs/paragraphes pour un e-mail « structuré ». */

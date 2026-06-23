@@ -52,12 +52,14 @@ const CANAL_LABEL: Record<Canal, string> = {
   email: "E-mail",
   whatsapp: "WhatsApp",
   sms: "SMS",
+  discord: "Discord",
 };
 const CANAL_ICON: Record<Canal, IconName> = {
   linkedin: "linkedin",
   email: "email",
   whatsapp: "whatsapp",
   sms: "sms",
+  discord: "discord",
 };
 
 // Boutons d'action SECONDAIRES en icône — primitive partagée (`@/design/buttons`).

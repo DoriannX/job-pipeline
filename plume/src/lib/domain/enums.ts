@@ -4,10 +4,10 @@
 // s'appuie dessus. Aucune valeur littérale d'enum ne doit être ré-écrite ailleurs.
 
 /**
- * Canal de contact préféré — 4 canaux supportés au MVP (FR-2).
+ * Canal de contact préféré — 5 canaux (FR-2 ; + Discord story 7.10/F10).
  * Chaque valeur correspond 1:1 à une icône maison (`@/design/icons`).
  */
-export const CANAUX = ["linkedin", "email", "whatsapp", "sms"] as const;
+export const CANAUX = ["linkedin", "email", "whatsapp", "sms", "discord"] as const;
 export type Canal = (typeof CANAUX)[number];
 
 /** Garde de type : `v` est-il un canal connu ? */

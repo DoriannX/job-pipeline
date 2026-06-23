@@ -10,6 +10,7 @@ export type IconName =
   | "email"
   | "whatsapp"
   | "sms"
+  | "discord"
   | "tab-aujourdhui"
   | "tab-reseau"
   | "tab-reglages"
@@ -54,6 +55,13 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <path d="M4 6.5 a3 3 0 0 1 3 -3 h10 a3 3 0 0 1 3 3 v6 a3 3 0 0 1 -3 3 H10 l-4 4 v-4 a3 3 0 0 1 -2 -3 Z" />
       <path d="M8.5 9.5 v0.01 M12 9.5 v0.01 M15.5 9.5 v0.01" />
+    </>
+  ),
+  // Discord (story 7.10) : blob arrondi fait-main + deux yeux (jamais le logo officiel ni un emoji).
+  discord: (
+    <>
+      <path d="M7 6.5 a14 14 0 0 1 10 0 c2 2.6 3 6 2.7 10 a13 13 0 0 1 -3.7 2 l-0.9 -1.6 a9 9 0 0 1 -6.2 0 L8 18.5 a13 13 0 0 1 -3.7 -2 C4 12.5 5 9.1 7 6.5 Z" />
+      <path d="M9.5 12.5 v0.01 M14.5 12.5 v0.01" />
     </>
   ),
   // — Onglets — (Aujourd'hui · Réseau · Réglages)
