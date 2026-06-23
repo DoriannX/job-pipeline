@@ -104,6 +104,7 @@ export type ContactHandles = {
   email?: string;
   phone?: string;
   whatsapp?: string;
+  discord?: string;
 };
 
 export const contacts = sqliteTable(

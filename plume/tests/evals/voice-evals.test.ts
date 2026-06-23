@@ -120,6 +120,7 @@ const CONTRAINTE_ATTENDUE: Record<Canal, RegExp> = {
   email: /STRUCTURÉ \(une ouverture, un corps en 1 à 2 courts paragraphes, une clôture\)/,
   whatsapp: /TRÈS COURT \(1 à 2 phrases\)/,
   sms: /TRÈS COURT \(1 à 2 phrases\)/,
+  discord: /TRÈS COURT \(1 à 2 phrases\)/,
 };
 
 /** Extrait le texte du tour utilisateur (suffixe volatil) d'un BuiltPrompt. */

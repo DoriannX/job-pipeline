@@ -126,6 +126,10 @@ const CONTRAINTE_CANAL: Record<Canal, string> = {
   sms:
     "Canal SMS : message TRÈS COURT (1 à 2 phrases), va droit au but. " +
     "Aucune formule d'appel ni signature.",
+  // Discord : très court, décontracté, messagerie instantanée.
+  discord:
+    "Canal Discord : message TRÈS COURT (1 à 2 phrases), décontracté et direct, " +
+    "comme une messagerie instantanée entre gens qui se connaissent. Aucune formule protocolaire.",
 };
 
 // --- Calibrage RÉCENCE/MÉMOIRE (P1/P2, story 7.1 — dogfood 2026-06-21) -------

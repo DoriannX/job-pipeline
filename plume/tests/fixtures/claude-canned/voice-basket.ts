@@ -7,7 +7,7 @@
 // ce panier à CHAQUE `pnpm test` (donc en CI), SANS aucun appel réseau réel.
 //
 // ─────────────────────────────────────────────────────────────────────────────
-// N FIGÉ AU 1ER RUN : N = 3 idées-test PAR CANAL → 12 cas (linkedin/email/whatsapp/sms).
+// N FIGÉ AU 1ER RUN : N = 3 idées-test PAR CANAL → 15 cas (linkedin/email/whatsapp/sms/discord).
 // Ce N est figé ; on ne le réduit pas. On peut l'augmenter (plus de couverture) sans
 // re-geler les cas existants, jamais le diminuer en silence.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -219,15 +219,53 @@ const SMS: VoiceCase[] = [
   },
 ];
 
+// ─── Discord (très court, 1-2 phrases, décontracté) ──────────────────────────
+const DISCORD: VoiceCase[] = [
+  {
+    id: "discord-1",
+    canal: "discord",
+    idea: "Demander à un pote sur Discord s'il a des contacts dans le gamedev.",
+    // Tells : emoji 👾, cadratin.
+    rawClaude:
+      "yo Théo \u{1F47E} t'aurais pas des contacts dans le gamedev en ce moment\u{2014}je cherche à bouger ?",
+    expectedSanitized:
+      "yo Théo t'aurais pas des contacts dans le gamedev en ce moment - je cherche à bouger ?",
+    criteria: SAIN,
+  },
+  {
+    id: "discord-2",
+    canal: "discord",
+    idea: "Proposer un appel vocal à un membre d'un serveur rencontré récemment.",
+    // Tells : emoji ☕, NBSP.
+    rawClaude:
+      "Salut Maya \u{2615} on se cale un vocal demain 18\u{00A0}h pour en parler ?",
+    expectedSanitized:
+      "Salut Maya on se cale un vocal demain 18 h pour en parler ?",
+    criteria: SAIN,
+  },
+  {
+    id: "discord-3",
+    canal: "discord",
+    idea: "Remercier quelqu'un sur Discord pour un partage d'offre.",
+    // Tells : zero-width, emoji 🎉, espace fine insécable.
+    rawClaude:
+      "Merci\u{200B} pour le partage de l'offre \u{1F389} j'ai postulé direct\u{202F}!",
+    expectedSanitized:
+      "Merci pour le partage de l'offre j'ai postulé direct !",
+    criteria: SAIN,
+  },
+];
+
 /**
- * LE PANIER : 12 cas = 3 par canal (N = 3, figé au 1er run). Source de vérité de
- * l'anti-régression. Importé tel quel par le runner d'evals.
+ * LE PANIER : 15 cas = 3 par canal (N = 3, figé au 1er run ; + Discord story 7.10).
+ * Source de vérité de l'anti-régression. Importé tel quel par le runner d'evals.
  */
 export const VOICE_BASKET: readonly VoiceCase[] = [
   ...LINKEDIN,
   ...EMAIL,
   ...WHATSAPP,
   ...SMS,
+  ...DISCORD,
 ];
 
 /** N figé : nombre d'idées-test PAR CANAL dans le panier. */
