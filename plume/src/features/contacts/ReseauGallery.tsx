@@ -183,15 +183,16 @@ export function ReseauGallery({
                 className="flex flex-col items-center gap-2 rounded-card px-1 py-2 text-center outline-accent outline-offset-2 focus-visible:outline-2"
               >
                 <Plume name="blob" tint={contact.coldness} size={84} />
-                <span className="line-clamp-2 font-display text-body font-semibold leading-tight tracking-[-0.01em] text-ink">
+                {/* Hauteurs FIXES (nom 2 lignes, entreprise 1 ligne) → la pastille de froideur
+                    et les actions s'alignent d'une carte à l'autre, peu importe la longueur. */}
+                <span className="line-clamp-2 min-h-[2lh] font-display text-body font-semibold leading-tight tracking-[-0.01em] text-ink">
                   {contact.nom}
                 </span>
-                {/* Entreprise sous le nom : distingue deux homonymes (ex. fiche dupliquée). */}
-                {contact.entreprise ? (
-                  <span className="line-clamp-1 font-body text-label text-ink-soft">
-                    {contact.entreprise}
-                  </span>
-                ) : null}
+                {/* Entreprise sous le nom : distingue deux homonymes (ex. fiche dupliquée).
+                    Slot TOUJOURS réservé (espace insécable si vide) pour garder l'alignement. */}
+                <span className="line-clamp-1 min-h-[1lh] font-body text-label text-ink-soft">
+                  {contact.entreprise ?? " "}
+                </span>
                 <ColdTag state={contact.coldness} />
               </Link>
               {/* Actions par contact (capacités 2.1, accessibles sans attendre la fiche
