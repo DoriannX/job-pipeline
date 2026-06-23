@@ -183,10 +183,16 @@ export function ReseauGallery({
                 className="flex flex-col items-center gap-2 rounded-card px-1 py-2 text-center outline-accent outline-offset-2 focus-visible:outline-2"
               >
                 <Plume name="blob" tint={contact.coldness} size={84} />
-                {/* Hauteurs FIXES (nom 2 lignes, entreprise 1 ligne) → la pastille de froideur
-                    et les actions s'alignent d'une carte à l'autre, peu importe la longueur. */}
-                <span className="line-clamp-2 min-h-[2lh] font-display text-body font-semibold leading-tight tracking-[-0.01em] text-ink">
-                  {contact.nom}
+                {/* Nom sur 2 lignes FIXES (prénom / reste) → toujours la même hauteur, donc
+                    entreprise + pastille + actions alignées d'une carte à l'autre. Chaque ligne
+                    `truncate` pour rester sur UNE ligne (un nom très long ne déborde pas). */}
+                <span className="flex flex-col font-display text-body font-semibold leading-tight tracking-[-0.01em] text-ink">
+                  <span className="truncate">
+                    {contact.nom.trim().split(/\s+/)[0]}
+                  </span>
+                  <span className="truncate">
+                    {contact.nom.trim().split(/\s+/).slice(1).join(" ") || " "}
+                  </span>
                 </span>
                 {/* Entreprise sous le nom : distingue deux homonymes (ex. fiche dupliquée).
                     Slot TOUJOURS réservé (espace insécable si vide) pour garder l'alignement. */}
