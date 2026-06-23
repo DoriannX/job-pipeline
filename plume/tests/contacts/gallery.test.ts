@@ -21,6 +21,7 @@ function contact(
   return {
     id,
     nom,
+    entreprise: null,
     canalPrefere: null,
     handles: null,
     notes: null,

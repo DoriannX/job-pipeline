@@ -39,6 +39,7 @@ export default async function ReseauPage() {
     return {
       id: c.id,
       nom: c.nom,
+      entreprise: c.entreprise ?? null,
       canalPrefere: c.canalPrefere ?? null,
       handles: c.handles ?? null,
       notes: c.notes ?? null,

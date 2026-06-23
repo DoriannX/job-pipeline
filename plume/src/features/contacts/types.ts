@@ -12,6 +12,8 @@ export type ContactHandle = "linkedin" | "email" | "phone" | "whatsapp" | "disco
 export type ContactView = {
   id: string;
   nom: string;
+  /** Entreprise — affichée sous le nom dans la galerie pour distinguer deux homonymes. */
+  entreprise: string | null;
   canalPrefere: Canal | null;
   handles: Partial<Record<ContactHandle, string>> | null;
   notes: string | null;

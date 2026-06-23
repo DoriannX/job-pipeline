@@ -68,6 +68,7 @@ export function ContactDetailActions({ contact }: ContactDetailActionsProps) {
   const viewForDialog: ContactView = {
     id: contact.id,
     nom: contact.nom,
+    entreprise: contact.entreprise,
     canalPrefere: contact.canalPrefere,
     handles: contact.handles,
     notes: contact.notes,

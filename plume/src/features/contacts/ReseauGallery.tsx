@@ -186,6 +186,12 @@ export function ReseauGallery({
                 <span className="line-clamp-2 font-display text-body font-semibold leading-tight tracking-[-0.01em] text-ink">
                   {contact.nom}
                 </span>
+                {/* Entreprise sous le nom : distingue deux homonymes (ex. fiche dupliquée). */}
+                {contact.entreprise ? (
+                  <span className="line-clamp-1 font-body text-label text-ink-soft">
+                    {contact.entreprise}
+                  </span>
+                ) : null}
                 <ColdTag state={contact.coldness} />
               </Link>
               {/* Actions par contact (capacités 2.1, accessibles sans attendre la fiche
