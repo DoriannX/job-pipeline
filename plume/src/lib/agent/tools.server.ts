@@ -440,6 +440,103 @@ export async function updateContact(
 }
 
 // ---------------------------------------------------------------------------
+// duplicateContact (CAP-DUP, story 7.5 — F4) — DUPLIQUE une fiche existante en une VARIANTE
+// proche (même personne, autre entreprise…). Copie canalPrefere/notes/handles non-email de la
+// source + les changements ; JAMAIS l'historique (continuité propre à la source) ni l'email de
+// la source (clé de dédup la plus forte — fourni explicitement seulement). REFUSE si la copie
+// collisionne la dedup_key d'un contact existant (sinon le repo fusionnerait → pas un doublon).
+// ---------------------------------------------------------------------------
+
+/** Arguments validés de `duplicateContact` : la source + ce qui CHANGE. */
+export type DuplicateContactInput = {
+  sourceContactId: string;
+  entreprise?: string | null;
+  email?: string | null;
+  canalPrefere?: Canal | null;
+  notes?: string | null;
+  handles?: Handles | null;
+};
+
+/**
+ * LOGIQUE PURE de `duplicateContact`, testable hors serveur : repository DÉJÀ scopé au tenant.
+ * Résout la source (scopé → isolement cross-tenant) ; un id inconnu/hors tenant/archivé lève AVANT
+ * toute écriture (parité `updateContact`). Construit la copie (nom source ; entreprise/canal/notes =
+ * changement ?? source ; handles non-email source + changements ; email SEULEMENT si fourni ; PAS
+ * d'historique). Si la `dedup_key` de la copie EXISTE déjà chez le tenant (la source ou un autre
+ * contact, actif ou archivé) → REFUS explicite (une fusion ≠ une duplication). Sinon création
+ * journalisée (op `created`, rewindable) via le chemin partagé `create`. La source N'est jamais mutée.
+ */
+export async function duplicateContact(
+  contacts: Pick<ContactsRepository, "get" | "list" | "create">,
+  input: DuplicateContactInput,
+  journal?: JournalSink,
+): Promise<CreateContactResult> {
+  const source = await contacts.get(input.sourceContactId);
+  if (!source) {
+    throw new Error("Contact source introuvable pour ce tenant.");
+  }
+
+  // Champs de la copie : le changement NON VIDE l'emporte, sinon la valeur de la source. L'email
+  // n'est JAMAIS hérité (clé de dédup la plus forte) — uniquement s'il est fourni explicitement.
+  const entreprise = nonVide(input.entreprise) ?? nonVide(source.entreprise);
+  const canalPrefere = input.canalPrefere ?? source.canalPrefere ?? null;
+  const notes = nonVide(input.notes) ?? nonVide(source.notes);
+  // Email de la copie = fourni explicitement (top-level OU dans handles) ; JAMAIS hérité de la
+  // source (clé de dédup la plus forte). Il alimente la clé ET le canal `handles.email`.
+  const email = nonVide(input.email) ?? nonVide(input.handles?.email);
+
+  // Handles : on COPIE les canaux non-email de la source, on applique les changements fournis (non
+  // vides), puis l'email éventuel (l'email vit dans `handles`, parité createContact).
+  const handles: Handles = {};
+  const srcHandles: Handles = source.handles ?? {};
+  for (const canal of HANDLE_CANAUX) {
+    if (canal === "email") continue; // l'email de la source n'est jamais hérité
+    const v = nonVide(srcHandles[canal]);
+    if (v !== undefined) handles[canal] = v;
+  }
+  if (input.handles) {
+    for (const canal of HANDLE_CANAUX) {
+      if (canal === "email") continue; // l'email passe par `input.email` (clé), pas par les handles copiés
+      const v = nonVide(input.handles[canal]);
+      if (v !== undefined) handles[canal] = v;
+    }
+  }
+  if (email !== undefined) handles.email = email;
+
+  // DÉDUP (cœur de F4) : la copie doit avoir une clé DISTINCTE. Si sa clé existe déjà chez le
+  // tenant (la source ou un autre contact), `create` FUSIONNERAIT → pas un doublon : on REFUSE
+  // explicitement plutôt que de fusionner en douce. `list` est scopé → isolement cross-tenant.
+  const copieKey = computeDedupKey({ nom: source.nom, entreprise, email });
+  for (const c of await contacts.list({ includeArchived: true })) {
+    const cKey = computeDedupKey({
+      nom: c.nom,
+      entreprise: c.entreprise,
+      email: nonVide(c.handles?.email),
+    });
+    if (cKey === copieKey) {
+      throw new Error(
+        "La copie serait identique à un contact existant (même nom/entreprise/e-mail). " +
+          "Précise ce qui change (entreprise, e-mail…), ou modifie la fiche existante.",
+      );
+    }
+  }
+
+  const row = await contacts.create(
+    {
+      nom: source.nom,
+      entreprise: entreprise ?? null,
+      canalPrefere,
+      handles: Object.keys(handles).length > 0 ? handles : null,
+      ...(notes !== undefined ? { notes } : {}),
+      // PROVENANCE VRAIE DONNÉE — une duplication reste de la vraie donnée, jamais "seed".
+      source: "manuel",
+    },
+    journal,
+  );
+  return { id: row.id, nom: row.nom, entreprise: row.entreprise ?? null };
+}
+
+// ---------------------------------------------------------------------------
 // importContacts (CAP-3) — crée N vrais contacts en bloc depuis un vrac STRUCTURÉ par
 // l'agent. Le tool ne parse PAS de texte libre : il reçoit des contacts déjà structurés.
 // ---------------------------------------------------------------------------
@@ -775,6 +872,9 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   // updateContact (story 7.4, F2/F8) : édite une fiche existante (champs + handles) → la fiche /
   // galerie Réseau relit la vérité serveur après coup (router.refresh) par sa seule présence ici.
   "updateContact",
+  // duplicateContact (story 7.5, F4) : crée une variante d'une fiche existante → la galerie Réseau
+  // relit la vérité serveur après coup (router.refresh) par sa seule présence ici.
+  "duplicateContact",
   // setContactHistorique (story 3.10) : écrit `contacts.historique` → la fiche relit la vérité
   // serveur après coup (router.refresh) par sa seule présence ici.
   "setContactHistorique",
@@ -1016,6 +1116,81 @@ export function buildTools(userId: string, turnId: string): ToolSet {
           console.error("[agent] updateContact a échoué :", err);
           return {
             error: "Modification du contact momentanément indisponible. Réessaie plus tard.",
+          };
+        }
+      },
+    }),
+
+    // --- duplicateContact (CAP-DUP, story 7.5, F4) : DUPLIQUE une fiche en variante proche. ---
+    duplicateContact: tool({
+      description:
+        "Duplique une fiche contact EXISTANTE en une VARIANTE proche (ex. même personne dans une " +
+        "autre entreprise). Donne `sourceContactId` (résous la source via queryContacts, jamais un " +
+        "id inventé) + AU MOINS un changement qui rend la fiche DISTINCTE (entreprise et/ou e-mail " +
+        "différents). La copie reprend canal/notes/coordonnées non-email de la source ; elle ne " +
+        "copie NI l'e-mail NI l'historique de la source. ANNONCE à l'utilisateur le NOM de la " +
+        "source ET ce qui change, et n'agis qu'après son accord — jamais sur une demande ambiguë. " +
+        "Si la copie serait identique à un contact existant, l'outil refuse : explique-le et propose " +
+        "de préciser le changement ou de modifier la fiche existante.",
+      inputSchema: z.object({
+        sourceContactId: z
+          .string()
+          .trim()
+          .min(1)
+          .max(64)
+          .describe("Id de la fiche source à dupliquer (obtenu via queryContacts)."),
+        entreprise: z
+          .string()
+          .trim()
+          .max(200)
+          .optional()
+          .describe("Entreprise de la copie (le changement le plus courant)."),
+        email: z
+          .string()
+          .trim()
+          .email()
+          .max(320)
+          .optional()
+          .describe("E-mail de la copie (NON hérité de la source ; fournis-le pour distinguer)."),
+        canalPrefere: z
+          .enum(CANAUX)
+          .optional()
+          .describe("Canal préféré de la copie (optionnel ; sinon copié de la source)."),
+        notes: z
+          .string()
+          .trim()
+          .max(2000)
+          .optional()
+          .describe("Notes de la copie (optionnel ; sinon copiées de la source)."),
+        handles: z
+          .object({
+            linkedin: z.string().trim().max(320).optional(),
+            email: z.string().trim().email().max(320).optional(),
+            phone: z.string().trim().max(64).optional(),
+            whatsapp: z.string().trim().max(64).optional(),
+          })
+          .optional()
+          .describe(
+            "Coordonnées de la copie à poser (sinon les canaux non-email de la source sont copiés).",
+          ),
+      }),
+      execute: async (args) => {
+        try {
+          const gate = await forUser(userId);
+          return await duplicateContact(
+            gate.contacts,
+            args,
+            makeJournal("duplicateContact"),
+          );
+        } catch (err) {
+          // Refus MÉTIER (collision dédup / source introuvable) = message FR LISIBLE à relayer : le
+          // modèle le verbalise doucement à l'utilisateur (jamais une alarme rouge).
+          console.error("[agent] duplicateContact a échoué :", err);
+          return {
+            error:
+              err instanceof Error
+                ? err.message
+                : "Duplication momentanément indisponible. Réessaie plus tard.",
           };
         }
       },
