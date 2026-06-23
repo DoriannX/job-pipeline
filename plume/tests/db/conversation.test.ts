@@ -237,3 +237,91 @@ describe("conversations / chat_messages — repositories scopés (Phase 3)", () 
     expect(archived).toHaveLength(1); // existe toujours physiquement (jamais de DELETE)
   });
 });
+
+describe("chat_messages.editAndTruncate — édition + réécriture du fil aval (F6, story 7-9)", () => {
+  let db: TestDb;
+  const userA = makeUser({ name: "Alice" });
+  const userB = makeUser({ name: "Bob" });
+  const now = monotonicClock();
+
+  const convoRepo = (userId: string) =>
+    conversationsRepository(forUserDb(db, userId, now));
+  const msgRepo = (userId: string) =>
+    chatMessagesRepository(forUserDb(db, userId, now));
+
+  beforeEach(async () => {
+    db = await makeTestDb();
+    await seedUsers(db, [userA, userB]);
+  });
+
+  it("édite le message ciblé et SUPPRIME les tours postérieurs ; remonte les turnId effacés", async () => {
+    const convo = await convoRepo(userA.id).create({ firstUserMessage: "u1" });
+    await msgRepo(userA.id).append({ conversationId: convo.id, role: "user", content: "u1" });
+    await msgRepo(userA.id).append({ conversationId: convo.id, role: "assistant", content: "a1", turnId: "t1" });
+    const u2 = await msgRepo(userA.id).append({ conversationId: convo.id, role: "user", content: "u2" });
+    await msgRepo(userA.id).append({ conversationId: convo.id, role: "assistant", content: "a2", turnId: "t2" });
+
+    const { remaining, truncatedTurnIds } = await msgRepo(userA.id).editAndTruncate(
+      convo.id,
+      u2.id,
+      "u2 corrigé",
+    );
+
+    expect(remaining.map((m) => m.content)).toEqual(["u1", "a1", "u2 corrigé"]);
+    expect(remaining.map((m) => m.role)).toEqual(["user", "assistant", "user"]);
+    // Seul le tour assistant POSTÉRIEUR supprimé (a2, turnId t2) est remonté ; a1 reste.
+    expect(truncatedTurnIds).toEqual(["t2"]);
+    // Persistance réelle : le fil ne contient plus que 3 tours.
+    expect(await msgRepo(userA.id).listForConversation(convo.id)).toHaveLength(3);
+  });
+
+  it("message introuvable / autre tenant → no-op (remaining vide), fil de l'autre intact", async () => {
+    const bConvo = await convoRepo(userB.id).create({ firstUserMessage: "b1" });
+    const bMsg = await msgRepo(userB.id).append({ conversationId: bConvo.id, role: "user", content: "b1" });
+    await msgRepo(userB.id).append({ conversationId: bConvo.id, role: "assistant", content: "b2", turnId: "tb" });
+
+    // A tente d'éditer le message de B : invisible (scopé) → no-op.
+    const res = await msgRepo(userA.id).editAndTruncate(bConvo.id, bMsg.id, "piraté");
+    expect(res.remaining).toEqual([]);
+    expect(res.truncatedTurnIds).toEqual([]);
+    // Le fil de B est INTACT (2 tours, contenu inchangé).
+    const bTurns = await msgRepo(userB.id).listForConversation(bConvo.id);
+    expect(bTurns.map((m) => m.content)).toEqual(["b1", "b2"]);
+  });
+
+  it("ne touche QUE le fil ciblé (un autre fil du même tenant reste intact)", async () => {
+    const c1 = await convoRepo(userA.id).create({ firstUserMessage: "c1-u1" });
+    const c1u1 = await msgRepo(userA.id).append({ conversationId: c1.id, role: "user", content: "c1-u1" });
+    await msgRepo(userA.id).append({ conversationId: c1.id, role: "assistant", content: "c1-a1" });
+    const c2 = await convoRepo(userA.id).create({ firstUserMessage: "c2-u1" });
+    await msgRepo(userA.id).append({ conversationId: c2.id, role: "user", content: "c2-u1" });
+    await msgRepo(userA.id).append({ conversationId: c2.id, role: "assistant", content: "c2-a1" });
+
+    await msgRepo(userA.id).editAndTruncate(c1.id, c1u1.id, "c1-u1 corrigé");
+
+    expect((await msgRepo(userA.id).listForConversation(c1.id)).map((m) => m.content)).toEqual(["c1-u1 corrigé"]);
+    // Le fil c2 est INTACT.
+    expect((await msgRepo(userA.id).listForConversation(c2.id)).map((m) => m.content)).toEqual(["c2-u1", "c2-a1"]);
+  });
+
+  it("fonctionne dans une transaction IMBRIQUÉE (savepoint) — parité editMessageAction", async () => {
+    const convo = await convoRepo(userA.id).create({ firstUserMessage: "u1" });
+    await msgRepo(userA.id).append({ conversationId: convo.id, role: "user", content: "u1" });
+    const u2 = await msgRepo(userA.id).append({ conversationId: convo.id, role: "user", content: "u2" });
+    await msgRepo(userA.id).append({ conversationId: convo.id, role: "assistant", content: "a2", turnId: "t2" });
+
+    // editAndTruncate ouvre sa propre transaction ; appelée DANS une transaction de la porte, elle
+    // doit s'imbriquer proprement (savepoint) — exactement le chemin de `editMessageAction`.
+    const remaining = await forUserDb(db, userA.id, now).transaction(async (tx) => {
+      const { remaining } = await chatMessagesRepository(tx).editAndTruncate(
+        convo.id,
+        u2.id,
+        "u2 corrigé",
+      );
+      return remaining;
+    });
+
+    expect(remaining.map((m) => m.content)).toEqual(["u1", "u2 corrigé"]);
+    expect(await msgRepo(userA.id).listForConversation(convo.id)).toHaveLength(2);
+  });
+});

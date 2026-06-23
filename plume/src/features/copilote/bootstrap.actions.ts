@@ -15,6 +15,13 @@ export type BootstrapTurn = {
   content: string;
   /** LIEN rewind (CAP-5) : présent seulement sur un tour `assistant` ayant écrit. */
   turnId?: string;
+  /**
+   * Id PERSISTÉ du tour (F6, story 7-9) : seul un message porteur de cet id est RÉÉDITABLE (la
+   * réédition vise ce message en DB puis tronque le fil aval). Présent sur les tours réhydratés
+   * depuis la DB (`openConversationAction`/`editMessageAction`) ; absent d'un tour streamé en direct
+   * (pas encore relu) — son affordance d'édition n'apparaît donc qu'après réouverture/troncature.
+   */
+  messageId?: string;
 };
 
 /** Réponse d'une réouverture de fil : l'id du fil (ou `null`) + ses tours bornés au plus récent. */

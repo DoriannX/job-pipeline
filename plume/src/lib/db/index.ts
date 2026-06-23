@@ -71,6 +71,7 @@ export {
   type ChatMessageRow,
   type ConversationSummary,
   type AppendChatMessage,
+  type EditAndTruncateResult,
 } from "./conversation-repositories";
 export type { JournalSink, MutationRecord, JournaledOp } from "./journal";
 export type { ActionLogPrevState } from "./schema";
