@@ -44,11 +44,13 @@ export class AppError extends Error {
 }
 
 /**
- * Sélection du modèle EXACT selon le registre. Haiku par défaut (Rapide), Opus
- * sélectionnable (Soigné) — FR-14. Aucun suffixe de date (les alias sont complets).
+ * Sélection du modèle EXACT selon le registre (FR-14). 3 paliers (story 7.7, F13) : Haiku par
+ * défaut (Rapide), Sonnet (Équilibré — compromis coût/qualité), Opus (Soigné). Aucun suffixe de
+ * date (les alias sont complets). `Record<Tone>` ⇒ le typecheck force la complétude des paliers.
  */
 export const MODEL_BY_TONE: Record<Tone, string> = {
   rapide: "claude-haiku-4-5",
+  equilibre: "claude-sonnet-4-6",
   soigne: "claude-opus-4-8",
 };
 

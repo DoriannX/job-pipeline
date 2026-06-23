@@ -1263,9 +1263,13 @@ export function buildTools(userId: string, turnId: string): ToolSet {
           .optional()
           .describe("Canal du message (défaut : préférence du contact)."),
         tone: z
-          .enum(["rapide", "soigne"])
+          .enum(["rapide", "equilibre", "soigne"])
           .optional()
-          .describe("Registre de rédaction (défaut : rapide)."),
+          .describe(
+            "Registre de rédaction / modèle (défaut : rapide). rapide = Haiku (rapide, éco) ; " +
+              "equilibre = Sonnet (bon compromis coût/qualité) ; soigne = Opus (qualité max). " +
+              "Choisis selon la demande (ex. « soigne » pour un message important).",
+          ),
         idea: z
           .string()
           .trim()

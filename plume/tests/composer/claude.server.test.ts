@@ -80,6 +80,12 @@ describe("claude.server — sélection de modèle (FR-14)", () => {
     expect(calls[0].model).toBe("claude-opus-4-8");
     expect(MODEL_BY_TONE.soigne).toBe("claude-opus-4-8");
   });
+
+  it("equilibre → claude-sonnet-4-6 (palier Sonnet, story 7.7 F13)", async () => {
+    await generateMessage({ ...baseInput, tone: "equilibre" }, () => {});
+    expect(calls[0].model).toBe("claude-sonnet-4-6");
+    expect(MODEL_BY_TONE.equilibre).toBe("claude-sonnet-4-6");
+  });
 });
 
 describe("claude.server — paramètres interdits (un écart = 400 runtime)", () => {

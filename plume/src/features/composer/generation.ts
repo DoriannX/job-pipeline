@@ -12,8 +12,13 @@
 
 import type { Canal } from "@/lib/domain/enums";
 
-/** Registre de rédaction (sélecteur Rapide/Soigné) — pilote le choix de modèle. */
-export type Tone = "rapide" | "soigne";
+/**
+ * Registre de rédaction — pilote le choix de modèle. 3 paliers (story 7.7, F13) :
+ * `rapide` (Haiku, défaut) < `equilibre` (Sonnet, compromis coût/qualité) < `soigne` (Opus).
+ * Le choix est CONVERSATIONNEL côté copilote (arg `tone` de `composeMessage`) — plus de sélecteur
+ * UI (le composeur one-shot est déprécié, story 7.2).
+ */
+export type Tone = "rapide" | "equilibre" | "soigne";
 
 /**
  * Mode de génération (story 3.4) : `generate` met en forme une idée brute ; `improve`
