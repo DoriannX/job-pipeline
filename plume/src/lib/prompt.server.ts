@@ -157,8 +157,11 @@ const CALIBRAGE_RECENCE =
   "Calibre la familiarité sur la RÉCENCE autant que sur la proximité. Un point de contact " +
   "concret et récent implique que l'autre se souvient : " +
   GARDE_ANTI_OUBLI +
-  " Référence l'événement en supposant qu'il s'en souvient. Nomme l'interaction au bon " +
-  "niveau (un entretien EST un entretien), ne la minimise pas en « on s'était croisés ». " +
+  " SI — et seulement si — l'idée ou l'historique mentionne un point de contact (un échange, " +
+  "un événement, une date), référence-le en supposant qu'il s'en souvient, au bon niveau " +
+  "(un entretien EST un entretien, ne le minimise pas en « on s'était croisés »). " +
+  "N'INVENTE JAMAIS un événement, une date ni une durée (« il y a 3 mois », « la semaine " +
+  "dernière ») qui ne figure pas explicitement dans l'idée ou l'historique. " +
   "Distance sociale (proches / pas proches) et mémoire (se souvient / a oublié) sont DEUX " +
   "axes distincts : « pas proches » n'implique PAS « m'a oublié ».";
 
@@ -283,6 +286,18 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
           // l'ouverture sur la récence/mémoire — UNIQUEMENT ici (mode `generate`, idée présente),
           // là où l'IA interprète la relation à partir des faits fournis.
           `${CALIBRAGE_RECENCE}\n\n` +
+          "N'AJOUTE aucun fait absent de l'idée ou de l'historique : ni date, durée, " +
+          "événement, projet, entreprise, ni chiffre inventés. Tu mets en forme, tu " +
+          "n'inventes pas et tu n'extrapoles pas.\n" +
+          "Ne FABRIQUE jamais un passé commun ni un lien que l'idée n'affirme pas " +
+          "(« on a travaillé ensemble », « on s'est rencontrés à… »). L'entreprise du " +
+          "contact est SON employeur, jamais un passé partagé. Si l'idée dit qu'il n'y a " +
+          "aucune interaction passée, assume-le franchement (premier contact) au lieu d'en " +
+          "inventer une.\n" +
+          "PRÉSERVE l'intention et la DIRECTION exactes de l'utilisateur — qui propose, qui " +
+          "demande, et quoi, à qui. N'INVERSE jamais le sens : « je cherche une opportunité » " +
+          "veut dire que L'UTILISATEUR cherche pour lui-même, PAS qu'il a une opportunité à " +
+          "offrir au contact.\n\n" +
           "Idée brute à mettre en forme dans la voix de l'utilisateur :\n" +
           `"""\n${idea}\n"""`;
 
