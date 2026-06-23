@@ -618,7 +618,11 @@ export type ComposeMessageDeps = {
     idea: string;
     canal: Canal;
     tone: Tone;
-    contact: { nom?: string | null; historique?: string | null };
+    contact: {
+      nom?: string | null;
+      historique?: string | null;
+      premierContact?: boolean;
+    };
   }) => Promise<{ event: { generatedText: string } }>;
   /** `journal` (inc.4) : journalise le brouillon atomiquement sous le `turnId` du run. */
   journal?: JournalSink;
@@ -653,7 +657,14 @@ export async function composeMessage(
     // Historique injecté pour générer EN CONTINUITÉ (story 3.10, parité /api/composer) :
     // borné par `clampHistorique` avant l'envoi à Claude (queue gardée). Vide/NULL ⇒ aucune
     // injection (comportement inchangé). Le copilote bénéficie ainsi du même moat que l'UI.
-    contact: { nom: contact.nom, historique: clampHistorique(contact.historique) },
+    contact: {
+      nom: contact.nom,
+      historique: clampHistorique(contact.historique),
+      // Garde-fou cadence OUVRIR (brainstorm 2026-06-23) : `dernierContactAt == null` =
+      // jamais contacté (même signal que la froideur `never`) ⇒ le prompt privilégie
+      // l'ouverture du lien plutôt qu'une demande frontale.
+      premierContact: contact.dernierContactAt == null,
+    },
   });
 
   const message = await deps.messages.createDraft(

@@ -46,8 +46,13 @@ import type { Canal } from "@/lib/domain/enums";
  * (review 7.1 — l'agent peut appeler composeMessage sans `idea`). Le mode `improve` est IDENTIQUE
  * à v3 (l'humain a déjà écrit, l'IA n'y devine pas la relation — non-régression garantie). Le
  * préfixe stable (cachable) reste INTACT.
+ *
+ * v5 (garde-fou cadence, brainstorm 2026-06-23) : étape OUVRIR injectée au mode `generate`
+ * AVEC idée quand le contact est un PREMIER contact (`contact.premierContact === true`).
+ * Change observable de la recette QUAND le flag est posé ; sans lui, tour user IDENTIQUE à
+ * v4 (non-régression). Le mode `improve` et le préfixe stable (cachable) restent INTACTS.
  */
-export const PROMPT_VERSION = 4;
+export const PROMPT_VERSION = 5;
 
 /**
  * Mode de fabrication du tour utilisateur (story 3.4).
@@ -70,6 +75,15 @@ export interface PromptContactContext {
    * (MAX_HISTORIQUE) avant d'arriver ici. Vide/absent ⇒ aucune injection (non-régression v2).
    */
   historique?: string | null;
+  /**
+   * Garde-fou de CADENCE (brainstorm 2026-06-23) : ce contact n'a JAMAIS été contacté
+   * (`dernier_contact_at === null`, même signal que la froideur `never`). Dérivé par
+   * l'appelant serveur. `true` ⇒ on PRIVILÉGIE l'ouverture du lien plutôt qu'une demande
+   * frontale (cf. `CADENCE_PREMIER_CONTACT`). Absent/`false` ⇒ aucun ajout (non-régression).
+   * Étape OUVRIR uniquement : la cadence complète (TISSER/DEMANDER via `repondu`) viendra
+   * avec Epic 4. NE pilote QUE le mode `generate` (l'IA interprète la relation).
+   */
+  premierContact?: boolean;
 }
 
 /** Ingrédients de construction du prompt. */
@@ -153,6 +167,23 @@ const CONTRAINTE_CANAL: Record<Canal, string> = {
 const GARDE_ANTI_OUBLI =
   "NE présume PAS l'oubli : jamais « tu te souviens de moi ? », ne t'excuse pas d'exister.";
 
+// --- Garde-fou CADENCE — étape OUVRIR (brainstorm 2026-06-23, dogfood R1) ---
+//
+// Bug dogfood R1 : sur un PREMIER contact, le copilote traduisait une idée en demande
+// directe et frontale (« on en discute ? ») dès le tour 1. Réalité de l'outreach réseau :
+// on tisse d'abord, on demande APRÈS. Ce garde-fou est l'étape OUVRIR de la cadence (le
+// modèle 3 étapes complet — TISSER/DEMANDER détectés via `repondu` — arrive avec Epic 4).
+//
+// SÛR vs « n'invente AUCUN fait » : c'est une directive d'INTENTION (le BUT du message),
+// pas un fait — comme `CALIBRAGE_RECENCE`. SÛR vs « préserve l'intention exacte » : on ne
+// SUPPRIME pas la demande si l'idée la réclame explicitement, on la diffère par DÉFAUT
+// seulement (override conversationnel : l'utilisateur peut toujours demander direct).
+const CADENCE_PREMIER_CONTACT =
+  "PREMIER CONTACT (aucun échange passé avec cette personne) : privilégie l'OUVERTURE du " +
+  "lien plutôt qu'une demande frontale. Crée une raison d'échanger. N'inscris une demande " +
+  "directe (rendez-vous, opportunité, coup de main) QUE si l'idée la réclame explicitement ; " +
+  "sinon, ouvre la conversation et garde la demande pour un prochain message.";
+
 const CALIBRAGE_RECENCE =
   "Calibre la familiarité sur la RÉCENCE autant que sur la proximité. Un point de contact " +
   "concret et récent implique que l'autre se souvient : " +
@@ -223,6 +254,8 @@ function buildFewShotBlock(voiceExamples: string[]): string {
  */
 export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
   const { idea, canal, voiceExamples, contact, mode = "generate" } = input;
+  // Garde-fou cadence OUVRIR : actif UNIQUEMENT en `generate` sur un premier contact.
+  const premierContact = mode !== "improve" && contact?.premierContact === true;
 
   // PRÉFIXE STABLE/CACHABLE — IDENTIQUE pour `generate` et `improve` (même voix, même
   // Liste noire des Tells, même few-shot). Le mode ne touche JAMAIS au système : on
@@ -298,6 +331,7 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
           "demande, et quoi, à qui. N'INVERSE jamais le sens : « je cherche une opportunité » " +
           "veut dire que L'UTILISATEUR cherche pour lui-même, PAS qu'il a une opportunité à " +
           "offrir au contact.\n\n" +
+          (premierContact ? CADENCE_PREMIER_CONTACT + "\n\n" : "") +
           "Idée brute à mettre en forme dans la voix de l'utilisateur :\n" +
           `"""\n${idea}\n"""`;
 

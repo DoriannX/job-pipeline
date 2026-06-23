@@ -292,8 +292,8 @@ describe("prompt — mode improve (story 3.4)", () => {
 // SYSTÈME cachable (cache préservé) — elle vit dans le tour user volatil.
 
 describe("prompt — calibrage récence/mémoire (story 7.1)", () => {
-  it("PROMPT_VERSION est passée à 4 (recette récence/mémoire)", () => {
-    expect(PROMPT_VERSION).toBe(4);
+  it("PROMPT_VERSION est au moins 4 (recette récence/mémoire disponible)", () => {
+    expect(PROMPT_VERSION).toBeGreaterThanOrEqual(4);
   });
 
   it("generate (idée présente) → la consigne récence/mémoire est dans le tour utilisateur", () => {
@@ -342,5 +342,61 @@ describe("prompt — calibrage récence/mémoire (story 7.1)", () => {
     const systemText = system.map((b) => b.text).join("\n");
     expect(systemText).not.toMatch(/présume PAS l'oubli|ne présume pas l'oubli/i);
     expect(systemText).not.toMatch(/axes distincts/i);
+  });
+});
+
+// --- Garde-fou cadence OUVRIR (brainstorm 2026-06-23, dogfood R1) -----------
+// (1) premier contact + generate AVEC idée → consigne OUVRIR dans le tour user ;
+// (2) flag absent → tour user IDENTIQUE (non-régression v4) ;
+// (3) mode improve → JAMAIS (l'humain a déjà écrit) ;
+// (4) reste HORS du système cachable.
+
+describe("prompt — garde-fou cadence premier contact (étape OUVRIR)", () => {
+  it("premier contact + generate → consigne d'ouverture dans le TOUR UTILISATEUR", () => {
+    const t = userOf({
+      ...baseInput,
+      canal: "linkedin",
+      contact: { nom: "Camille", premierContact: true },
+    });
+    expect(t).toMatch(/PREMIER CONTACT/i);
+    expect(t).toMatch(/ouverture|ouvre la conversation/i);
+    // L'idée reste mise en forme (on ne supprime pas l'intention, on diffère la demande).
+    expect(t).toContain(baseInput.idea);
+  });
+
+  it("flag absent/false → tour utilisateur IDENTIQUE (non-régression v4)", () => {
+    const sans = userOf({ ...baseInput, canal: "email" });
+    const flagAbsent = userOf({
+      ...baseInput,
+      canal: "email",
+      contact: { nom: undefined },
+    });
+    const flagFalse = userOf({
+      ...baseInput,
+      canal: "email",
+      contact: { premierContact: false },
+    });
+    expect(flagAbsent).toBe(sans);
+    expect(flagFalse).toBe(sans);
+  });
+
+  it("mode improve → garde-fou ABSENT (l'humain a déjà écrit)", () => {
+    const t = userOf({
+      ...baseInput,
+      canal: "linkedin",
+      mode: "improve",
+      contact: { premierContact: true },
+    });
+    expect(t).not.toMatch(/PREMIER CONTACT/i);
+  });
+
+  it("garde-fou reste HORS du système cachable (cache préservé)", () => {
+    const { system } = buildPrompt({
+      ...baseInput,
+      canal: "linkedin",
+      contact: { premierContact: true },
+    });
+    const systemText = system.map((b) => b.text).join("\n");
+    expect(systemText).not.toMatch(/PREMIER CONTACT/i);
   });
 });
